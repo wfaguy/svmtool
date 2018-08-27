@@ -163,9 +163,7 @@
 .OUTPUTS
     Only display result of operations
 .LINK
-    https://forums.netapp.com/docs/DOC-16670
-    
-    You need to request access to group cmode-ps before accessing to this script
+    https://github.com/oliviermasson/svmtool
 .EXAMPLE
     svmtool.ps1 -Instance test -Setup
 
@@ -201,13 +199,33 @@
 .EXAMPLE
     svmtool.ps1 -Instance test -Vserver svm_source -ReActivate
 
-    Following an ActivateDR, restart production on source SVM
+	Following an ActivateDR, restart production on source SVM
+.EXAMPLE
+	svmtool.ps1 -Backup clusterA [-Vserver <svm name>]
+
+	Backup all SVM on clusterA.
+	If Backup&Restore Instance associated to clusterA does not exist, the script will create it.
+	All SVM will be backed up in separate folder inside the directory chosen for this instance
+	If you want to recreate the instance for clusterA, add -Recreateconf
+	If you want to only Backup a particular SVM, add -Vserver <svm name>
+.EXAMPLE
+	svmtool.ps1 -Restore clusterA [-Vserver <svm name>] -Destination clusterB [-RW] [-SelectBackupDate] 
+
+	Restore all SVM available from the Backup folder defined in the clusterA Backup&Restore instance to clusterB
+	If you need to restore a particular SVM, just -add -Vserver <svm name>
+	By default, the script will automaticaly restore from the most recent backup folder available for each SVM
+	If you want to restore from a particular date, just add -SelectBackupDate, and the script will display all dates available
+	for each SVM and prompt you to chose the date you want
+	By default, the script restore all volume as Data-Protection type (DP) volume. 
+	In order to allow you to restore data inside this volumes from a SnapMirror/SnapVault previous backup.
+	If you don't have a SnapMirror/SnapVault backup or will restore data back with another method,
+	or because you only need to recreate the "envelop" fo the SVM (to clone an environment by example), just add -RW to the command line
+	In that case, all volumes will be restored as Read/Write (RW) volume.
 .NOTES
     Author  : Olivier Masson
-    Release : April 30th, 2018
-    Version : 0.0.1  
+    Version : August 25th, 2018
 #>
-[CmdletBinding(HelpURI="https://forums.netapp.com/docs/DOC-16670")]
+[CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool")]
 Param (
 	#[int32]$Debug = 0,
     [string]$Vserver,
@@ -275,7 +293,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.1"
+$Global:RELEASE="0.0.3"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -289,6 +307,7 @@ $ErrorActionPreference="SilentlyContinue"
 $Global:BACKUPALLSVM=$False
 $Global:NumberOfLogicalProcessor = (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
 $Global:maxJobs=100
+$Global:XDPPolicy=$XDPPolicy
 
 if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
     if ($Backup.Length -eq 0 -and $Restore.Length -eq 0){
@@ -486,7 +505,13 @@ if ( $Backup ) {
 	$numJobBackup=0
 	$BackupDate=Get-Date -UFormat "%Y%m%d%H%M%S"
     foreach($svm in $SVMList){
-		Write-Log "Create Backup Job for [$svm]"
+		$svm_status=Get-NcVserver -Vserver $svm -Controller $NcPrimaryCtrl -ErrorVariable ErrorVar
+		$svm_status=$svm_status.OperationalState
+		if($svm_status -eq "stopped"){
+			Write-LogWarn "[$svm] can't be saved because it is in `"stopped`" state"
+			continue
+		}
+		Write-Log "Create Backup Job for [$svm]" "Blue"
         $codeBackup=[scriptblock]::Create({
             param(
                 [Parameter(Mandatory=$True)]
@@ -535,8 +560,10 @@ if ( $Backup ) {
 			rotate_log
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$($SVMTOOL_DB+"\"+$myPrimaryVserver+"\"+$BackupDate+"\")
+			Write-Log "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]"
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
-            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -Backup -myPrimaryVserver $myPrimaryVserver )[-1] -ne $True ){
+			Write-Log "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]"
+            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
 				return $False
 			}
@@ -544,8 +571,8 @@ if ( $Backup ) {
             return $True
         })
         $BackupJob=[System.Management.Automation.PowerShell]::Create()
-        ## $createVserverVackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
-        ## $codeBackup=$createVserverVackup.Ast.Body.Extent.Text
+        ## $createVserverBackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
+        ## $codeBackup=$createVserverBackup.Ast.Body.Extent.Text
         [void]$BackupJob.AddScript($codeBackup)
         [void]$BackupJob.AddParameter("script_path",$scriptDir)
         [void]$BackupJob.AddParameter("myPrimaryController",$NcPrimaryCtrl)
@@ -555,13 +582,15 @@ if ( $Backup ) {
 		[void]$BackupJob.AddParameter("BackupDate",$BackupDate)
 		[void]$BackupJob.AddParameter("LOGFILE",$Global:LOGFILE)
 		[void]$BackupJob.AddParameter("DebugLevel",$DebugLevel)
-        $BackupJob.RunspacePool=$RunspacePool_Backup
+		$BackupJob.RunspacePool=$RunspacePool_Backup
+		#wait-debugger
+		#$Object = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
         $Handle=$BackupJob.BeginInvoke()
         $JobBackup = "" | Select-Object Handle, Thread, Name
         $JobBackup.Handle=$Handle
         $JobBackup.Thread=$BackupJob
 		$JobBackup.Name=$svm
-		if($JobBackup.Thread.InvocationStateInfo.State -eq "Failed"){
+		<# if($JobBackup.Thread.InvocationStateInfo.State -eq "Failed"){
 			$reason=$JobBackup.Thread.InvocationStateInfo.Reason
 			Write-LogDebug "ERROR: Failed to invoke Backup Job [$svm] Reason: $reason"
 			clean_and_exit 1
@@ -570,7 +599,7 @@ if ( $Backup ) {
 			$reason=$JobBackup.Thread.Stream.Error
 			Write-LogDebug "ERROR: Failed to invoke Backup Job [$svm] Reason: $reason"
 			clean_and_exit 1
-		}
+		} #>
 		$Jobs_Backup+=$JobBackup
 		$numJobBackup++
 	}
@@ -590,11 +619,11 @@ if ( $Backup ) {
 			-id 1 `
 			-Activity "Waiting for all $numJobBackup Jobs to finish..." `
 			-PercentComplete (((($Jobs_Backup.Count)-$numberRemaining) / $Jobs_Backup.Count) * 100) `
-			-Status "$($($($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining : $Remaining [$percentage% done]"
+			-Status "$($($($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining task(s) : $Remaining [$percentage% done]"
 	}
 	ForEach ($JobBackup in $($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $True})){
         $jobname=$JobBackup.Name
-        Write-logDebug "$jobname finished"
+        if($DebugLevel){Write-log "$jobname finished" "Blue"}
         $result_Backup=$JobBackup.Thread.EndInvoke($JobBackup.Handle)
 		if($result_Backup.count -gt 0){
 			$ret=$result_Backup[-1]
@@ -758,7 +787,7 @@ if ( $Restore ) {
 			Write-LogDebug "SourceVserver [$SourceVserver]"
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
-            if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -mySecondaryVserver $SourceVserver -Restore  )[-1] -ne $True ){
+            if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False )[-1] -ne $True ){
                 return $False
             }
             return $True
@@ -927,28 +956,38 @@ if ( ( $Setup ) -or ( $read_vconf -eq $null ) ) {
 	}
 }
 
-$VserverDR=$read_vconf.Get_Item("VserverDR") ;
+$VserverDR=$read_vconf.Get_Item("VserverDR")
 if ( $Vserver -eq $Null ) {
 	Write-LogError "ERROR: unable to find VserverDR in $VCONFFILE"
         clean_and_exit 1 ;
 }
-$AllowQuotaDR=$read_vconf.Get_Item("AllowQuotaDR") ;
-$SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB") ;
+$AllowQuotaDR=$read_vconf.Get_Item("AllowQuotaDR")
+$SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
+$Global:SVMTOOL_DB=$SVMTOOL_DB
+$Global:CorrectQuotaError=$CorrectQuotaError
+$Global:ForceDeleteQuota=$ForceDeleteQuota
+$Global:ForceActivate=$ForceActivate
+$Global:ForceRecreate=$ForceRecreate
+$Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
+$Global:SelectVolume=$SelectVolume
+$Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
+$Global:AllowQuotaDr=$AllowQuotaDr
+$Global:IgnoreQuotaOff=$IgnoreQuotaOff
 
 Write-LogDebug "PRIMARY_CLUSTER:            		 [$PRIMARY_CLUSTER]" 
 Write-LogDebug "SECONDARY_CLUSTER:          		 [$SECONDARY_CLUSTER]" 
 Write-LogDebug "VSERVER                     		 [$Vserver]" 
 Write-LogDebug "VSERVER DR                  		 [$VserverDR]" 
-Write-LogDebug "QUOTA DR                    		 [$AllowQuotaDr]" 
-Write-LogDebug "SVMTOOL DB                           [$SVMTOOL_DB]"
-Write-LogDebug "OPTION IgnoreQuotaOff       		 [$IgnoreQuotaOff]"
-Write-LogDebug "OPTION CorrectQuotaError    		 [$CorrectQuotaError]"
-Write-LogDebug "OPTION ForceDelete          		 [$ForceDeleteQuota]"
-Write-LogDebug "OPTION ForceActivate        		 [$ForceActivate]"
-Write-LogDebug "OPTION ForceRecreate        		 [$ForceRecreate]"
-Write-LogDebug "OPTION AlwaysChooseDataAggr 		 [$AlwaysChooseDataAggr]"
-Write-LogDebug "OPTION SelectVolume         		 [$SelectVolume]"
-Write-LogDebug "OPTION IgnoreQtreeExportPolicy       [$IgnoreQtreeExportPolicy]"
+Write-LogDebug "QUOTA DR                    		 [$Global:AllowQuotaDr]" 
+Write-LogDebug "SVMTOOL DB                           [$Global:SVMTOOL_DB]"
+Write-LogDebug "OPTION IgnoreQuotaOff       		 [$Global:IgnoreQuotaOff]"
+Write-LogDebug "OPTION CorrectQuotaError    		 [$Global:CorrectQuotaError]"
+Write-LogDebug "OPTION ForceDelete          		 [$Global:ForceDeleteQuota]"
+Write-LogDebug "OPTION ForceActivate        		 [$Global:ForceActivate]"
+Write-LogDebug "OPTION ForceRecreate        		 [$Global:ForceRecreate]"
+Write-LogDebug "OPTION AlwaysChooseDataAggr 		 [$Global:AlwaysChooseDataAggr]"
+Write-LogDebug "OPTION SelectVolume         		 [$Global:SelectVolume]"
+Write-LogDebug "OPTION IgnoreQtreeExportPolicy       [$Global:IgnoreQtreeExportPolicy]"
 
 if ( $ShowDR ) {
     $Run_Mode="ShowDR"
@@ -1010,9 +1049,16 @@ if ( $ConfigureDR ) {
 			$XDPPolicy="MirrorAllSnapshots"
 		}
 	}
-	if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR )[-1] -ne $True ) {
-		clean_and_exit 1
+    if($DRfromDR.IsPresent){
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
+			clean_and_exit 1
+		}
+	}else{
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy)[-1] -ne $False ) {
+			clean_and_exit 1
+		}
 	}
+	
 
   	if ( ( $ret=svmdr_db_switch_datafiles -myController $NcPrimaryCtrl -myVserver $Vserver ) -eq $false ) {
         	Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
@@ -1129,10 +1175,18 @@ if($Migrate){
 		if ( ( $ret=update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -NoInteractive) -ne $True ) {
 			    Write-LogError "ERROR: update_cifs_usergroup failed"   
 		}
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
-			Write-LogError "ERROR: update_vserver_dr failed" 
-			clean_and_exit 1
+		if($DRfromDR.IsPresent){
+			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+				Write-LogError "ERROR: update_vserver_dr failed" 
+				clean_and_exit 1
+			}
+		}else{
+			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+				Write-LogError "ERROR: update_vserver_dr failed" 
+				clean_and_exit 1
+			}
 		}
+		
 
 		# if ( $MirrorSchedule ) {
 			# Write-LogDebug "Flag MirrorSchedule"
@@ -1386,11 +1440,18 @@ if ( $UpdateDR ) {
 	} else {
     		$UseLastSnapshot = $False
 	}
-
-	if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
-        Write-LogError "ERROR: update_vserver_dr failed" 
- 		clean_and_exit 1
+	if($DRfromDR.IsPresent){
+		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+			Write-LogError "ERROR: update_vserver_dr failed" 
+			 clean_and_exit 1
+		}
+	}else{
+		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+			Write-LogError "ERROR: update_vserver_dr failed" 
+			 clean_and_exit 1
+		}
 	}
+	
 
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
@@ -1651,7 +1712,7 @@ if ( $ResyncReverse ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         	clean_and_exit 1
 	}
-	if ( ( $ret=resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
+	if ( ( $ret=resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 		Write-LogError "ERROR: Resync Reverse error"
 		clean_and_exit 1
 	}
@@ -1689,10 +1750,18 @@ if ( $UpdateReverse ) {
 	} else {
     		$UseLastSnapshot = $False
 	}
-	if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne  $True ) { 
-		Write-LogError "ERROR: update_vserver_dr" 
-		clean_and_exit 1 
+	if($DRfromDR.IsPresent){
+		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True) -ne  $True ) { 
+			Write-LogError "ERROR: update_vserver_dr" 
+			clean_and_exit 1 
+		}
+	}else{
+		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False) -ne  $True ) { 
+			Write-LogError "ERROR: update_vserver_dr" 
+			clean_and_exit 1 
+		}
 	}
+	
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$Vserver]"
     }
