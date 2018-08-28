@@ -25,7 +25,7 @@
 .PARAMETER ListInstance
 	Display all Instance available and configured
 .PARAMETER ImportInstance
-	Import SVMDR script instances
+	Import previous generation SVMDR script's instances
 .PARAMETER RemoveInstance
     Allow to remove a previously configured instance
     -RemoveInstance <instance name>
