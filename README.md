@@ -13,6 +13,6 @@ Mains objectives of this script are:
 - Migrate SVM with old **ONTAP** version (SVM Migrate is officially supported with **ONTAP** since 9.4)
 - Backup and Restore all configuration (volumes, lif, cron, junction-path, etc...) to original or alternate cluster
 
-For more information download inline documentation
+For more information download [Manual](https://github.com/oliviermasson/svmtool/blob/master/SVMTOOL_Manual_v1.0.docx)
 
 HTH
