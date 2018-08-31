@@ -15,6 +15,7 @@ Mains objectives of this script are:
 
 ### DR & Migration Purpose
 **All Supported Options**
+
 Supported Protocols | SVMTOOL
 --------------------|--------
 Support NFS | Yes
