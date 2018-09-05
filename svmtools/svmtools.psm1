@@ -2,10 +2,10 @@
 .SYNOPSIS
     NetApp SVM Toolbox
 .DESCRIPTION
-    This module contains several Function to manage SVMDR, Backup and Restore Configuration...
+    This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
-    Author  : Olivier Masson, Jerome Blanchet
-    Release : August 25th, 2018
+    Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
+    Release : September 5th, 2018
 #>
 
 #############################################################################################
@@ -49,19 +49,19 @@ Function check_ToolkitVersion () {
 	$Revision = $ToolKitVersion.Revision
 
 	if( $Major -lt $Global:MIN_MAJOR ){
-        Write-Host "ERROR: Major = $Major Please upgarde NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}"
+        Write-Host -Object "ERROR: Major = $Major Please upgrade NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}" -ForegroundColor red
         exit 100
     }
     elseif($Minor -lt $Global:MIN_MINOR -and $Major -eq $Global:MIN_MAJOR){
-        Write-Host "ERROR: Minor = $Minor Please upgarde NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}"
+        Write-Host "ERROR: Minor = $Minor Please upgrade NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}" -ForegroundColor red
         exit 100    
     }
     elseif($Build -lt $MIN_BUILD -and $Major -eq $Global:MIN_MAJOR -and $Minor -eq $Global:MIN_MINOR){
-        Write-Host "ERROR: Build = $Build Please upgarde NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}"
+        Write-Host "ERROR: Build = $Build Please upgrade NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}" -ForegroundColor red
         exit 100    
     }
     elseif($Revision -lt $Global:MIN_REVISION -and $Major -eq $Global:MIN_MAJOR -and $Minor -eq $Global:MIN_MINOR -and $Build -eq $MIN_BUILD){
-        Write-Host "ERROR: Revision = $Revision Please upgarde NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}"
+        Write-Host "ERROR: Revision = $Revision Please upgrade NetApp TookKit Version to ${MIN_MAJOR}.${MIN_MINOR}.${MIN_BUILD}.${MIN_REVISION}" -ForegroundColor red
         exit 100    
     }
 }
@@ -101,8 +101,8 @@ function Write-LogError ([string]$mess, $type) {
 #############################################################################################
 function Write-LogWarn ([string]$mess, $type) {
 		$logtime = get_timestamp
-        #if ( $Silence -ne $True ) { Write-Host "$mess" }
-        if ( $Silence -ne $True ) { Write-Warning "$mess" }
+        #if ( $Silent -ne $True ) { Write-Host "$mess" }
+        if ( $Silent -ne $True ) { Write-Warning "$mess" }
         [void]$Global:mutex.WaitOne(200)
         if ( $NoLog -ne $True ) { Write "${logtime}: $mess" >> $global:LOGFILE }
         $Global:mutex.ReleaseMutex()
@@ -112,11 +112,14 @@ function Write-LogWarn ([string]$mess, $type) {
 function Write-Log ([string]$mess, $color) {
     #wait-debugger
     $logtime = get_timestamp
-    if ( $Silence -ne $True ) { 
+    if ( $Silent -ne $True ) { 
         if($color.count -eq 0){
             $color=(get-host).ui.rawui.ForegroundColor
         }
-        Write-Host -ForegroundColor $color "$mess" 
+        if($color -eq -1){
+            $color = "white"
+        }
+        Write-Host "$mess" -ForegroundColor $color
     }
     [void]$Global:mutex.WaitOne(200)
     if ( $NoLog -ne $True ) { Write "${logtime}: $mess" >> $global:LOGFILE }
@@ -167,14 +170,14 @@ Function create_config_file_cli () {
 		$PRIMARY_CLUSTER=$read_conf.Get_Item("PRIMARY_CLUSTER")
 		$SECONDARY_CLUSTER=$read_conf.Get_Item("SECONDARY_CLUSTER")
 		$Global:SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
-		$ANS=Read-Host "Configuration file already exist. Do you want to recreate it ? [y/n]"
+		$ANS=Read-Host "Configuration file already exists. Do you want to recreate it ? [y/n]"
 		if ( $ANS -ne 'y' ) { return }
 	}
 	$ANS='n'
 	while ( $ANS -ne 'y' ) {
         	$ReadInput = Read-Host "Please Enter your default Primary Cluster Name [$PRIMARY_CLUSTER]"
 		if (($ReadInput) -ne "" ) { $PRIMARY_CLUSTER=$ReadInput }
-        	$ReadInput = Read-Host "Please Enter you default Secondary Cluster Name [$SECONDARY_CLUSTER]"
+        	$ReadInput = Read-Host "Please Enter your default Secondary Cluster Name [$SECONDARY_CLUSTER]"
 		if (($ReadInput) -ne "" ) { $SECONDARY_CLUSTER=$ReadInput }
 		$ReadInput = Read-Host "Please enter local DB directory where config files will be saved for this instance [$Global:SVMTOOL_DB]"
 		if (($ReadInput) -ne "" ) { $Global:SVMTOOL_DB=$ReadInput }
@@ -429,7 +432,7 @@ Function show_instance_list() {
     {
         $excludeCDOTcred=@() 
         foreach ($cluster in ($listCluster | Skip-Null)){
-            Write-LogDebug "Reset Credentail for $cluster"
+            Write-LogDebug "Reset Credentails for $cluster"
             $out=get_local_cDotcred($cluster)
             $excludeCDOTcred+=$($cluster+".*")
         }
@@ -439,7 +442,7 @@ Function show_instance_list() {
             $ANS='n'
             $otherCredName=$otherCred.Name
             $otherCredName=$otherCredName.Replace(".cred","")
-            $ANS=Read-Host "Do you really want to reset Credential for $otherCredName ? [y/n]"
+            $ANS=Read-Host "Do you really want to reset Credentials for $otherCredName ? [y/n]"
             if ( $ANS -eq 'y')
             {
                 Write-LogDebug "Reset Credential for $otherCredName"
@@ -454,10 +457,10 @@ Try {
 	$Return = $True
 	$myConfDir=$Global:CONFBASEDIR + $Instance + '\'
         if ( ( Test-Path $myConfDir -pathType container ) -eq $False ) {
-		Write-LogError "ERROR: [$Instance] No such configuration unable to delete"
+		Write-LogError "ERROR: [$Instance] No such configuration, unable to delete"
 		$Return = $false
 	} else {
-		$ANS = Read-host "Do you really want to remove configuration instance [$Instance] ? [y/n]"
+		$ANS = Read-host "Do you really want to remove this configuration instance [$Instance] ? [y/n]"
 		if ( $ANS -eq 'y' ) {
 			Write-LogDebug "Remove-Item -Recurse $myConfDir"
 			Remove-Item -Recurse $myConfDir  -ErrorVariable ErrorVar
@@ -523,7 +526,7 @@ Function get_local_cred ([string]$myCredential) {
 	if ( $ResetPassword ) { 
         	$status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
 		if ( $status -eq $False ) {
-			Write-LogError "ERROR: Unable to set your credential for $myCredential Exit" 
+			Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
         		clean_and_exit 1
 		}
 	}
@@ -535,7 +538,7 @@ Function get_local_cred ([string]$myCredential) {
 		$cred=read_cred_from_file $Global:CRED_CONF_FILE
 		if ( $cred -eq $null ) 
         {
-			Write-LogError "ERROR: Unable to set your credential for $myCredential Exit" 
+			Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
         	clean_and_exit 1
 		}
 	}
@@ -781,7 +784,7 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
  	$NodePortList=Get-NcNetPort -role data -node $myNode  -Controller $myController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
 	if ( $NodePortList -eq $null ) {
-		Write-LogError "ERROR: Unable to find Port list from node $myNode $myController" 
+		Write-LogError "ERROR: Unable to list Ports for node $myNode $myController" 
 		clean_and_exit 1
 	}
 	$i = 0 
@@ -816,7 +819,7 @@ Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController
  	$NodeList=Get-NcNode -Controller $myController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNode failed [$ErrorVar]" }
 	if ( $NodeList -eq $null ) {
-		Write-LogError "ERROR: Unable to Node list from Cluster $myController" 
+		Write-LogError "ERROR: Unable to list nodes for Cluster $myController" 
 		clean_and_exit 1
 	}
 	foreach ( $Node in ( $NodeList | Skip-Null ) ) {
@@ -858,7 +861,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
  		$AggrList=Get-NcAggr -Controller $myController  -ErrorVariable ErrorVar
 		if ( $? -ne $True ) { [void]$global:mutexconsole.ReleaseMutex(); throw "ERROR: Get-NcAggr failed [$ErrorVar]" }
 		if ( $AggrList -eq $null ) {
-            Write-LogError "ERROR: Unable get the aggregate list from Cluster $myController" 
+            Write-LogError "ERROR: Unable list aggregates for Cluster $myController" 
             [void]$global:mutexconsole.ReleaseMutex()
 			clean_and_exit 1
 		}
@@ -875,7 +878,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			}
 		}
 		if ( $i -eq 0 ) {
-            Write-LogError "ERROR: Unable to find data aggregate from Cluster $myController" 
+            Write-LogError "ERROR: Unable to find data aggregate for Cluster $myController" 
             [void]$global:mutexconsole.ReleaseMutex()
 			clean_and_exit 1
 		}
@@ -933,9 +936,9 @@ Function create_update_vscan_dr (
         if($Backup -eq $True){
             $PrimaryScannerPoolList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVscanScannerPool.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcVscanScannerPool.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcVscanScannerPool.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcVscanScannerPool.json") saved successfully"
             }else{
-                Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVscanScannerPool.json")"
+                Write-LogError "ERROR: Failed to save $($Global:JsonPath+"Get-NcVscanScannerPool.json")"
                 $Return=$False
             }
         }
@@ -997,7 +1000,7 @@ Function create_update_vscan_dr (
                             while($ANS -ne 'n')
                             {
                                 $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($myScannerPoolVscanServers[$num++])
-                                $ANS=read-host "Do you want to add more Scan Server ? [y/n]"
+                                $ANS=read-host "Do you want to add another Scan Server ? [y/n]"
                             }
                             Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1030,7 +1033,7 @@ Function create_update_vscan_dr (
                     while($ANS -ne 'n')
                     {
                         $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($PrimaryScannerPoolVscanServers[$num++])
-                        $ANS=read-host "Do you want to add more Scan Server ? [y/n]"
+                        $ANS=read-host "Do you want to add another Scan Server ? [y/n]"
                     }
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1061,7 +1064,7 @@ Function create_update_vscan_dr (
             if($Backup -eq $True){
                 $PrimaryOnAccessPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") -Encoding ASCII -Width 65535
                 if( ($ret=get-item $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
-                    Write-LogDebug "$($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") properly saved"
+                    Write-LogDebug "$($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") saved successfully"
                 }else{
                     Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json")"
                     $Return=$False
@@ -1182,7 +1185,7 @@ Function create_update_vscan_dr (
             if($Backup -eq $True){
                 $PrimaryVscan | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVscanStatus.json") -Encoding ASCII -Width 65535
                 if( ($ret=get-item $($Global:JsonPath+"Get-NcVscanStatus.json") -ErrorAction SilentlyContinue) -ne $null ){
-                    Write-LogDebug "$($Global:JsonPath+"Get-NcVscanStatus.json") properly saved"
+                    Write-LogDebug "$($Global:JsonPath+"Get-NcVscanStatus.json") saved successfully"
                 }else{
                     Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVscanStatus.json")"
                     $Return=$False
@@ -1280,7 +1283,7 @@ Function create_update_firewallpolicy_dr(
         if($Backup -eq $True){
             $PrimaryFirewallPolicies | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetFirewallPolicy.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcNetFirewallPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcNetFirewallPolicy.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcNetFirewallPolicy.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetFirewallPolicy.json")"
                 $Return=$False
@@ -1384,7 +1387,7 @@ Function create_update_usermapping_dr(
         if($Backup -eq $True){
             $PrimaryMapping | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNameMapping.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcNameMapping.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMapping.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMapping.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNameMapping.json")"
                 $Return=$False
@@ -1497,7 +1500,7 @@ Function create_update_localuser_dr(
         if($Backup -eq $True){
             $PrimaryUsers | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcUser.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcUser.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcUser.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcUser.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcUser.json")"
                 $Return=$False
@@ -1606,7 +1609,7 @@ Function create_update_localuser_dr(
                                     Write-LogDebug "Passwords matched"
                                 } 
                                 else{
-                                    Write-Warning "[$workOn] Error passwords does not match. Please Re-Enter"
+                                    Write-Warning "[$workOn] Error passwords do not match. Please Re-Enter"
                                     $ReEnter=$True
                                 }
                             }while($ReEnter -eq $True)
@@ -1663,11 +1666,11 @@ Function create_update_localuser_dr(
                             $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
                             $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
                             if ($pwd1_text -ceq $pwd2_text) {
-                                Write-LogDebug "Passwords matched for [$UserName]"
+                                Write-LogDebug "Passwords match for [$UserName]"
                             } 
                             else{
-                                Write-Warning "[$workOn] Error passwords does not match for [$UserName]. Please Re-Enter"
-                                Write-LogDebug "Error passwords does not match for user [$UserName]. Please Re-Enter"
+                                Write-Warning "[$workOn] Error passwords do not match for [$UserName]. Please Re-Enter"
+                                Write-LogDebug "Error passwords do not match for user [$UserName]. Please Re-Enter"
                                 $ReEnter=$True
                             }
                         }while($ReEnter -eq $True)
@@ -1767,7 +1770,7 @@ Function create_update_localunixgroupanduser_dr(
         if($Backup -eq $True){
             $PrimaryUserList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNameMappingUnixUser.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcNameMappingUnixUser.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMappingUnixUser.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMappingUnixUser.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNameMappingUnixUser.json")"
                 $Return=$False
@@ -1816,7 +1819,7 @@ Function create_update_localunixgroupanduser_dr(
         if($Backup -eq $True){
             $PrimaryGroupList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json")"
                 $Return=$False
@@ -1953,7 +1956,7 @@ Function create_update_role_dr(
         if($Backup -eq $True){
             $source_roles | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcRole.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcRole.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcRole.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcRole.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcRole.json")"
                 $Return=$False
@@ -2012,7 +2015,7 @@ Function create_update_role_dr(
             if($Backup -eq $True){
                 $PrimaryRoleConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") -Encoding ASCII -Width 65535
                 if( ($ret=get-item $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") -ErrorAction SilentlyContinue) -ne $null ){
-                    Write-LogDebug "$($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") properly saved"
+                    Write-LogDebug "$($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") saved successfully"
                 }else{
                     Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json")"
                     $Return=$False
@@ -2129,7 +2132,7 @@ Function create_update_fpolicy_dr(
         if($Backup -eq $True){
             $PrimaryFpolicyEngineList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json")"
                 $Return=$False
@@ -2424,7 +2427,7 @@ Function create_update_fpolicy_dr(
             if($Backup -eq $True){
                 $PrimaryFpolEvtList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcFpolicyEvent.json") -Encoding ASCII -Width 65535
                 if( ($ret=get-item $($Global:JsonPath+"Get-NcFpolicyEvent.json") -ErrorAction SilentlyContinue) -ne $null ){
-                    Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyEvent.json") properly saved"
+                    Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyEvent.json") saved successfully"
                 }else{
                     Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcFpolicyEvent.json")"
                     $Return=$False
@@ -2620,7 +2623,7 @@ Function create_update_fpolicy_dr(
                 if($Backup -eq $True){
                     $PrimaryFpolScope | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcFpolicyScope.json") -Encoding ASCII -Width 65535
                     if( ($ret=get-item $($Global:JsonPath+"Get-NcFpolicyScope.json") -ErrorAction SilentlyContinue) -ne $null ){
-                        Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyScope.json") properly saved"
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyScope.json") saved successfully"
                     }else{
                         Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcFpolicyScope.json")"
                         $Return=$False
@@ -2733,7 +2736,7 @@ Function create_update_fpolicy_dr(
                 if($Backup -eq $True){
                     $PrimaryFpolStatus | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcFpolicyStatus.json") -Encoding ASCII -Width 65535
                     if( ($ret=get-item $($Global:JsonPath+"Get-NcFpolicyStatus.json") -ErrorAction SilentlyContinue) -ne $null ){
-                        Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyStatus.json") properly saved"
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyStatus.json") saved successfully"
                     }else{
                         Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcFpolicyStatus.json")"
                         $Return=$False
@@ -2839,7 +2842,7 @@ Function create_update_qospolicy_dr(
         if($Backup -eq $True){
             $PrimaryQosGroupList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQosPolicyGroup.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcQosPolicyGroup.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcQosPolicyGroup.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcQosPolicyGroup.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQosPolicyGroup.json")"
                 $Return=$False
@@ -3087,7 +3090,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryCronList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcJobCronSchedule.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcJobCronSchedule.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcJobCronSchedule.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcJobCronSchedule.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcJobCronSchedule.json")"
             $Return=$False
@@ -3228,7 +3231,7 @@ Try {
         if($Backup -eq $True){
             $snapShotPolicy | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcSnapshotPolicy.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcSnapshotPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcSnapshotPolicy.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcSnapshotPolicy.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcSnapshotPolicy.json")"
                 $Return=$False
@@ -3410,7 +3413,7 @@ Function create_update_efficiency_policy_dr(
         if($Backup -eq $True){
             $SisPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcSisPolicy.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcSisPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcSisPolicy.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcSisPolicy.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcSisPolicy.jsonn")"
                 $Return=$False
@@ -3503,7 +3506,7 @@ Function create_update_efficiency_policy_dr(
                 } 
                 elseif (($SecondaryPolicyDuration -ne $PrimaryPolicyDuration) -or ($PrimaryPolicySchedule -ne $SecondaryPolicySchedule) -or ($PrimaryPolicyEnable -ne $SecondaryPolicyEnable) -or ($PrimaryPolicyQosPolicy -ne $SecondaryPolicyQosPolicy) -or ($PrimaryPolicyType -ne $SecondaryPolicyType) -or ($PrimaryPolicyThreshold -ne $SecondaryPolicyThreshold))
                 {
-                    Write-Log "[$mySecondaryVserver] Sis Policy [$PrimaryPolicyName] already exist with difference, will update"
+                    Write-Log "[$mySecondaryVserver] Sis Policy [$PrimaryPolicyName] already exists with difference, will update"
                     if($SecondaryPolicyType -eq "threshold")
                     {
                         write-logDebug "Set-NcSisPolicy -controller $mySecondaryController -VserverContext $mySecondaryVserver -name $PrimaryPolicyName -ChangelogThresholdPercent $PrimaryPolicyThreshold -PolicyType $PrimaryPolicyType -Enabled $PrimaryPolicyEnable -QosPolicy $PrimaryPolicyQosPolicy  -ErrorVariable ErrorVar"
@@ -3587,7 +3590,7 @@ Try {
     if($Backup -eq $True){
         $ExportPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcExportPolicy.json") -Encoding ASCII -Width 65535    
         if( ($ret=get-item $($Global:JsonPath+"Get-NcExportPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcExportPolicy.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcExportPolicy.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcExportPolicy.json")"
             $Return=$False
@@ -3623,7 +3626,7 @@ Try {
         if($Backup -eq $True){
             $ExportPolicyRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") -Encoding ASCII -Width 65535    
             if( ($ret=get-item $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json")"
                 $Return=$False
@@ -3738,7 +3741,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryIgroupList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcIgroup.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcIgroup.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcIgroup.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcIgroup.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcIgroup.json")"
             $Return=$False
@@ -3889,7 +3892,7 @@ Try {
         if($Backup -eq $True){
             $PrimaryLunList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcLun.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcLun.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcLun.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcLun.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcLun.json")"
                 $Return=$False
@@ -3918,7 +3921,7 @@ Try {
                     $PrimaryLunPath_string=$PrimaryLunPath -replace "/","@"
                     $PrimaryLunMapList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") -Encoding ASCII -Width 65535
                     if( ($ret=get-item $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") -ErrorAction SilentlyContinue) -ne $null ){
-                        Write-LogDebug "$($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") properly saved"
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") saved successfully"
                     }else{
                         Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json")"
                         $Return=$False
@@ -4112,14 +4115,14 @@ Function set_serial_lundr (
             {
                 if($Restore -eq $False -and $Backup -eq $False){
                     # Wait SnapMirror Relations
-                    Write-Log "Wait All relation transfert [$workOn] to change LUN Serials Number"
+                    Write-Log "Wait for all relations to transfer [$workOn] to change LUN Serials Number"
                     if ( ( wait_snapmirror_dr -NoInteractive -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) 
                     { 
                         $Return = $False
                         throw "ERROR: wait_snapmirror_dr failed"  
                     }
                     # Break SnapMirror Relations
-                    Write-Log "Break All relation from [$workOn] to change LUN Serials Number"
+                    Write-Log "Break all relations from [$workOn] to change LUN Serials Number"
                     Write-LogDebug "break_snapmirror_vserver_dr -NoInteractive -myController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver"
                     if ( ( break_snapmirror_vserver_dr -NoInteractive -myController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) 
                     {
@@ -4386,7 +4389,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryNameServiceList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json")"
             $Return=$False
@@ -4481,7 +4484,7 @@ Function set_all_lif(
     }
 	if($set -eq $false){
         if($Restore -eq $False){
-            Write-Log "ERROR: You need at least one lif on destination able to communicate with Active Directory. Use ConfigureDR to create one"
+            Write-Log "ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
             return $False
         }else{
             return $True
@@ -4802,7 +4805,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryVolList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVol.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcVol.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcVol.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcVol.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVol.json")"
             $Return=$False
@@ -5268,7 +5271,7 @@ Function read_subdir (
             $PrimDirDetails=Read-NcDirectory -Path $searchPath -VserverContext $myPrimaryVserver -Controller $myPrimaryController | Where-Object {$_.Name -eq $dir}
             $PrimDirDetails | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json")"
                 $Return=$False
@@ -5344,7 +5347,7 @@ Try {
     if($Backup -eq $True){
         $script:vol_junction | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"vol_junction.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"vol_junction.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"vol_junction.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"vol_junction.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"vol_junction.json")"
             $Return=$False
@@ -5364,7 +5367,7 @@ Try {
                     $RelativePathToRead=$ReadPath.replace($ParentPath,"") 
                     if($RelativePathToRead.Length -gt 1){
                         if($PathRead.contains($RelativePathToRead)){
-                            Write-LogDebug("[$RelativePathToRead] already treated")
+                            Write-LogDebug("[$RelativePathToRead] already processed")
                         }else{
                             $ret=read_subdir -myController $myController -myVserver $myVserver -Dirs $RelativePathToRead -RootVolume $Parent -myPrimaryController $myPrimaryController -myPrimaryVserver $myPrimaryVserver
                             $PathRead+=$RelativePathToRead
@@ -5374,7 +5377,7 @@ Try {
                     }
                 }else{
                     if($PathRead.contains($ReadPath)){
-                        Write-LogDebug("[$ReadPath] already treated")
+                        Write-LogDebug("[$ReadPath] already processed")
                     }else{
                         $ret=read_subdir -myController $myController -myVserver $myVserver -Dirs $ReadPath -RootVolume $Parent -myPrimaryController $myPrimaryController -myPrimaryVserver $myPrimaryVserver
                         $PathRead+=$ReadPath
@@ -5466,7 +5469,7 @@ Try {
                             Start-Sleep $count
                         } else {
                             $retry = $False
-                            Write-LogError "ERROR: Unable to mount volume [$DestinationVolume]: Snapmirror because relation status is [$RelationshipStatus] [$MirrorState] " 
+                            Write-LogError "ERROR: Unable to mount volume [$DestinationVolume]: Snapmirror, because relation status is [$RelationshipStatus] [$MirrorState] " 
                             $Return = $False
                         }	
                     }
@@ -5804,7 +5807,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserverPeer failed [$ErrorVar]" }
         $Peers | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVserverPeer.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcVserverPeer.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcVserverPeer.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcVserverPeer.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVserverPeer.json")"
             $Return=$False
@@ -6057,7 +6060,7 @@ Function wait_snapmirror_dr(
     	$mySecondaryCluster = (Get-NcCluster -Controller $mySecondaryController  -ErrorVariable ErrorVar).ClusterName			
     	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" }
 
-    	Write-Log "[$mySecondaryVserver] Please wait until all snapmirror transferts terminate"
+    	Write-Log "[$mySecondaryVserver] Please wait until all snapmirror transfers terminate"
 
     	$loop = $True ; $count = 0 
 
@@ -6093,7 +6096,7 @@ Function wait_snapmirror_dr(
     		if ( ( ! $NoInteractive ) -and ( $DebugLevel -eq 0 ) ) { Write-Host -NoNewline "." }
     	}
     	if ( ( ! $NoInteractive ) -and ( $DebugLevel -eq 0 ) ) { Write-Host "" }
-    	Write-Log "[$mySecondaryVserver] All Snapmirror transferts terminated"
+    	Write-Log "[$mySecondaryVserver] All Snapmirror transfers terminated"
         Write-LogDebug "wait_snapmirror_dr[$myPrimaryVserver]: end"
     	return $Return 
     } 
@@ -6513,7 +6516,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryInterfaceList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetInterface.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNetInterface.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNetInterface.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNetInterface.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetInterface.json")"
             $Return=$False
@@ -6545,7 +6548,7 @@ Try {
                 if($Backup -eq $True){
                     $PrimaryDefaultRoute | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetRoute.json") -Encoding ASCII -Width 65535
                     if( ($ret=get-item $($Global:JsonPath+"Get-NcNetRoute.json") -ErrorAction SilentlyContinue) -ne $null ){
-                        Write-LogDebug "$($Global:JsonPath+"Get-NcNetRoute.json") properly saved"
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcNetRoute.json") saved successfully"
                     }else{
                         Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetRoute.json")"
                         $Return=$False
@@ -6558,7 +6561,7 @@ Try {
                 if($Backup -eq $True){
                     $PrimaryDefaultRoute | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") -Encoding ASCII -Width 65535
                     if( ($ret=get-item $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") -ErrorAction SilentlyContinue) -ne $null ){
-                        Write-LogDebug "$($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") properly saved"
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") saved successfully"
                     }else{
                         Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json")"
                         $Return=$False
@@ -6778,7 +6781,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryDNS | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetDns.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNetDns.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNetDns.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNetDns.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetDns.json")"
             $Return=$False
@@ -6926,7 +6929,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryNisList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNIS.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNIS.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNIS.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNIS.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNIS.json")"
             $Return=$False
@@ -7178,7 +7181,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryNfsService | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNfsService.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNfsService.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNfsService.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNfsService.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNfsService.json")"
             $Return=$False
@@ -7304,21 +7307,21 @@ Try {
     if($Backup -eq $True){
         $primaryOptions | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsOption.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsOption.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsOption.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsOption.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsOption.json")"
             $Return=$False
         }
         $PrimaryVersion | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcSystemVersionInfo.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcSystemVersionInfo.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcSystemVersionInfo.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcSystemVersionInfo.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcSystemVersionInfo.json")"
             $Return=$False
         }
         $PrimaryCIFSsecurity | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsSecurity.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsSecurity.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsSecurity.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsSecurity.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsSecurity.json")"
             $Return=$False
@@ -7477,7 +7480,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryQtrees | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQtree.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcQtree.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcQtree.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcQtree.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQtree.json")"
             $Return=$False
@@ -7584,7 +7587,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryQtrees | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQtree.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcQtree.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcQtree.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcQtree.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQtree.json")"
             $Return=$False
@@ -7674,7 +7677,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryLDAP | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcLdapConfig.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcLdapConfig.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcLdapConfig.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcLdapConfig.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcLdapConfig.json")"
             $Return=$False
@@ -7700,7 +7703,7 @@ Try {
         if($Backup -eq $True){
             $PrimaryLDAPclient | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcLdapClient.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcLdapClient.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcLdapClient.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcLdapClient.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcLdapClient.json")"
                 $Return=$False
@@ -7728,7 +7731,7 @@ Try {
         if($Backup -eq $True){
             $PrimarySchema | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcLdapClientSchema.json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcLdapClientSchema.json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcLdapClientSchema.json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcLdapClientSchema.json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcLdapClientSchema.json")"
                 $Return=$False
@@ -8180,14 +8183,14 @@ Try {
     if($Backup -eq $True){
         $PrimaryCifsServerInfos | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsServer.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsServer.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsServer.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsServer.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsServer.json")"
             $Return=$False
         }
         $PrimaryInterfaceList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetInterface.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcNetInterface.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcNetInterface.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNetInterface.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetInterface.json")"
             $Return=$False
@@ -8479,7 +8482,7 @@ Try {
     if($Backup -eq $True){
         $CifsHomeSearchList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json")"
             $Return=$False
@@ -8542,14 +8545,14 @@ Try {
     if($Backup -eq $True){
         $SharesListSource | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsShare.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsShare.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsShare.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsShare.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsShare.json")"
             $Return=$False
         }
         $PrimaryAllAclList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsShareAcl.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsShareAcl.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsShareAcl.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsShareAcl.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsShareAcl.json")"
             $Return=$False
@@ -8891,7 +8894,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryIscsiService | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcIscsiService.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcIscsiService.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcIscsiService.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcIscsiService.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcIscsiService.json")"
             $Return=$False
@@ -9517,7 +9520,7 @@ Try {
     if($Backup -eq $True){
         $PrimaryVserver | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcVserver.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcVserver.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcVserver.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcVserver.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVserver.json")"
         }
@@ -9619,7 +9622,12 @@ Try {
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
     if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_share" ; $Return = $False } 
-    $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
+    $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
+    if($? -and $PrimaryCifsServerInfos){
+        $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
+    }else{
+        Write-LogDebug "Skipping cifs update - no cifs found"
+    }
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$myPrimaryVserver]"    
     }
@@ -9637,7 +9645,7 @@ Try {
 	if ( ( $ret=create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn -DDR $DDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; $Return = $False }
 	if ( ( $ret=create_update_snap_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {Write-LogError "ERROR: create_update_snap_policy_dr"}
 	if($Backup -eq $False -and $Restore -eq $False){
-        $ASK_WAIT=Read-Host "[$mySecondaryVserver] Do you want to wait the end of snapmirror transferts and mount all volumes and map LUNs $mySecondaryVserver now ? [y/n]"
+        $ASK_WAIT=Read-Host "[$mySecondaryVserver] Do you want to wait the end of snapmirror transfers and mount all volumes and map LUNs $mySecondaryVserver now ? [y/n]"
     }else{
         $ASK_WAIT='y'
     }
@@ -10688,7 +10696,7 @@ try{
     if($Backup -eq $True){
         $PrimaryUserList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsLocalUser.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsLocalUser.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalUser.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalUser.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsLocalUser.json")"
             $Return=$False
@@ -10849,7 +10857,7 @@ try{
     if($Backup -eq $True){
         $PrimaryGroupList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsLocalGroup.json") -Encoding ASCII -Width 65535
         if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsLocalGroup.json") -ErrorAction SilentlyContinue) -ne $null ){
-            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalGroup.json") properly saved"
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalGroup.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsLocalGroup.json")"
             $Return=$False
@@ -10862,7 +10870,7 @@ try{
             $PrimaryGroupName_string=$PrimaryGroupName -replace "\\","_"
             $PrimaryMemberList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") -Encoding ASCII -Width 65535
             if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") -ErrorAction SilentlyContinue) -ne $null ){
-                Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") properly saved"
+                Write-LogDebug "$($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") saved successfully"
             }else{
                 Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json")"
                 $Return=$False
@@ -10967,7 +10975,7 @@ Function update_vserver_dr (
 		Write-LogDebug "update_vserver_dr: Create required new snapmirror relations $mySecondaryController Vserver $Vserver"
 		if ( ( create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -DDR $DDR ) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; return $False }
 
-		Write-LogDebug "update_vserver_dr: Wait new Snapmirror transfert terminate $mySecondaryController Vserver $Vserver"
+		Write-LogDebug "update_vserver_dr: Wait new Snapmirror transfer terminate $mySecondaryController Vserver $Vserver"
 		if ( ( wait_snapmirror_dr -NoInteractive -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed snapmirror relations bad status " ; return $False }
 	}
 
