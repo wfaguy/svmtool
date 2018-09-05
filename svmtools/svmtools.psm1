@@ -432,7 +432,7 @@ Function show_instance_list() {
     {
         $excludeCDOTcred=@() 
         foreach ($cluster in ($listCluster | Skip-Null)){
-            Write-LogDebug "Reset Credentails for $cluster"
+            Write-LogDebug "Reset Credentials for $cluster"
             $out=get_local_cDotcred($cluster)
             $excludeCDOTcred+=$($cluster+".*")
         }
