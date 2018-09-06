@@ -74,6 +74,93 @@ Function clean_and_exit ([int]$return_code) {
 }
 
 #############################################################################################
+Function handle_error([object]$object,[string]$vserver){
+	$ErrorMessage = $object.Exception.Message
+	$FailedItem = $object.Exception.ItemName
+	$Type = $object.Exception.GetType().FullName
+	$CategoryInfo = $object.CategoryInfo
+	$ErrorDetails = $object.ErrorDetails
+	$Exception = $_.Exception
+	$FullyQualifiedErrorId = $object.FullyQualifiedErrorId
+	$InvocationInfoLine = $object.InvocationInfo.Line
+	$InvocationInfoLineNumber = $object.InvocationInfo.ScriptLineNumber
+	$PipelineIterationInfo = $object.PipelineIterationInfo
+	$ScriptStackTrace = $object.ScriptStackTrace
+	$TargetObject = $object.TargetObject
+	Write-LogError  "Trap Error: [$vserver] [$ErrorMessage]"
+	Write-LogDebug  "Trap Item: [$FailedItem]"
+	Write-LogDebug  "Trap Type: [$Type]"
+	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
+	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
+	Write-LogDebug  "Trap Exception: [$Exception]"
+	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
+	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
+	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
+	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
+	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+}
+#############################################################################################
+function Format-ColorBrackets {
+    Param(
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $Format,
+        [switch] $FirstIsSpecial,
+        [switch] $NoNewLine
+    )
+    if($Arguments -is [string]) {$Arguments = ,($Arguments)}
+
+    $result = Select-String -Pattern '\[([^\]]*)\]' -InputObject $Format -AllMatches
+    $i = 0
+    $first = $true
+    foreach($match in $result.Matches) {
+        $group = $match.Groups[1]
+        Write-Host -NoNewline $Format.Substring($i, $group.Index - $i)
+        if(($first -and $FirstIsSpecial)){
+            $color="green"
+            $first=$false
+        }else{
+            $color="cyan"
+        }
+        Write-Host $group.Value -NoNewline -ForegroundColor $color
+        $i = $group.Index + $group.Length
+    }
+    if($i -lt $Format.Length){Write-Host -NoNewline $Format.Substring($i, $Format.Length - $i)}
+    Write-Host "" -NoNewline:$NoNewLine
+}
+#############################################################################################
+function Format-Colors {
+    Param(
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $Format,
+        [Parameter(Position=1)]
+        [object] $Arguments,
+        [switch] $NoNewLine
+    )
+    if($Arguments -is [string]) {$Arguments = ,($Arguments)}
+
+    $result = Select-String -Pattern '\{(?:(\d+)(?::(\d|[0-9a-zA-Z]+))?)\}' -InputObject $Format -AllMatches
+    $i = 0
+    foreach($match in $result.Matches) {
+        $group = $match.Captures[0]
+        if(($i -eq 0) -and ($Format -match "^\[")){
+            Format-ColorBrackets $Format.Substring($i, $group.Index - $i) -NoNewLine -FirstIsSpecial
+        }else{
+            Format-ColorBrackets $Format.Substring($i, $group.Index - $i) -NoNewLine
+        }
+        if($group.Groups[2].Success) {
+            Write-Host -NoNewline -ForegroundColor $([System.ConsoleColor] $group.Groups[2].Value) $Arguments[$group.Groups[1].Value] 
+        } else {
+            $arg = $Arguments[[int]$group.Groups[1].Value]
+            $value = $arg[0]
+            $color = $arg[1]
+            Write-Host -NoNewline -ForegroundColor $([System.ConsoleColor] $color) $value 
+        }
+        $i = $group.Index + $group.Length
+    }
+    if($i -lt $Format.Length){Format-ColorBrackets $Format.Substring($i, $Format.Length - $i) -NoNewline}
+    Write-Host "" -NoNewline:$NoNewLine
+}
+#############################################################################################
 Function Write-Help {
 	Write-Host "use get-help svmtool.ps1 [-Full|-Examples|-Detailled|-Online]"
 	Write-Host "`t`t"
@@ -109,7 +196,7 @@ function Write-LogWarn ([string]$mess, $type) {
 }
 
 #############################################################################################
-function Write-Log ([string]$mess, $color) {
+function Write-Log ([string]$mess, $color,[switch]$colorvalues=$true,[switch]$firstValueIsSpecial) {
     #wait-debugger
     $logtime = get_timestamp
     if ( $Silent -ne $True ) { 
@@ -119,7 +206,18 @@ function Write-Log ([string]$mess, $color) {
         if($color -eq -1){
             $color = "white"
         }
-        Write-Host "$mess" -ForegroundColor $color
+        if(-not $colorvalues){
+            Write-Host "$mess" -ForegroundColor $color
+        }else{
+            if($mess -match "\[[^\]]*\]"){
+                if($mess -match "^\["){
+                    $firstValueIsSpecial = $true
+                }
+                Format-ColorBrackets -Format $mess -FirstIsSpecial:$firstValueIsSpecial
+            }else{
+                Write-Host "$mess" -ForegroundColor $color
+            }
+        }
     }
     [void]$Global:mutex.WaitOne(200)
     if ( $NoLog -ne $True ) { Write "${logtime}: $mess" >> $global:LOGFILE }
@@ -131,6 +229,47 @@ function Write-LogOnly ([string]$mess, $type) {
     [void]$Global:mutex.WaitOne(200)
     if ( $NoLog -ne $True ) { Write "${logtime}: $mess" >> $global:LOGFILE }
     $Global:mutex.ReleaseMutex()
+}
+
+
+#############################################################################################
+function Read-HostDefault{
+    Param(
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $question,
+        [Parameter(Position=1)]
+        [string] $default,
+        [switch] $NotEmpty
+    )
+
+    do{
+        Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $default -NoNewLine
+        $ans = Read-Host
+        $return = if($ans -eq ""){$default}else{$ans}
+    }until(([bool]$return) -or (-not $NotEmpty))
+    return $return
+
+}
+
+#############################################################################################
+function Read-HostOptions{
+    Param(
+        [Parameter(Position=0, Mandatory=$true)]
+        [string] $question,
+        [Parameter(Position=1, Mandatory=$true)]
+        [string] $options,
+        [string] $default
+    )
+
+    Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $options -NoNewLine
+    $optionlist = @($options -split "/")
+    $ans = Read-Host
+    while(-not ($optionlist -match $ans) -or ($ans -eq "") -or ($ans -eq $null)){
+        Format-Colors "Please choose from [{0:Yellow}] : " -Arguments $options -NoNewLine
+        $ans = Read-Host
+    }
+
+    return $ans
 }
 
 #############################################################################################
@@ -170,23 +309,23 @@ Function create_config_file_cli () {
 		$PRIMARY_CLUSTER=$read_conf.Get_Item("PRIMARY_CLUSTER")
 		$SECONDARY_CLUSTER=$read_conf.Get_Item("SECONDARY_CLUSTER")
 		$Global:SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
-		$ANS=Read-Host "Configuration file already exists. Do you want to recreate it ? [y/n]"
+		$ANS=Read-HostOptions "Configuration file already exists. Do you want to recreate it ?" "y/n"
 		if ( $ANS -ne 'y' ) { return }
 	}
 	$ANS='n'
 	while ( $ANS -ne 'y' ) {
-        	$ReadInput = Read-Host "Please Enter your default Primary Cluster Name [$PRIMARY_CLUSTER]"
-		if (($ReadInput) -ne "" ) { $PRIMARY_CLUSTER=$ReadInput }
-        	$ReadInput = Read-Host "Please Enter your default Secondary Cluster Name [$SECONDARY_CLUSTER]"
-		if (($ReadInput) -ne "" ) { $SECONDARY_CLUSTER=$ReadInput }
-		$ReadInput = Read-Host "Please enter local DB directory where config files will be saved for this instance [$Global:SVMTOOL_DB]"
-		if (($ReadInput) -ne "" ) { $Global:SVMTOOL_DB=$ReadInput }
-		Write-Log "Default Primary Cluster Name:        [$PRIMARY_CLUSTER]"
-		Write-Log "Default Secondary Cluster Name:      [$SECONDARY_CLUSTER]"
-		Write-Log "SVMTOOL Configuration DB directory:  [$Global:SVMTOOL_DB]"
+
+        $PRIMARY_CLUSTER = Read-HostDefault "Please Enter your default Primary Cluster Name" $PRIMARY_CLUSTER
+        $SECONDARY_CLUSTER = Read-HostDefault "Please Enter your default Secondary Cluster Name" $SECONDARY_CLUSTER
+		$Global:SVMTOOL_DB = Read-HostDefault "Please enter local DB directory where config files will be saved for this instance" $Global:SVMTOOL_DB
+		Write-Log "Default Primary Cluster Name:        [$PRIMARY_CLUSTER]" 
+		Write-Log "Default Secondary Cluster Name:      [$SECONDARY_CLUSTER]" 
+		Write-Log "SVMTOOL Configuration DB directory:  [$Global:SVMTOOL_DB]" 
 		Write-Log ""
-        	$ANS = Read-Host "Apply new configuration ? [y/n/q]"
+
+        $ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
 		if ( $ANS -eq 'q' ) { clean_and_exit 1 }
+
 		write-Output "#" | Out-File -FilePath $Global:CONFFILE 
 		write-Output "PRIMARY_CLUSTER=$PRIMARY_CLUSTER" | Out-File -FilePath $Global:CONFFILE -Append
 		write-Output "SECONDARY_CLUSTER=$SECONDARY_CLUSTER" | Out-File -FilePath $Global:CONFFILE -Append
@@ -219,10 +358,8 @@ Function create_vserver_config_file_cli (
 	    }
 	    $ANS='n'
 	    while ( $ANS -ne 'y' ) {
-        	    $ReadInput = Read-Host "Please Enter a Valid Vserver DR name for $Vserver [$myVserverDR]"
-		    if ( ($ReadInput) -ne "" ) { $myVserverDR=$ReadInput }
-        	    $ReadInput = Read-Host "Do you want to Backup Quota for $Vserver [$myVserverDR] ? [y/n]"
-		    if ( ($ReadInput) -ne "" ) { $AnsQuotaDR=$ReadInput }
+        	$myVserverDR = Read-HostDefault "Please Enter a Valid Vserver DR name for" $myVserverDR
+        	$AnsQuotaDR = Read-HostOptions "Do you want to Backup Quota for $Vserver [$myVserverDR] ?" "y/n"
 		    if ( $AnsQuotaDR -eq 'y' ) {
 			    $AllowQuotaDR="true"
 		    } else  {
@@ -234,7 +371,7 @@ Function create_vserver_config_file_cli (
 			    Write-Log "Vserver DR Name :      [$myVserverDR]"
 			    Write-Log "QuotaDR :              [$AllowQuotaDR]"
 			    Write-Log ""
-        		    $ANS = Read-Host "Apply new configuration ? [y/n/q]"
+        		$ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
 			    if ( $ANS -eq 'q' ) { clean_and_exit 1 }
 		    }
 	    }
@@ -320,8 +457,7 @@ Function check_init_setup_dir() {
 #############################################################################################
 Function import_instance_svmdr() {
     $svmdrCONFBASE="c:\Scripts\SVMDR\etc"
-    $DirImport=Read-Host "Please enter Directory from where to import SVMDR instances [$svmdrCONFBASE]"
-    if( $DirImport.Length -eq 0){$DirImport=$svmdrCONFBASE}
+    $DirImport=Read-HostDefault "Please enter Directory from where to import SVMDR instances" $svmdrCONFBASE
     if ( ( Test-Path $DirImport -pathType container ) -eq $False ) 
     {
         Write-LogError "ERROR: Unable find new item $DirImport"
@@ -390,15 +526,15 @@ Function show_instance_list() {
             $myMode=$read_conf.Get_Item("INSTANCE_MODE")
             $myBackupCluster=$read_conf.Get_Item("BACKUP_CLUSTER")
             if($myMode -eq "DR"){
-                Write-Log "Instance [$Instance]: CLUSTER PRIMARY     [$myPrimaryCluster]"
-                Write-Log "Instance [$Instance]: CLUSTER SECONDARY   [$mySecondaryCluster]"
-                Write-Log "Instance [$Instance]: LOCAL DB            [$mySvmdrDB]"
-                Write-Log "Instance [$Instance]: INSTANCE MODE       [$myMode]"
+                Write-Log "Instance [$Instance]: CLUSTER PRIMARY     [$myPrimaryCluster]" -firstValueIsSpecial
+                Write-Log "Instance [$Instance]: CLUSTER SECONDARY   [$mySecondaryCluster]" -firstValueIsSpecial
+                Write-Log "Instance [$Instance]: LOCAL DB            [$mySvmdrDB]" -firstValueIsSpecial
+                Write-Log "Instance [$Instance]: INSTANCE MODE       [$myMode]" -firstValueIsSpecial
             }
             if($myMode -eq "BACKUP_RESTORE"){
-                Write-Log "Instance [$Instance]: BACKUP CLUSTER      [$myBackupCluster]"
-                Write-Log "Instance [$Instance]: LOCAL DB            [$mySvmdrDB]"
-                Write-Log "Instance [$Instance]: INSTANCE MODE       [$myMode]"    
+                Write-Log "Instance [$Instance]: BACKUP CLUSTER      [$myBackupCluster]" -firstValueIsSpecial
+                Write-Log "Instance [$Instance]: LOCAL DB            [$mySvmdrDB]" -firstValueIsSpecial
+                Write-Log "Instance [$Instance]: INSTANCE MODE       [$myMode]"  -firstValueIsSpecial
             }
         }
         if($ResetPassword)
@@ -420,7 +556,7 @@ Function show_instance_list() {
                         if ( $read_vconf -ne $null )
                         {
                             $myVserver=$VserverFile.Split('.')[0]
-                            Write-Log "Instance [$Instance]: SVM DR Relation     [$myVserver -> $myVserverDR]"
+                            Write-Log "Instance [$Instance]: SVM DR Relation     [$myVserver -> $myVserverDR]"  -firstValueIsSpecial
                         }
                     }
                 }
@@ -442,7 +578,7 @@ Function show_instance_list() {
             $ANS='n'
             $otherCredName=$otherCred.Name
             $otherCredName=$otherCredName.Replace(".cred","")
-            $ANS=Read-Host "Do you really want to reset Credentials for $otherCredName ? [y/n]"
+            $ANS=Read-HostOptions "Do you really want to reset Credentials for $otherCredName ?" "y/n"
             if ( $ANS -eq 'y')
             {
                 Write-LogDebug "Reset Credential for $otherCredName"
@@ -457,10 +593,10 @@ Try {
 	$Return = $True
 	$myConfDir=$Global:CONFBASEDIR + $Instance + '\'
         if ( ( Test-Path $myConfDir -pathType container ) -eq $False ) {
-		Write-LogError "ERROR: [$Instance] No such configuration, unable to delete"
+		Write-LogError "ERROR: [$Instance] No such configuration, unable to delete"  -firstValueIsSpecial
 		$Return = $false
 	} else {
-		$ANS = Read-host "Do you really want to remove this configuration instance [$Instance] ? [y/n]"
+		$ANS = Read-HostOptions "Do you really want to remove this configuration instance [$Instance]" "y/n"
 		if ( $ANS -eq 'y' ) {
 			Write-LogDebug "Remove-Item -Recurse $myConfDir"
 			Remove-Item -Recurse $myConfDir  -ErrorVariable ErrorVar
@@ -732,10 +868,7 @@ Catch {
 Function ask_IpAddr_from_cli ([string]$myIpAddr ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskIPAddr = Read-Host "Please Enter a valid IP Address [$myIPAddr]"
-		if ( ( $AskIPAddr -eq $null ) -or ( $AskIPAddr -eq "" ) ) {
-				$AskIPAddr = $myIpAddr
-		}
+		$AskIPAddr = Read-HostDefault "Please Enter a valid IP Address" $myIPAddr
 		if ( ( validate_ip_format $AskIPAddr ) -eq $True ) {
 				$loop = $False
 				return $AskIPAddr
@@ -749,10 +882,7 @@ Function ask_IpAddr_from_cli ([string]$myIpAddr ) {
 Function ask_gateway_from_cli ([string]$myGateway ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskGateway = Read-Host "Please Enter a valid Default Gateway Address [$myGateway]"
-		if ( ( $AskGateway -eq $null ) -or ( $AskGateway -eq "" ) ) {
-				$AskGateway = $myGateway
-		}
+		$AskGateway = Read-HostDefault "Please Enter a valid Default Gateway Address" $myGateway
 		if ( ( validate_ip_format -IpAddr $AskGateway -AllowNullIP ) -eq $True ) {
 				$loop = $False
 				return $AskGateway
@@ -766,10 +896,7 @@ Function ask_gateway_from_cli ([string]$myGateway ) {
 Function ask_NetMask_from_cli ([string]$myNetMask ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskNetMask = Read-Host "Please Enter a valid IP NetMask [$myNetMask]"
-		if ( ( $AskNetMask -eq $null ) -or ( $AskNetMask -eq "" ) ) {
-				$AskNetMask = $myNetMask
-		}
+		$AskNetMask = Read-HostDefault "Please Enter a valid IP NetMask" $myNetMask
 		if ( ( validate_ip_format $AskNetMask ) -eq $True ) {
 				$loop = $False
 				return $AskNetMask
@@ -779,35 +906,76 @@ Function ask_NetMask_from_cli ([string]$myNetMask ) {
 }
 
 #############################################################################################
-Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myNode, [string]$myQuestion ) {
+Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myNode, [string]$myQuestion,[string]$myDefault ) {
 	$NodePortSelectedList = @()
- 	$NodePortList=Get-NcNetPort -role data -node $myNode  -Controller $myController  -ErrorVariable ErrorVar
+ 	$NodePortList=Get-NcNetPort -role data,node_mgmt -node $myNode  -Controller $myController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
 	if ( $NodePortList -eq $null ) {
 		Write-LogError "ERROR: Unable to list Ports for node $myNode $myController" 
 		clean_and_exit 1
 	}
+
 	$i = 0 
 	foreach ( $NodePort in ( $NodePortList | Skip-Null ) ) {
 		$i++ 
 		$tmpStr=$NodePort.Name
 		$Link=$NodePort.LinkStatus
+        $Role=$NodePort.Role
 		$NodePortSelectedList += $tmpStr
-		Write-Log "`t[$i] : [$NodePort] status [$Link]"
+		Write-Log "`t[$i] : [$NodePort] role [$Role] status [$Link]" -firstValueIsSpecial
 	}
+
+    # lets find the best default match from the list
+    # lucky to have 1 on 1 ?
+    $mySelectedDefault = ""
+    if($NodePortSelectedList -match "$myDefault"){
+        $mySelectedDefault = $myDefault
+    }else{
+        # no exact match - is it a vlan ?
+        if($myDefault -match "[^-]+-([0-9]+)"){
+            $myDefaultVlan=$Matches[1]
+            # do we have a same vlan ?
+            $similarVlans = ($NodePortSelectedList -match "[^-]+-$myDefaultVlan$")
+            if($similarVlans){
+                $mySelectedDefault=@($similarVlan)[0]
+            }
+        }
+    }
+    # still no vlan ?  Then map to a non data vlan
+    if(-not $mySelectedDefault){
+        $NonVlanDataPortList = @($NodePortList | ?{$_.Role = "data" -and $_.Name -notmatch "[^-]+-[0-9]+"})
+        if($NonVlanDataPortList){
+            $mySelectedDefault = $NonVlanDataPortList[0].Name
+        }else{
+            # no non-vlan data ports, lets try just non-vlan ports
+            $NonVlanPortList = @($NodePortList | ?{$_.Name -notmatch "[^-]+-[0-9]+"})
+            if($NonVlanPortList){
+                $mySelectedDefault = $NonVlanPortList[0].Name
+            }
+        }
+    }
+
+    # get default index
+    $myDefaultIndex = [array]::indexof($NodePortSelectedList,$mySelectedDefault)
+    $myDefaultIndex++
+    if($myDefaultIndex -eq 0){
+        # non found, just pick the last
+        $myDefaultIndex = $i
+    }
 	Write-Log "$myQuestion"
 	$ErrNodePort = $True 
 	while ( $ErrNodePort -eq $True ) {
 		$ErrAns = $True 
 		while ( $ErrAns -eq $True ) {
-			$ans = Read-Host "Select Port 1-$i [$i]"
-			if ($ans -eq "" ) { $ans = "$i" }
+			$ans = Read-HostDefault "Select Port 1-$i" $myDefaultIndex
+			if ($ans -eq "" ) { $ans = "$myDefaultIndex" }
 			if ($ans -match  "^[0-9]" ) { 
 				$ErrAns = $False
 			}
 		}
-		$index=[int]$ans ; $index --
-		$NodePortSelected=$NodePortSelectedList[$index]
+		$index=[int]$ans;$index --
+        $NodePortSelected=$NodePortSelectedList[$index]
+		
 		if ( $NodePortSelected -ne $null ) { $ErrNodePort = $False }
 	}
 	return $NodePortSelected
@@ -833,14 +1001,13 @@ Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController
 	Write-Log "$myQuestion"
 	foreach ( $Node in ( $NodeSelectedList | Skip-Null ) ) {
 		$i++ 
-		Write-Log "`t[$i] : [$Node]"
+		Write-Log "`t[$i] : [$Node]" -firstValueIsSpecial
 	}
 	$ErrNode = $True 
 	while ( $ErrNode -eq $True ) {
 		$ErrAns = $True 
 		while ( $ErrAns -eq $True ) {
-			$ans = Read-Host "Select Node 1-$i [$i]"
-			if ($ans -eq "" ) { $ans = "$i" }
+			$ans = Read-HostDefault "Select Node 1-$i" $i
 			if ($ans -match  "^[0-9]" ) { 
 				$ErrAns = $False
 			}
@@ -874,7 +1041,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 				$Nodes=$Aggr.Nodes
 				$Size= [math]::round($Aggr.Available/1GB)
 				$AggrSelectedList += $tmpStr
-				Write-Log "`t[$i] : [$Aggr]`t[$Nodes]`t[$Size GB]"
+				Write-Log "`t[$i] : [$Aggr]`t[$Nodes]`t[$Size GB]" -firstValueIsSpecial
 			}
 		}
 		if ( $i -eq 0 ) {
@@ -886,8 +1053,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 		while ( $ErrAggr -eq $True ) {
 			$ErrAns = $True 
 			while ( $ErrAns -eq $True ) {
-				$ans = Read-Host "[$ctrlName] Select Aggr 1-$i [$i]"
-				if ($ans -eq "" ) { $ans = "$i" }
+				$ans = Read-HostDefault "[$ctrlName] Select Aggr 1-$i" $i
 				if ($ans -match  "^[0-9]" ) { 
 					$ErrAns = $False
 				}
@@ -896,7 +1062,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			$AggrSelected=$AggrSelectedList[$index]
 			if ( $AggrSelected -ne $null ) { $ErrAggr = $False }
 		}
-		$ans=Read-Host "[$ctrlName] You have selected the aggregate [$AggrSelected] ? [y/n]"
+		$ans=Read-HostOptions "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" "y/n"
 	}
 	return $AggrSelected
 }
@@ -1000,7 +1166,7 @@ Function create_update_vscan_dr (
                             while($ANS -ne 'n')
                             {
                                 $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($myScannerPoolVscanServers[$num++])
-                                $ANS=read-host "Do you want to add another Scan Server ? [y/n]"
+                                $ANS=Read-HostOptions "Do you want to add another Scan Server ?" "y/n"
                             }
                             Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1033,7 +1199,7 @@ Function create_update_vscan_dr (
                     while($ANS -ne 'n')
                     {
                         $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($PrimaryScannerPoolVscanServers[$num++])
-                        $ANS=read-host "Do you want to add another Scan Server ? [y/n]"
+                        $ANS=Read-HostOptions "Do you want to add another Scan Server ?" "y/n"
                     }
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -2225,7 +2391,7 @@ Function create_update_fpolicy_dr(
                             while($ANS -ne 'n')
                             {
                                 $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli($myFpolicyEnginePrimaryServers[$num++])
-                                $ANS=read-host "Do you want to add more Primary External Server ? [y/n]"
+                                $ANS=Read-HostOptions "Do you want to add more Primary External Server ?" "y/n"
                             }
                             if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
                                 -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null)) )
@@ -2244,7 +2410,7 @@ Function create_update_fpolicy_dr(
                                 while($ANS -ne 'n')
                                 {
                                     $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli($myFpolicyEngineSecondaryServers[$num++])
-                                    $ANS=read-host "Do you want to add more Secondary External Server ? [y/n]"
+                                    $ANS=Read-HostOptions "Do you want to add more Secondary External Server ?" "y/n"
                                 }        
                             }
                             [void]$global:mutexconsole.ReleaseMutex()
@@ -2353,7 +2519,7 @@ Function create_update_fpolicy_dr(
                     while($ANS -ne 'n')
                     {
                         $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli($myFpolicyEnginePrimaryServers[$num++])
-                        $ANS=read-host "Do you want to add more Primary External Server ? [y/n]"
+                        $ANS=Read-HostOptions "Do you want to add more Primary External Server ?" "y/n"
                     }
                     if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
                     {
@@ -2364,7 +2530,7 @@ Function create_update_fpolicy_dr(
                         while($ANS -ne 'n')
                         {
                             $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli($myFpolicyEngineSecondaryServers[$num++])
-                            $ANS=read-host "Do you want to add more Secondary External Server ? [y/n]"
+                            $ANS=Read-HostOptions "Do you want to add more Secondary External Server ?" "y/n"
                         }    
                     }
                     [void]$global:mutexconsole.ReleaseMutex()
@@ -3479,7 +3645,7 @@ Function create_update_efficiency_policy_dr(
                         }else{
                             $SecondaryVersion=(Get-NcSystemVersionInfo -Controller $mySecondaryController).VersionTupleV
                             if($SecondaryVersion.Major -ge 9 -and $SecondaryVersion.Minor -ge 3){
-                                Write-Log "[auto] Efficiency Policy already exist since ONTAP 9.3 as a factory Policy." 
+                                Write-Log "[auto] Efficiency Policy already exist since ONTAP 9.3 as a factory Policy."
                                 continue  
                             }
                         }
@@ -4854,18 +5020,12 @@ Try {
                             Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                             [void]$global:mutexconsole.ReleaseMutex()
                         }
-                        do{
-                            $ANS=Read-Host "Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ? [y/n]"
-                            #if($ANS.Length -eq 0){$ANS='n'}
-                            }
-                        while($ANS -ne 'y' -and $ANS -ne 'n')
+                        $ANS=Read-HostOptions "Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ?" "y/n"
                         if ( $ANS -eq 'n' ) {
                             Write-LogDebug "SelectVolume volume [$PrimaryVolName] excluded"
                             if($PreviousSelectVolumes.contains($PrimaryVolName)){
                                 Write-Log "[$PrimaryVolName] was previously selected for replication"
-                                do{
-                                    $ANS=Read-Host "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]  [y/n]"
-                                }while($ANS -ne 'y' -and $ANS -ne 'n')
+                                $ANS=Read-HostOptions "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]?" "y/n"
                                 if($ANS -eq 'y'){
                                     if((delete_snapmirror_relationship $myPrimaryController $mySecondaryController $myPrimaryVserver $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: delete_snapmirror_relationship failed";return $false}
                                     if((umount_volume $mySecondaryController $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: umount_volume failed";return $false}
@@ -4987,32 +5147,11 @@ Try {
             }
         }
 	}
+
 	return $Return  
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5117,29 +5256,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
     }
 }
@@ -5226,29 +5343,7 @@ Try {
     return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5277,29 +5372,7 @@ Function read_subdir (
                 $Return=$False
             }
         }catch{
-            $ErrorMessage = $_.Exception.Message
-            $FailedItem = $_.Exception.ItemName
-            $Type = $_.Exception.GetType().FullName
-            $CategoryInfo = $_.CategoryInfo
-            $ErrorDetails = $_.ErrorDetails
-            $Exception = $_.Exception
-            $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-            $InvocationInfoLine = $_.InvocationInfo.Line
-            $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-            $PipelineIterationInfo = $_.PipelineIterationInfo
-            $ScriptStackTrace = $_.ScriptStackTrace
-            $TargetObject = $_.TargetObject
-            Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-            Write-LogDebug  "Trap Item: [$FailedItem]"
-            Write-LogDebug  "Trap Type: [$Type]"
-            Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-            Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-            Write-LogDebug  "Trap Exception: [$Exception]"
-            Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-            Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-            Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-            Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-            Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+            handle_error $_ $myPrimaryVserver
             return $Return    
         }
     } 
@@ -5481,29 +5554,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5563,29 +5614,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5631,29 +5660,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5697,29 +5704,7 @@ Try {
 	return $ReturnVserverPeerList 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5817,29 +5802,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5881,29 +5844,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5953,30 +5894,7 @@ Function set_snapmirror_schedule_dr(
     }
     Catch 
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-        Write-logDebug "set_snapmirror_schedule_dr: end"
+        handle_error $_ $myPrimaryVserver
         return $Return
     }
 }
@@ -6015,29 +5933,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -6102,29 +5998,7 @@ Function wait_snapmirror_dr(
     } 
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -6285,7 +6159,7 @@ Try {
                             if($MirrorState -eq 'snapmirrored')
                             {
                                 Write-LogError "ERROR: The relation [$SourceLocation] [$DestinationLocation] status is [$RelationshipStatus] [$MirrorState] " 
-                                $ANS=Read-Host "Do you want to break this relation ? [y/n]"
+                                $ANS=Read-HostOptions "Do you want to break this relation ?" "y/n"
                                 if ( $ANS -eq 'y' ) 
                                 {
                                     Write-Log "Break relation [$SourceLocation] -> [$DestinationLocation]"
@@ -6359,29 +6233,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -6455,29 +6307,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -6598,16 +6428,16 @@ Try {
                 while ( ( $ANS1 -eq 'y' ) -and ( $ANS2 -eq 'n' ) ) 
                 {
                     $LIF = '[' + $PrimaryInterfaceName + '] [' + $PrimaryAddress + '] [' + $PrimaryNetMask + '] [' + $PrimaryGateway + '] [' + $PrimaryCurrentNode + '] [' + $PrimaryCurrentPort + ']'  
-                    $ANS1 = Read-Host "[$myPrimaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ? [y/n]"	
+                    $ANS1 = Read-HostOptions "[$mySecondaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ?" "y/n"
                     if ( $ANS1 -eq 'y' ) 
                     {
                         $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress 
                         $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask
                         $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway
                         $myNode=select_node_from_cli -myController $mySecondaryController -myQuestion "Please select secondary node for LIF [$PrimaryInterfaceName] :" 
-                        $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] "
+                        $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] " -myDefault $PrimaryCurrentPort
                         $LIF = '[' + $PrimaryInterfaceName + '] [' + $myIpAddr + '] [' + $myNetMask +  '] [' + $myGateway + '] [' +$myNode + '] [' + $myPort + ']'					
-                            $ANS2 = Read-Host "[$myPrimaryVserver] Ready to create the LIF $LIF ? [y/n]"
+                            $ANS2 = Read-HostOptions "[$mySecondaryVserver] Ready to create the LIF $LIF ?" "y/n"
                         if ( $ANS2 -eq 'y' ) 
                         {
                             Write-Log "Create the LIF $LIF"
@@ -6655,7 +6485,7 @@ Try {
                                 {
                                     Write-Log "[$workOn] No default Gateway for lif [$PrimaryInterfaceName]"
                                     if ( $SecondaryGateway -ne $null  ) {
-                                        $ANS3 = read-host "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ? [y/n] "
+                                        $ANS3 = Read-HostOptions "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ?" "y/n"
                                         if ( $ANS3 -eq 'y' ) 
                                         {
                                             $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -6723,29 +6553,7 @@ Try {
 }
     Catch 
     {
-	    $ErrorMessage = $_.Exception.Message
-	    $FailedItem = $_.Exception.ItemName
-	    $Type = $_.Exception.GetType().FullName
-	    $CategoryInfo = $_.CategoryInfo
-	    $ErrorDetails = $_.ErrorDetails
-	    $Exception = $_.Exception
-	    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	    $InvocationInfoLine = $_.InvocationInfo.Line
-        $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	    $PipelineIterationInfo = $_.PipelineIterationInfo
-	    $ScriptStackTrace = $_.ScriptStackTrace
-	    $TargetObject = $_.TargetObject
-	    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	    Write-LogDebug  "Trap Item: [$FailedItem]"
-	    Write-LogDebug  "Trap Type: [$Type]"
-	    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	    Write-LogDebug  "Trap Exception: [$Exception]"
-	    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
 	    return $Return
     }
 }
@@ -6816,13 +6624,7 @@ Try {
                             }
                             Write-Log "[$workOn] All DNS nameserver are not available on DR"
                             Write-LogDebug "Do you want to force creation of DNS without verify config on destination?"
-                            $Good_ans=$False
-                            while($Good_ans -eq $False){
-                                $ans=Read-Host "[$myPrimaryVserver]Do you want to force creation of DNS without verify config on destination? [y|n]"
-                                if($ans -match 'y|n'){
-                                    $Good_ans=$True
-                                }    
-                            }
+                            $ans=Read-HostOptions "[$myPrimaryVserver]Do you want to force creation of DNS without verify config on destination?" "y/n"
                             [void]$global:mutexconsole.ReleaseMutex()
                             if($ans -eq "y"){
                                 Write-LogDebug "New-NcNetDns -Domains $PrimaryDomains -NameServers $PrimaryNameServers -State $PrimaryDnsState -SkipConfigValidation -TimeoutSeconds $PrimaryTimeout -Attempts $PrimaryAttempts -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
@@ -6871,29 +6673,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -6982,29 +6762,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -7108,29 +6866,7 @@ Try {
 	return $NfsServiceDiff 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -7227,31 +6963,43 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
+}
+
+#############################################################################################
+Function check_update_CIFS_server_dr (
+    [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
+	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
+	[string] $myPrimaryVserver,
+    [string] $mySecondaryVserver,
+    [string]$workOn=$mySecondaryVserver
+) {
+
+    Try {
+	    $Return=$false
+
+        # check first before tryingt sync
+        $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+        if ( $PrimaryCifsServerInfos -eq $null ) {
+            Write-Log "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
+            return $false
+        }
+        $SecondaryCifsServerInfos = Get-NcCifsServer -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+        if ( $SecondaryCifsServerInfos -eq $null ) {
+            Write-LogWarn "[$workOn] No CIFS Server in Vserver [$mySecondaryVserver]:[$mySecondaryController]"
+            Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
+            return $false
+        }
+        return $true
+    }
+    Catch {
+        handle_error $_ $myPrimaryVserver
+	    return $Return
+    }
 }
 
 #############################################################################################
@@ -7266,6 +7014,12 @@ Function update_CIFS_server_dr (
 
 Try {
 	$Return=$True
+
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
+          Write-LogDebug "update_CIFS_server_dr: end"
+          return $false
+    }
+
     Write-Log "[$workOn] Check SVM CIFS Server options"
     Write-LogDebug "update_CIFS_server_dr[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
@@ -7418,29 +7172,7 @@ Try {
     }
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -7526,29 +7258,7 @@ Try {
     return $Return
 }
 Catch {
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     return $Return
 }
 }
@@ -7618,29 +7328,7 @@ Try {
     return $True 
 }
 Catch {
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     return $Return
 }
 }
@@ -7919,9 +7607,7 @@ Try {
                 [void]$global:mutexconsole.ReleaseMutex()
             }
             if($LDAPclientAdDomain.length -gt 0){
-                $ANS=Read-Host "[$mySecondaryVserver] Enter Active Directory Domain [$LDAPclientAdDomain]"
-                if($ANS.length -eq 0){$ANS=$LDAPclientAdDomain}
-                $LDAPclientAdDomain=$ANS
+                $LDAPclientAdDomain=Read-HostDefault "[$mySecondaryVserver] Enter Active Directory Domain" $LDAPclientAdDomain
                 $ldapserverslist=@()
                 $existingPreferedADServers=$LDAPclientPreferredAdServers
                 $index=0
@@ -7933,12 +7619,11 @@ Try {
                         $previousPreferedServer=$existingPreferedADServers    
                     }
                     do{
-                        $ldapserver=Read-Host "[$mySecondaryVserver] Enter AD Prefered LDAP server IP [$previousPreferedServer]"
-                        if($ldapserver.Length -eq 0){$ldapserver=$previousPreferedServer}
+                        $ldapserver=Read-HostDefault "[$mySecondaryVserver] Enter AD Prefered LDAP server IP []" $previousPreferedServer
                     }
                     while(validate_ip_format $ldapserver)
                     $ldapserverslist+=$ldapserver
-                    $ANS=Read-Host "[$mySecondaryVserver] Do you want to add another AD Prefered LDAP server [y/n]"
+                    $ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to add another AD Prefered LDAP server ?" "y/n"
                 }
                 while($ANS -eq "y")
                 $LDAPclientADServers=$ldapserverslist
@@ -8015,13 +7700,11 @@ Try {
                         }
                     }else{$previsousServer=""}
                     do{
-                        $ANS=Read-Host "[$mySecondaryVserver] Enter LDAP server IP [$previousServer]"
-                        if($ANS.Length -eq 0){$ANS=$previousServer}
-                        $server=$ANS
+                        $server=Read-HostDefault "[$mySecondaryVserver] Enter LDAP server IP" $previousServer
                     }
                     while((validate_ip_format $server) -eq $False)
                     $serverslist+=$server
-                    $ANS=Read-Host "[$mySecondaryVserver] Do you want to add another LDAP server [y/n]"
+                    $ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to add another LDAP server" "y/n"
                 }
                 while($ANS -eq "y")
                 do{
@@ -8115,29 +7798,7 @@ Try {
     return $True 
 }
 Catch {
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     return $Return
 }
 }
@@ -8224,14 +7885,13 @@ Try {
             $ADCred = get_local_cred ($SecondaryDomain)
             $ANS = 'n'
             while ( $ANS -ne 'y' ) {
-                $ReadInput = Read-Host "[$myPrimaryVserver] Please Enter your default Secondary CIFS server Name [$SecondaryCifsServer]"
-                if ( $ReadInput -ne "" -and $ReadInput.length -gt 0 ) { $SecondaryCifsServer=$ReadInput }
+                $SecondaryCifsServer = Read-HostDefault "[$mySecondaryVserver] Please Enter your default Secondary CIFS server Name" $SecondaryCifsServer
                 if ( ( $SecondaryDomain -eq $PrimaryCifsServerInfos.Domain ) -and ( $SecondaryCifsServer -eq $PrimaryCifsServerInfos.CifsServer ) ) { 
                     Write-LogError "ERROR: Secondary CIFS server cannot use the same name has primary CIFS server in the same domain"
                 } else {
                         Write-Log "[$workOn] Default Secondary CIFS Name:      [$SecondaryCifsServer]"
                     Write-Log ""
-                        $ANS = Read-Host "[$workOn] Apply new configuration ? [y/n]"
+                        $ANS = Read-HostOptions "[$workOn] Apply new configuration ?" "y/n"
                 }
             }
             $myInterfaceName=""
@@ -8279,9 +7939,11 @@ Try {
                         }
                     }
                     if($oneDRLIFupReady -eq $False){
-                        Write-Log "[$workOn] Impossible to switch DR LIF to up because of duplicate IP address with Source Vserver"
-                        Write-Log "[$workOn] Impossible to register CIFS server on DR Vserver"
-                        Write-Log "[$workOn] Configure a temporary IP address on DR Vserver to be able to register your CIFS server"
+                        Write-LogWarn "[$workOn] Impossible to switch DR LIF to up because of duplicate IP address with Source Vserver"
+                        Write-LogWarn "[$workOn] Impossible to register CIFS server on DR Vserver"
+                        Write-LogWarn "[$workOn] Configure a temporary IP address on DR Vserver to be able to register your CIFS server"
+                        $ans = Read-HostOptions -question "I will wait here, so you can create that temp lif.  Is it done ?" "y/n"
+                        if($ans -eq "y"){$oneDRLifupReady=$true}
                     }
                 }
                 if($oneDRLIFupReady -eq $True){
@@ -8317,29 +7979,7 @@ Try {
 	return $True 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -8357,6 +7997,12 @@ Function create_update_CIFS_shares_dr (
 Try {
 
 	$Return=$True
+
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
+          Write-LogDebug "create_update_CIFS_shares_dr: end"
+          return $false
+    }
+
     Write-Log "[$workOn] Check SVM CIFS shares"
     Write-LogDebug "create_update_CIFS_shares_dr[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
@@ -8430,7 +8076,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
 
         if ( $PrimaryCifsServerInfos -eq $null ) {
-            Write-Log "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]" 
+            Write-Log "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
             Write-LogDebug "create_update_CIFS_shares_dr[$myPrimaryVserver]: end"
             return $True
         }
@@ -8836,29 +8482,7 @@ $request=@"
 	return $True
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError "Trap Error: [$ErrorMessage]"
-	Write-LogDebug "Trap Item: [$FailedItem]"
-	Write-LogDebug "Trap Type: [$Type]"
-	Write-LogDebug "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug "Trap Exception: [$Exception]"
-	Write-LogDebug "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -8933,29 +8557,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -9002,18 +8604,18 @@ Function show_vserver_dr (
 
             Write-Host "PRIMARY SVM      :"
             Write-Host "------------------"
-            Write-Host "Cluster Name           : [$myPrimaryController]"
-            Write-Host "Vserver Name           : [$PrimaryVserver]"
-            Write-Host "Vserver Root Volume    : [$PrimaryRootVolume]"
-            Write-Host "Vserver Root Security  : [$PrimaryRootVolumeSecurityStyle]"
-            Write-Host "Vserver Language       : [$PrimaryLanguage]"
-            Write-Host "Vserver Protocols      : [$PrimaryAllowedProtocols]"
+            Format-ColorBrackets "Cluster Name           : [$myPrimaryController]"
+            Format-ColorBrackets "Vserver Name           : [$PrimaryVserver]"
+            Format-ColorBrackets "Vserver Root Volume    : [$PrimaryRootVolume]"
+            Format-ColorBrackets "Vserver Root Security  : [$PrimaryRootVolumeSecurityStyle]"
+            Format-ColorBrackets "Vserver Language       : [$PrimaryLanguage]"
+            Format-ColorBrackets "Vserver Protocols      : [$PrimaryAllowedProtocols]"
             $PrimaryNameServiceList= Get-NcNameServiceNsSwitch -Controller $myPrimaryController -Vserver $myPrimaryVserver  -ErrorVariable ErrorVar 
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNameService failed [$ErrorVar]" }
             foreach ( $PrimaryNameService in ( $PrimaryNameServiceList ) | skip-Null ) {
                 $NameServiceDatabase = $PrimaryNameService.NameServiceDatabase
                 $NameServiceSources = $PrimaryNameService.NameServiceSources
-                Write-Host "Vserver NsSwitch       : [$NameServiceDatabase] [$NameServiceSources]"
+                Format-ColorBrackets "Vserver NsSwitch       : [$NameServiceDatabase] [$NameServiceSources]"
             }
 
             $PrimaryInterfaceList = Get-NcNetInterface -Role DATA -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
@@ -9032,58 +8634,58 @@ Function show_vserver_dr (
                 $PrimaryDefaultRoute=Get-NcNetRoutingGroupRoute -RoutingGroup $PrimaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
                 $PrimaryGateway=$PrimaryDefaultRoute.GatewayAddress
                 $LIF = '['  + $PrimaryStatus + '] [' + $PrimaryInterfaceName + '] [' + $PrimaryAddress + '] [' + $PrimaryNetMask + '] [' + $PrimaryGateway + '] [' + $PrimaryCurrentNode + '] [' + $PrimaryCurrentPort + ']'
-                Write-Host "Logical Interface      : $LIF"
+                Format-ColorBrackets "Logical Interface      : $LIF"
             }
 
             # Verify if NFS service is Running if yes the stop it
             $NfsService = Get-NcNfsService -VserverContext  $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
             if ( $NfsService -eq $null )
             {
-                Write-Host "NFS Services           : [no]"
+                Format-ColorBrackets "NFS Services           : [no]"
             } 
             else 
             {
                 if ( $NfsService.GeneralAccess -eq $True ) 
                 {
-                    Write-Host "NFS Services           : [up]"
+                    Format-ColorBrackets "NFS Services           : [up]"
                 } 
                 else 
                 {
-                    Write-Host "NFS Services           : [down]"
+                    Format-ColorBrackets "NFS Services           : [down]"
                 }
             }
             # Verify if CIFS Service is Running if yes stop it
             $CifService = Get-NcCifsServer  -VserverContext  $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
             if ( $CifService -eq $null ) 
             {
-                Write-Host "CIFS Services          : [no]"
+                Format-ColorBrackets "CIFS Services          : [no]"
             } 
             else 
             {
                 if ( $CifService.AdministrativeStatus -eq 'up' ) 
                 {
-                    Write-Host "CIFS Services          : [up]"
+                    Format-ColorBrackets "CIFS Services          : [up]"
                 } 
                 else 
                 {
-                    Write-Host "CIFS Services          : [down]"
+                    Format-ColorBrackets "CIFS Services          : [down]"
                 }
             }
             # Verify if ISCSI service is Running if yes the stop it
             $IscsiService = Get-NcIscsiService -VserverContext  $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
             if ( $IscsiService -eq $null ) 
             {
-                Write-Host "ISCSI Services         : [no]"
+                Format-ColorBrackets "ISCSI Services         : [no]"
             } 
             else 
             {
                 if ( $IscsiService.IsAvailable -eq $True ) 
                 {
-                    Write-Host "ISCSI Services         : [up]"
+                    Format-ColorBrackets "ISCSI Services         : [up]"
                 } 
                 else 
                 {
-                    Write-Host "ISCSI Services         : [down]"
+                    Format-ColorBrackets "ISCSI Services         : [down]"
                 }
             }
             Write-Host ""
@@ -9108,18 +8710,18 @@ Function show_vserver_dr (
 
             Write-Host "SECONDARY SVM (DR)   :"
             Write-Host "----------------------"
-            Write-Host "Cluster Name           : [$mySecondaryController]"
-            Write-Host "Vserver Name           : [$SecondaryVserver]"
-            Write-Host "Vserver Root Volume    : [$SecondaryRootVolume]"
-            Write-Host "Vserver Root Security  : [$SecondaryRootVolumeSecurityStyle]"
-            Write-Host "Vserver Language       : [$SecondaryLanguage]"
-            Write-Host "Vserver Protocols      : [$SecondaryAllowedProtocols]"
+            Format-ColorBrackets "Cluster Name           : [$mySecondaryController]"
+            Format-ColorBrackets "Vserver Name           : [$SecondaryVserver]"
+            Format-ColorBrackets "Vserver Root Volume    : [$SecondaryRootVolume]"
+            Format-ColorBrackets "Vserver Root Security  : [$SecondaryRootVolumeSecurityStyle]"
+            Format-ColorBrackets "Vserver Language       : [$SecondaryLanguage]"
+            Format-ColorBrackets "Vserver Protocols      : [$SecondaryAllowedProtocols]"
             $SecondaryNameServiceList= Get-NcNameServiceNsSwitch -Controller $mySecondaryController -Vserver $mySecondaryVserver  -ErrorVariable ErrorVar 
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNameService failed [$ErrorVar]" }
             foreach ( $SecondaryNameService in ( $SecondaryNameServiceList ) | skip-Null ) {
                 $NameServiceDatabase = $SecondaryNameService.NameServiceDatabase
                 $NameServiceSources = $SecondaryNameService.NameServiceSources
-                Write-Host "Vserver NsSwitch       : [$NameServiceDatabase] [$NameServiceSources]"
+                Format-ColorBrackets "Vserver NsSwitch       : [$NameServiceDatabase] [$NameServiceSources]"
             }
 
             $SecondaryInterfaceList = Get-NcNetInterface -Role DATA -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
@@ -9138,39 +8740,39 @@ Function show_vserver_dr (
                 $SecondaryDefaultRoute=Get-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                 $SecondaryGateway=$SecondaryDefaultRoute.GatewayAddress
                 $LIF = '['  + $SecondaryStatus + '] [' + $SecondaryInterfaceName + '] [' + $SecondaryAddress + '] [' + $SecondaryNetMask + '] [' + $SecondaryGateway + '] [' + $SecondaryCurrentNode + '] [' + $SecondaryCurrentPort + ']' 
-                Write-Host "Logical Interface      : $LIF"
+                Format-ColorBrackets "Logical Interface      : $LIF"
             }
             # Verify if NFS service is Running if yes the stop it
             $NfsService = Get-NcNfsService -VserverContext  $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
             if ( $NfsService -eq $null ) {
-                Write-Host "NFS Services           : [no]"
+                Format-ColorBrackets "NFS Services           : [no]"
             } else {
                 if ( $NfsService.GeneralAccess -eq $True ) {
-                    Write-Host "NFS Services           : [up]"
+                    Format-ColorBrackets "NFS Services           : [up]"
                 } else {
-                    Write-Host "NFS Services           : [down]"
+                    Format-ColorBrackets "NFS Services           : [down]"
                 }
             }
             # Verify if CIFS Service is Running if yes stop it
             $CifService = Get-NcCifsServer  -VserverContext  $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
             if ( $CifService -eq $null ) {
-                Write-Host "CIFS Services          : [no]"
+                Format-ColorBrackets "CIFS Services          : [no]"
             } else {
                 if ( $CifService.AdministrativeStatus -eq 'up' ) {
-                    Write-Host "CIFS Services          : [up]"
+                    Format-ColorBrackets "CIFS Services          : [up]"
                 } else {
-                    Write-Host "CIFS Services          : [down]"
+                    Format-ColorBrackets "CIFS Services          : [down]"
                 }
             }
             # Verify if ISCSI service is Running if yes the stop it
             $IscsiService = Get-NcIscsiService -VserverContext  $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
             if ( $IscsiService -eq $null ) {
-                Write-Host "ISCSI Services         : [no]"
+                Format-ColorBrackets "ISCSI Services         : [no]"
             } else {
                 if ( $IscsiService.IsAvailable -eq $True ) {
-                    Write-Host "ISCSI Services         : [up]"
+                    Format-ColorBrackets "ISCSI Services         : [up]"
                 } else {
-                    Write-Host "ISCSI Services         : [down]"
+                    Format-ColorBrackets "ISCSI Services         : [down]"
                 }
             }
             Write-Host ""
@@ -9219,8 +8821,8 @@ Function show_vserver_dr (
                 $PrimaryVolMSID=$PrimaryVol.VolumeIdAttributes.Msid
                 if ( $SecondaryVserver -eq $null ) {
                     $PrimaryVolAttr="${PrimaryVolName}:${PrimaryVolStyle}:${PrimaryVolLang}:${PrimaryVolExportPolicy}:${PrimaryVolJunctionPath}"
-                    Write-Host "Primary:   [$PrimaryVolAttr]"
-                    Write-Host "Secondary: [$SecondaryVolAttr]`n" -F red
+                    Format-ColorBrackets "Primary:   [$PrimaryVolAttr]"
+                    Format-ColorBrackets "Secondary: [$SecondaryVolAttr]`n" -F red
                 } 
                 else  
                 {
@@ -9243,21 +8845,21 @@ Function show_vserver_dr (
                     if($MSID -eq $True){
                         if ( ($PrimaryVolAttr -eq $SecondaryVolAttr) -and ( $SecondaryVolMSID -eq $PrimaryVolMSID) ) 
                         {
-                            Write-Host "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]"
-                            Write-Host "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n"
+                            Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]"
+                            Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n"
                         }
                         else{
-                            Write-Host "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]" 
-                            Write-Host "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" -F yellow
+                            Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]" 
+                            Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" -F yellow
                         }
                     } 
                     elseif ($PrimaryVolAttr -eq $SecondaryVolAttr)
                     {
-                        Write-Host "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
-                        Write-Host "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n"
+                        Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
+                        Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n"
                     }else{
-                        Write-Host "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
-                        Write-Host "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n" -F yellow
+                        Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
+                        Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n" -F yellow
                     }
                 }
             }
@@ -9281,7 +8883,7 @@ Function show_vserver_dr (
                 $SecondaryVolIsInfiniteVolume=$SecondaryVol.IsInfiniteVolume
                 $SecondaryVolIsVserverRoot=$SecondaryVol.VolumeStateAttributes.IsVserverRoot
                 $SecondaryVolAttr="${SecondaryVolName}:${SecondaryVolStyle}:${SecondaryVolLang}:${SecondaryVolExportPolicy}:${SecondaryVolJunctionPath}"
-                Write-Host "Secondary:   [$SecondaryVolAttr] [$SecondaryVolType]"
+                Format-ColorBrackets "Secondary:   [$SecondaryVolAttr] [$SecondaryVolType]"
             }
         }  
         else 
@@ -9327,7 +8929,7 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Write-Host $rel
+                    Format-ColorBrackets $rel
                 }
                 else
                 {
@@ -9338,7 +8940,7 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Write-Host $rel -F red
+                    Format-ColorBrackets $rel -F red
                 }
             }
         }
@@ -9380,7 +8982,7 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Write-Host $rel
+                    Format-ColorBrackets $rel
                 }
                 else
                 {
@@ -9391,36 +8993,14 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Write-Host $rel -F red
+                    Format-ColorBrackets $rel -F red
                 }
             }
         }
     }
     Catch 
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     }
 }
 
@@ -9467,7 +9047,7 @@ function check_create_dir{
         [string]
         $Vserver
     )
-    if($debuglevel){Write-Log "[$Vserver] FullPath = [$FullPath]"}
+    if($debuglevel){Write-Log "[$Vserver] FullPath = [$FullPath]"} 
     $Path=Split-Path $FullPath
     if($debuglevel){Write-Log "[$Vserver] Path = [$Path]"}
     if(Test-Path $Path){
@@ -9536,7 +9116,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
         if ( $SecondaryVserver -ne $null ) 
         {
-            Write-Log "Vserver $mySecondaryVserver already exist on $mySecondaryController"
+            Write-Log "[$mySecondaryVserver] already exist on $mySecondaryController"
             $SecondaryRootVolume = $SecondaryVserver.RootVolume
             $SecondaryRootVolumeSecurityStyle = $SecondaryVserver.RootVolumeSecurityStyle
             $SecondaryLanguage = $SecondaryVserver.Language
@@ -9622,12 +9202,9 @@ Try {
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
     if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_share" ; $Return = $False } 
-    $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
-    if($? -and $PrimaryCifsServerInfos){
-        $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
-    }else{
-        Write-LogDebug "Skipping cifs update - no cifs found"
-    }
+
+    $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
+
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$myPrimaryVserver]"    
     }
@@ -9645,7 +9222,7 @@ Try {
 	if ( ( $ret=create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn -DDR $DDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; $Return = $False }
 	if ( ( $ret=create_update_snap_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {Write-LogError "ERROR: create_update_snap_policy_dr"}
 	if($Backup -eq $False -and $Restore -eq $False){
-        $ASK_WAIT=Read-Host "[$mySecondaryVserver] Do you want to wait the end of snapmirror transfers and mount all volumes and map LUNs $mySecondaryVserver now ? [y/n]"
+        $ASK_WAIT=Read-HostOptions "[$mySecondaryVserver] Do you want to wait the end of snapmirror transfers and mount all volumes and map LUNs $mySecondaryVserver now ?" "y/n"
     }else{
         $ASK_WAIT='y'
     }
@@ -9691,29 +9268,7 @@ Try {
     Write-LogDebug "create_vserver_dr [$myPrimaryVserver]: end"
 	return $Return 
 } Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -9807,29 +9362,7 @@ Try {
     Write-LogDebug "update_msid_dr: end"
     return $Return 
 } Catch {
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     return $Return
 }
 }
@@ -9959,29 +9492,7 @@ Try {
     Write-logDebug "restamp_msid: end" 
     return $Return
 }catch{
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
     return $Return
 }
 }
@@ -10069,29 +9580,7 @@ Try {
 
 }
 catch{
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -10114,7 +9603,7 @@ Try {
 		return $true
 	}
 
-	$ANS=Read-Host "Do You really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ? [y/n]" 
+	$ANS=Read-HostOptions "Do You really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		return $true
 	}
@@ -10183,29 +9672,7 @@ Try {
 	return $true 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -10299,29 +9766,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -10377,7 +9822,7 @@ Try {
 			if ( $NoInteractive ) { $Return = $False } 
             else 
             {
-				$ANS=Read-Host "[$mySecondaryVserver] Do you want to break this relation ? [y/n]"
+				$ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to break this relation ?" "y/n"
 				if ( $ANS -eq 'y' ) 
                 {
 					Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"
@@ -10398,29 +9843,7 @@ Try {
         }
 	}
 } Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 }
     Write-LogDebug "break_snapmirror_vserver_dr: end"
 	return $Return 
@@ -10505,29 +9928,7 @@ try{
     }
 } 
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 }
     Write-LogDebug "migrate_lif: end"
 	return $Return 
@@ -10554,7 +9955,7 @@ try{
     if($serverExist -eq $null){Write-LogDebug "No CIFS server, skip"; return $Return}
     else{
         if($NotInteractive -eq $False){
-            $ANS=read-host "Set CIFS server down on [$myPrimaryVserver]. Do you want to continue ? [y/n]"
+            $ANS=Read-HostOptions "Set CIFS server down on [$myPrimaryVserver]. Do you want to continue ?" "y/n"
             if($ANS -ne 'y'){Write-LogDebug "Exit Migrate CIFS server: Not ready";return $False}
         }
         Write-LogDebug "Get-NcCifsServer -VserverContext $myPrimaryVserver -Controller $myPrimaryController"
@@ -10573,29 +9974,7 @@ try{
     }
 
 } Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 }
     Write-LogDebug "migrate_cifs_server: end"
 	return $Return 
@@ -10613,6 +9992,12 @@ Function update_cifs_usergroup (
     [bool]$Restore) {
 try{    
     $Return = $True
+
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
+          Write-LogDebug "update_cifs_usergroup: end"
+          return $false
+    }
+
     Write-Log "[$workOn] Update CIFS Local User & Local Group"
     Write-LogDebug "update_cifs_usergroup[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
@@ -10656,9 +10041,7 @@ try{
             try{
                 $ans='n'
                 if($NoInteractive -eq $False){
-                    do{
-                        $ans=Read-Host "[$mySecondaryVserver] Do you want to reset Password for User [$SecondaryUserName] on [$mySecondaryVserver]? [y|n]"
-                    }while($ans -notmatch "y|n")
+                    $ans=Read-HostOptions "[$mySecondaryVserver] Do you want to reset Password for User [$SecondaryUserName] on [$mySecondaryVserver]?" "y/n"
                 }
                 if($ans -eq 'n'){
                     if($PrimaryCifsServer -ne $SecondaryCifsServer){$SecondaryUserName=$SecondaryUserName -replace $SecondaryCifsServer,$PrimaryCifsServer}
@@ -10666,7 +10049,7 @@ try{
                 }else{
                     Write-LogDebug "Remove-NcCifsLocalUser -UserName $SecondaryUserName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
                     try{
-                        $out=Remove-NcCifsLocalUser -UserName $SecondaryUserName -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+                        $out=Remove-NcCifsLocalUser -UserName $SecondaryUserName -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False -EA stop
                         if ( $? -ne $True ) { Write-LogDebug "ERROR: Remove-NcCifsLocalUser failed [$ErrorVar]" }
                     }catch{
                         $ErrorMessage = $_.Exception.Message
@@ -10705,6 +10088,7 @@ try{
     if($Backup -eq $False){
         foreach($User in $PrimaryUserList | Where-Object {$_.UserName -notin $UserKeeped} | Skip-Null){
             $UserName=$User.UserName
+
             $UserDisabled=$User.Disabled
             $UserDescription=$User.Description
             $UserFullname=$User.FullName
@@ -10749,7 +10133,7 @@ try{
                         $out=Set-NcCifsLocalUser -UserName $UserName -FullName $UserFullname -Description $UserDescription -IsAccountDisable $UserDisabled -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; [void]$global:mutexconsole.ReleaseMutex();throw "ERROR: Set-NcCifsLocalUser failed [$ErrorVar]" }
                     }catch{
-                        Write-Warning "[$myPrimaryVserver] Impossible to modify CIFS local user [$UserName] on [$mySecondaryVserver] reason [$ErrorVar]"
+                        Write-Warning "[$myPrimaryVserver] Impossible to modify CIFS local user [$UserName] on [$mySecondaryVserver] reason [$_.Description]"
                         $modok=$False
                     }
                 }while($modok -eq $False)
@@ -10804,6 +10188,7 @@ try{
                 }while($addok -eq $false)
                 [void]$global:mutexconsole.ReleaseMutex()
             }
+
         }
     }
     if($Backup -eq $False){
@@ -10924,29 +10309,7 @@ try{
     Write-LogDebug "update_cifs_usergroup[$myPrimaryVserver]: end"
     return $True
 } Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 }
     Write-LogDebug "update_cifs_usergroup: end"
 	return $Return 
@@ -11113,7 +10476,7 @@ Try {
 
 	Write-LogDebug "disable_network_protocol_vserver_dr: start"
 
-	$ANS=Read-Host "Ready to disable all Network Services in SVM [$myVserver] from  cluster [$myController] ? [y/n]"
+	$ANS=Read-HostOptions "Ready to disable all Network Services in SVM [$myVserver] from  cluster [$myController] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		return $Return
 	}
@@ -11193,29 +10556,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -11289,29 +10630,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -11324,7 +10643,7 @@ Function activate_vserver_dr (
 	$Return = $True
 	Write-LogDebug "activate_vserver_dr: start"
 	
-	$ANS=Read-Host "Do You really want to activate SVM [$mySecondaryVserver] from cluster [$myController] ? [y/n]"
+	$ANS=Read-HostOptions "Do You really want to activate SVM [$mySecondaryVserver] from cluster [$myController] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
         Write-LogDebug "activate_vserver_dr: end"
 		clean_and_exit 1
@@ -11485,29 +10804,7 @@ Function resync_reverse_vserver_dr (
     }
     Catch 
     {
-	    $ErrorMessage = $_.Exception.Message
-	    $FailedItem = $_.Exception.ItemName
-	    $Type = $_.Exception.GetType().FullName
-	    $CategoryInfo = $_.CategoryInfo
-	    $ErrorDetails = $_.ErrorDetails
-	    $Exception = $_.Exception
-	    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	    $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	    $PipelineIterationInfo = $_.PipelineIterationInfo
-	    $ScriptStackTrace = $_.ScriptStackTrace
-	    $TargetObject = $_.TargetObject
-	    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	    Write-LogDebug  "Trap Item: [$FailedItem]"
-	    Write-LogDebug  "Trap Type: [$Type]"
-	    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	    Write-LogDebug  "Trap Exception: [$Exception]"
-	    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
 	    return $Return
     }
 }
@@ -11579,29 +10876,7 @@ Function resync_vserver_dr (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -11694,29 +10969,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
     }
 }
@@ -11774,29 +11027,7 @@ Function create_subdir (
                 if($DebugLevel){Write-LogDebug "directory [$searchPath] aleready exist"}
             }
         }catch{
-            $ErrorMessage = $_.Exception.Message
-            $FailedItem = $_.Exception.ItemName
-            $Type = $_.Exception.GetType().FullName
-            $CategoryInfo = $_.CategoryInfo
-            $ErrorDetails = $_.ErrorDetails
-            $Exception = $_.Exception
-            $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-            $InvocationInfoLine = $_.InvocationInfo.Line
-            $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-            $PipelineIterationInfo = $_.PipelineIterationInfo
-            $ScriptStackTrace = $_.ScriptStackTrace
-            $TargetObject = $_.TargetObject
-            Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-            Write-LogDebug  "Trap Item: [$FailedItem]"
-            Write-LogDebug  "Trap Type: [$Type]"
-            Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-            Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-            Write-LogDebug  "Trap Exception: [$Exception]"
-            Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-            Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-            Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-            Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-            Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+            handle_error $_ $myPrimaryVserver
             return $Return    
         }
     } 
@@ -11909,29 +11140,7 @@ Function mount_volume (
         Write-logDebug "mount_volume: end $myVolumeName"
         return $Return  
     }catch{
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-        $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return    
     }                 
     Write-logDebug "mount_volume: end $myVolumeName"
@@ -12031,29 +11240,7 @@ Try {
         Write-logDebug "remove_volume: end"
         return $Return
     }catch{
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-        $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return
     }
 }
@@ -12122,30 +11309,8 @@ Try {
     Write-logDebug "delete_snapmirror_relationship: end"
     return $Return
     }catch{
-    $ErrorMessage = $_.Exception.Message
-    $FailedItem = $_.Exception.ItemName
-    $Type = $_.Exception.GetType().FullName
-    $CategoryInfo = $_.CategoryInfo
-    $ErrorDetails = $_.ErrorDetails
-    $Exception = $_.Exception
-    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    $InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    $PipelineIterationInfo = $_.PipelineIterationInfo
-    $ScriptStackTrace = $_.ScriptStackTrace
-    $TargetObject = $_.TargetObject
-    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    Write-LogDebug  "Trap Item: [$FailedItem]"
-    Write-LogDebug  "Trap Type: [$Type]"
-    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    Write-LogDebug  "Trap Exception: [$Exception]"
-    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-    return $Return
+        handle_error $_ $myPrimaryVserver
+        return $Return
     }
 }
 
@@ -12239,29 +11404,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -12355,29 +11498,7 @@ Try {
   	Return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -12411,29 +11532,7 @@ Function get_volumes_from_selectvolumedb (
     }
     Catch 
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-        $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return
     }
 }
@@ -12469,29 +11568,7 @@ Function Is_SelectVolumedb (
             return $False   
         }    
     }catch{
-        $ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -12554,29 +11631,7 @@ Function Purge_SelectVolumedb (
         }
            
     }catch{
-        $ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -12648,29 +11703,7 @@ Function Save_Volume_To_Selectvolumedb (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -12775,29 +11808,7 @@ Function save_vol_options_to_voldb (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -12945,29 +11956,7 @@ Function set_vol_options_from_voldb (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -13127,29 +12116,7 @@ Function save_shareacl_options_to_shareacldb (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -13209,7 +12176,7 @@ Function set_shareacl_options_from_shareacldb (
       			Write-LogDebug "Read SHAREACL_DB_FILE for Cluster [$ClusterName] Vserver [$VserverName] : [$SHAREACL_DB_FILE]"
     			if ( ( Test-Path $SHAREACL_DB_FILE  )  -eq $false ) 
                 {
-    				Write-Log "[$myVserver] No ShareAcl files found for Cluster [$ClusterName]"  
+    				Write-Log "[$myVserver] No ShareAcl files found for Cluster [$ClusterName]"
     			} 
                 else 
                 {
@@ -13276,29 +12243,7 @@ Function set_shareacl_options_from_shareacldb (
     }
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
     	return $Return
     }
 }
@@ -13562,29 +12507,7 @@ Function create_quota_rules_from_quotadb (
     }
     Catch 
     {
-	    $ErrorMessage = $_.Exception.Message
-	    $FailedItem = $_.Exception.ItemName
-	    $Type = $_.Exception.GetType().FullName
-	    $CategoryInfo = $_.CategoryInfo
-	    $ErrorDetails = $_.ErrorDetails
-	    $Exception = $_.Exception
-	    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	    $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	    $PipelineIterationInfo = $_.PipelineIterationInfo
-	    $ScriptStackTrace = $_.ScriptStackTrace
-	    $TargetObject = $_.TargetObject
-	    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	    Write-LogDebug  "Trap Item: [$FailedItem]"
-	    Write-LogDebug  "Trap Type: [$Type]"
-	    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	    Write-LogDebug  "Trap Exception: [$Exception]"
-	    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
 	    return $Return
     }
 }
@@ -13666,29 +12589,7 @@ Try {
    return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -13910,29 +12811,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
