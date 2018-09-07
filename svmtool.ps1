@@ -1,24 +1,21 @@
 <#
 .SYNOPSIS
-    The svmdr script allow to manage DR relationship at SVM level
+    The svmdr script allows to manage DR relationship at SVM level
 .DESCRIPTION
-    This script create and manage Disaster Recovery SVM for ONTAP cluster
+    This script creates and manages Disaster Recovery SVM for ONTAP cluster
 .PARAMETER Vserver
     Vserver Name of the source Vserver
 .PARAMETER Instance
     Instance Name which will associate two cluster for a DR scenario
-    An instance could manage one or several SVM DR relationship inside the corresponding cluster
+    An instance could manage one or several SVM DR relationships inside the corresponding cluster
 .PARAMETER RootAggr
-    Optional argument
-    Allow to set a default aggregate for SVM root volume creation
+    Allows to set a default aggregate for SVM root volume creation
     Used only with ConfigureDR option
 .PARAMETER DataAggr
-    Optional argument
-    Allow to set a default aggregate for all SVM data volume creation
+    Allows to set a default aggregate for all SVM data volume creation
     Used only with ConfigureDR, UpdateDR, UpdateReverse arguments
 .PARAMETER MirrorSchedule
-    Optional argument
-    Allow to set a SnapMirror automatic update schedule for Source to DR relationship 
+    Allows to set a SnapMirror automatic update schedule for Source to DR relationship 
 .PARAMETER MirrorScheduleReverse
     Optional argument
     Allow to set a SnapMirror automatic update schedule for DR to Source relationship 
@@ -35,8 +32,7 @@
 .PARAMETER Help
     Display help message
 .PARAMETER ResetPassword
-    Optional argument
-    Allow to reset all password stored for all instances 
+    Allows to reset all passwords stored for all instances
 .PARAMETER HTTP
     Optional argument
     Allow to connect controller with HTTP instead of HTTPS
@@ -223,64 +219,306 @@
 	In that case, all volumes will be restored as Read/Write (RW) volume.
 .NOTES
     Author  : Olivier Masson
-    Version : August 25th, 2018
+    Author  : Mirko Van Colen
+    Version : September 5th, 2018
+    Version History : 
+        - 0.0.3 : Initial version 
+        - 0.0.4 : Bugfix, typos and added ParameterSets
+        - 0.0.5 : Bugfixes, advancements and colorcoding
 #>
-[CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool")]
+[CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName=’ListInstance’)]
 Param (
 	#[int32]$Debug = 0,
-    [string]$Vserver,
-	[string]$Instance,
-	[string]$RootAggr,
-	[string]$DataAggr,
-	[string]$MirrorSchedule,
-    [string]$MirrorScheduleReverse,
-	[switch]$ListInstance,
-	[switch]$ImportInstance,
-	[string]$RemoveInstance,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Setup')]
 	[switch]$Setup,
-	[switch]$Help,
-	[switch]$ResetPassword,
-	[switch]$HTTP,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
     [switch]$ConfigureDR,
-	[string]$Backup,
-	[string]$Restore,
-	[string]$Destination="",
-	[switch]$ShowDR,
-	[switch]$Lag,
-	[switch]$Schedule,
-	[switch]$DeleteDR,
-	[switch]$RemoveDRConf,
+
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
 	[switch]$UpdateDR,
-    [switch]$DeleteSource,
-    [switch]$Migrate,
-	[switch]$CreateQuotaDR,
-	[switch]$ReCreateQuota,
-	[switch]$CorrectQuotaError,
-	[switch]$IgnoreQtreeExportPolicy,
-	[switch]$IgnoreQuotaOff,
-	[switch]$LastSnapshot,
-	[switch]$UpdateReverse,
-	[switch]$CleanReverse,
-	[switch]$Resync,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
+	[switch]$ShowDR,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
 	[switch]$ActivateDR,
-	[switch]$ForceActivate,
-	[switch]$ForceDeleteQuota,
-    [switch]$ForceRecreate,
+
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
+	[switch]$DeleteDR,
+
+    [Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
+    [switch]$RemoveDRConf,
+
+    [Parameter(Mandatory = $true,ParameterSetName='ResyncReverse')]
 	[switch]$ResyncReverse,
+
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
+	[switch]$UpdateReverse,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
 	[switch]$ReActivate,
+
+    [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
+	[switch]$CleanReverse,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Resync')]
+	[switch]$Resync,
+    
+    [Parameter(Mandatory = $true,ParameterSetName='Version')]
 	[switch]$Version,
-	[switch]$NoLog,
-    [switch]$Silence,
-    [switch]$Recreateconf,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ListInstance')]
+	[switch]$ListInstance,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ImportInstance')]
+	[switch]$ImportInstance,
+
+    [Parameter(Mandatory = $true, ParameterSetName='RemoveInstance')]
+	[string]$RemoveInstance,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Backup')]
+	[string]$Backup,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Restore')]
+	[string]$Restore,
+
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorSchedule')]
+	[string]$MirrorSchedule,
+
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
+    [string]$MirrorScheduleReverse,
+
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
+    [switch]$DeleteSource,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Migrate')]
+    [switch]$Migrate,
+
+    [Parameter(Mandatory = $true, ParameterSetName='CreateQuotaDR')]
+	[switch]$CreateQuotaDR,
+
+    [Parameter(Mandatory = $true, ParameterSetName='ReCreateQuota')]
+	[switch]$ReCreateQuota,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Help')]
+	[switch]$Help,
+
+    [Parameter(Mandatory = $true, ParameterSetName='InternalTest')]
 	[switch]$InternalTest,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $true, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $true, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $true, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $true, ParameterSetName='InternalTest')]
+    [string]$Vserver,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[string]$Instance,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[string]$RootAggr,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [switch]$AlwaysChooseDataAggr,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
 	[switch]$SelectVolume,
-	[switch]$SelectBackupDate,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [switch]$DRfromDR,
-    [switch]$MSID,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [string]$XDPPolicy="MirrorAllSnapshots",
-	[switch]$DebugLevel,
+
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[string]$DataAggr,
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[switch]$LastSnapshot,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$CorrectQuotaError,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$IgnoreQtreeExportPolicy,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$IgnoreQuotaOff,
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [switch]$ForceDeleteQuota,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+	[switch]$ForceActivate,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [switch]$MSID,
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+	[switch]$Lag,
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+	[switch]$Schedule,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ListInstance')]
+	[switch]$ResetPassword,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [switch]$ForceRecreate,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Backup')]
+    [switch]$Recreateconf,
+
+    [Parameter(Mandatory = $true, ParameterSetName='Restore')]
+	[string]$Destination="",
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[switch]$SelectBackupDate,
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
 	[switch]$RW,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[switch]$HTTP,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[switch]$NoLog,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+    [switch]$Silent,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[switch]$DebugLevel,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
 	[Int32]$Timeout = 60
 	#[Int32]$ErrorAction = 0
 )
@@ -293,7 +531,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.3"
+$Global:RELEASE="0.0.5"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -437,7 +675,7 @@ if ( $Backup ) {
     $Run_Mode="Backup"
     Write-Log "SVMTOOL Run Backup"
     if ((Test-Path $CONFFILE) -eq $True ) {
-		Write-Log "use Config File [$CONFFILE]"
+		Write-Log "use Config File [$CONFFILE]"s
 		$read_conf = read_config_file $CONFFILE ;
 		if ( $read_conf -eq $null ){
         		Write-LogError "ERROR: read configuration file $CONFFILE failed"
@@ -445,7 +683,7 @@ if ( $Backup ) {
         }
         $SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
         if($RecreateConf -eq $True){
-            $ANS=Read-Host "Configuration file already exist. Do you want to recreate it ? [y/n]"
+            $ANS=Read-HostOptions "Configuration file already exist. Do you want to recreate it ?" "y/n"
             if ( $ANS -ne 'y' ) { $RecreateConf=$False }
         }
     }
@@ -453,12 +691,10 @@ if ( $Backup ) {
 		Write-Log "Create new Config File"
         $ANS='n'
         while ( $ANS -ne 'y' ) {
-            $ReadInput = Read-Host "Please enter Backup directory where configuration will be backup [$SVMTOOL_DB]"
-            if(!$ReadInput -and $SVMTOOL_DB.Length -gt 0){Write-LogDebug "Keep previous value [$SVMTOOL_DB]"}
-            elseif (($ReadInput) -ne "" ) { $SVMTOOL_DB=$ReadInput }
+            $SVMTOOL_DB = Read-HostDefault "Please enter Backup directory where configuration will be backup" $SVMTOOL_DB
             Write-Log "SVMTOOL Backup directory:  [$SVMTOOL_DB]"
             Write-Log ""
-                $ANS = Read-Host "Apply new configuration ? [y/n/q]"
+                $ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
             if ( $ANS -eq 'q' ) { clean_and_exit 1 }
             write-Output "#" | Out-File -FilePath $CONFFILE  
 			write-Output "SVMTOOL_DB=$SVMTOOL_DB\$Backup" | Out-File -FilePath $CONFFILE -Append 
@@ -556,13 +792,13 @@ if ( $Backup ) {
 			$file=split-path -Path $LOGFILE -Leaf
 			$Global:LOGFILE=($dir+'\'+$myPrimaryVserver+'\'+$file)
 			check_create_dir -FullPath $global:LOGFILE -Vserver $myPrimaryVserver
-			Write-Log "[$myPrimaryVserver] Log File is [$global:LOGFILE]"
+			Write-Log "[$myPrimaryVserver] Log File is [$global:LOGFILE]" -firstValueIsSpecial
 			rotate_log
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$($SVMTOOL_DB+"\"+$myPrimaryVserver+"\"+$BackupDate+"\")
-			Write-Log "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]"
+			Write-Log "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]" -firstValueIsSpecial
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
-			Write-Log "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]"
+			Write-Log "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]" -firstValueIsSpecial
             if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
 				return $False
@@ -722,12 +958,11 @@ if ( $Restore ) {
 					foreach($date in $listBackupAvailable){
 						$numFiles=(Get-ChildItem $($SVMTOOL_DB+"\"+$svm+"\"+$date+"\") | Measure-Object).Count
 						$datetime=[datetime]::parseexact($date,"yyyyMMddHHmmss",$null)
-						Write-Host "`t$i : [$datetime] [$numFiles Files]"
+						Format-ColorBrackets "`t[$i] : [$datetime] [$numFiles Files]" -FirstIsSpecial
 						$i++
 					}
-					$Query="Please select Backup from (1.."+($i-1)+") ["+($i-1)+"] ?"
-					$ans=Read-Host $Query
-					if($ans.length -eq 0){$ans=$listBackupAvailable.count}
+					$Query="Please select Backup from (1.."+$listBackupAvailable.count+")"
+					$ans=Read-HostDefault $Query $listBackupAvailable.count
 					$ans=[int]$ans/1
 					if(($ans -notmatch "[0-9]") -or ($ans -lt 1 -or $ans -gt $listBackupAvailable.count)){Write-Warning "Bad input";$ans=$null}
 				}
@@ -738,7 +973,7 @@ if ( $Restore ) {
 				$date=$LastBackup.Name
 				$datetime=[datetime]::parseexact($date,"yyyyMMddHHmmss",$null)
 				$numFiles=(Get-ChildItem $($SVMTOOL_DB+"\"+$svm+"\"+$date+"\") | Measure-Object).Count
-				Write-Log "[$svm] Last Backup date is [$datetime] with [$numFiles Files]"
+				Write-Log "[$svm] Last Backup date is [$datetime] with [$numFiles Files]" -firstValueIsSpecial
 			}
 		}
 		$JsonPath=$($SVMTOOL_DB+"\"+$svm+"\"+$date+"\")
@@ -916,7 +1151,10 @@ if ($RemoveDRconf) {
 	Write-LogOnly "SVMDR RemoveDRconf"
 	if ((Test-Path $VCONFFILE ) -eq $True ) {
 		Remove-Item $VCONFFILE
-	}
+        Write-Log "$VCONFFILE removed successfully..." -color green
+	}else{
+        Write-Log "No such config [$VCONFFILE] found..." -color yellow
+    }
         clean_and_exit 1 ;
 }
 
@@ -1086,7 +1324,7 @@ if ( $ConfigureDR ) {
 
 	Write-LogDebug "AllowQuotaDR [$AllowQuotaDr]"
 	if ( $AllowQuotaDR -eq "True" ) {
-		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" 
+		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" -firstValueIsSpecial
 		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcPrimaryCtrl -myPrimaryVserver $Vserver -mySecondaryController $NcSecondaryCtrl -mySecondaryVserver $VserverDR ) -ne $True ) {
  			Write-LogError "ERROR: save_quota_rules_to_quotadb failed"
  			clean_and_exit 1
@@ -1151,10 +1389,10 @@ if($Migrate){
     Write-Warning "SVM DR script does not manage FCP configuration and SYMLINK"
     Write-Warning "You will have to backup and recreate all these configurations manually after the Migrate step"
     Write-Warning "Files Locks are not migrated during the Migration process"
-    $ASK_WAIT=Read-Host "Does all Client have cleanly saves their jobs [$Vserver] ? [y/n]"
+    $ASK_WAIT=Read-HostOptions "Have all clients saved their work [$Vserver] ?" "y/n"
     if($ASK_WAIT -eq 'y'){
-        Write-LogDebug "Client ready to migrate. User choose to continue migration procedure"
-		Write-Log "[$VserverDR] Run last UpdateDR"
+        Write-LogDebug "Clients ready to migrate. User chose to continue migration procedure"
+		Write-Log "[$VserverDR] Run last UpdateDR" -firstValueIsSpecial
 		if ( ( $ret=create_update_cron_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl ) -ne $True ) {
 			Write-LogError "ERROR: create_update_cron_dr"
 		}
@@ -1215,7 +1453,7 @@ if($Migrate){
 			Write-LogError "ERROR: restamp_msid failed"
 			clean_and_exit 1
 		}
-        $ASK_MIGRATE=Read-Host "IP and Services will switch now for [$Vserver]. Ready to go ? [y/n]"
+        $ASK_MIGRATE=Read-HostOptions "IP and Services will switch now for [$Vserver]. Ready to go ?" "y/n"
         if($ASK_MIGRATE -eq 'y'){
 		    if ( ( $ret=migrate_lif -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 			    Write-LogError "ERROR: migrate_lif failed"
@@ -1288,7 +1526,7 @@ if($Migrate){
                     Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
                 }
             }
-		    $ASK_WAIT2=Read-Host "Do you want to delete Vserver [$Vserver] on source cluster [$PrimaryClusterName]? [y/n]"        
+		    $ASK_WAIT2=Read-HostOptions "Do you want to delete Vserver [$Vserver] on source cluster [$PrimaryClusterName] ?" "y/n"       
             if($ASK_WAIT2 -eq 'y'){
 
                 if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
@@ -1371,7 +1609,7 @@ if( $DeleteSource ) {
         clean_and_exit 1
     }else{
         Write-Warning "Delete Source SVM could not be interrupted or rollback"
-        $ASK_WAIT=Read-Host "Do you want to completely delete [$Vserver] on [$PrimaryClusterName]? [y/n]"
+        $ASK_WAIT=Read-HostOptions "Do you want to completely delete [$Vserver] on [$PrimaryClusterName] ?" "y/n"
         if($ASK_WAIT -eq 'y'){
             if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 			    Write-LogError "ERROR: remove_snapmirror_dr failed" 
@@ -1457,6 +1695,7 @@ if ( $UpdateDR ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
     }
 
+
     #if ( ( update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
     #    Write-LogError "ERROR: update_cifs_usergroup failed"
 	#	clean_and_exit 1
@@ -1470,7 +1709,7 @@ if ( $UpdateDR ) {
 		clean_and_exit 1
 	}
 	if ( $AllowQuotaDR -eq "True" ) {
-		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" 
+		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" -firstValueIsSpecial
 		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcPrimaryCtrl -myPrimaryVserver $Vserver -mySecondaryController $NcSecondaryCtrl -mySecondaryVserver $VserverDR ) -ne $True ) {
  			Write-LogError "ERROR: save_quota_rules_to_quotadb failed"
  			clean_and_exit 1
@@ -1488,7 +1727,7 @@ if ( $ActivateDR ) {
 	} 
     else 
     {
-		$ANS=Read-Host "Do you want to disable the primary vserver [$Vserver] [$PRIMARY_CLUSTER] ? [y/n]"
+		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] [$PRIMARY_CLUSTER] ? ?" "y/n"
 		if ( $ANS -eq 'y' ) {
 			$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 			$tmp_str=$MyCred.UserName
@@ -1665,7 +1904,7 @@ if ( $Resync ) {
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
-	$ANS = read-host "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] ? [y/n]"
+	$ANS = Read-HostOptions "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		clean_and_exit 0
 	}
@@ -1695,7 +1934,7 @@ if ( $ResyncReverse ) {
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
 
-	$ANS = read-host "Do you want to erase data on vserver [$Vserver] [$PRIMARY_CLUSTER] ? [y/n]"
+	$ANS = Read-HostOptions "Do you want to erase data on vserver [$Vserver] [$PRIMARY_CLUSTER] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		clean_and_exit 0
 	}
@@ -1784,7 +2023,7 @@ if ( $UpdateReverse ) {
 		Write-LogError "ERROR: create_update_snap_policy_dr"
 	}
 	if ( $AllowQuotaDR -eq "True" ) {
-		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" 
+		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" -firstValueIsSpecial
 		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $Vserver ) -ne $True ) {
  			Write-LogError "ERROR: save_quota_rules_to_quotadb failed"
  			clean_and_exit 1
@@ -1869,6 +2108,7 @@ if ( $InternalTest ) {
 		Write-LogError "ERROR: check_cluster_peer failed"
 		clean_and_exit 1
 	}
+    Write-Log "Tests completed successfully" -color green
 	# _ADD TEST
 	# _ADD TEST
 	clean_and_exit 0 
