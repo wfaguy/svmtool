@@ -1,8 +1,11 @@
 <#
 .SYNOPSIS
-    The svmdr script allows to manage DR relationship at SVM level
+	The svmdr script allows to manage DR relationship at SVM level
+	It also help to Backup & Restore SVM configuration
 .DESCRIPTION
-    This script creates and manages Disaster Recovery SVM for ONTAP cluster
+	This script deploy tools to:
+		creates and manages Disaster Recovery SVM for ONTAP cluster
+		Backup & Restore full configuration settings of an SVM
 .PARAMETER Vserver
     Vserver Name of the source Vserver
 .PARAMETER Instance
@@ -41,10 +44,11 @@
     -Instance <instance name> -Vserver <vserver source name> -ConfigureDR
 .PARAMETER ShowDR
     Allow to display all informations for a particular SVM DR relationship
-    -Instance <instance name> -Vserver <vserver source name> -ShowDR [-Lag] [-schedule]
+    -Instance <instance name> -Vserver <vserver source name> -ShowDR [-Lag] [-schedule] [-MSID]
     Optional parameters:
-        Lag      : allow to display lag beetween last transfert
-        Schedule : allow to display automatic schedule set on SnapMirror relationship
+        Lag      : display lag beetween last transfert
+		Schedule : display automatic schedule set on SnapMirror relationship
+		MSID     : display volume MSID
 .PARAMETER DeleteDR
     Allow to delete a SVM DR relationship, by deleting all data and object associated to the DR SVM
     -Instance <instance name> -Vserver <vserver source name> -DeleteDR
@@ -220,13 +224,14 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : September 5th, 2018
+    Version : September 9th, 2018
     Version History : 
         - 0.0.3 : Initial version 
         - 0.0.4 : Bugfix, typos and added ParameterSets
-        - 0.0.5 : Bugfixes, advancements and colorcoding
+		- 0.0.5 : Bugfixes, advancements and colorcoding
+		- 0.0.6 : Change behaviour when SVM has no LIF, nor data volume
 #>
-[CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName=’ListInstance’)]
+[CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
 	#[int32]$Debug = 0,
 
@@ -531,7 +536,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.5"
+$Global:RELEASE="0.0.6"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -796,14 +801,18 @@ if ( $Backup ) {
 			rotate_log
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$($SVMTOOL_DB+"\"+$myPrimaryVserver+"\"+$BackupDate+"\")
-			Write-Log "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]" -firstValueIsSpecial
+			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]" -firstValueIsSpecial}
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
-			Write-Log "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]" -firstValueIsSpecial
+			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]" -firstValueIsSpecial}
             if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
 				return $False
 			}
 			Write-LogDebug "create_vserver_dr correctly finished [$ret]"
+			#if ( ( $ret=svmdr_db_switch_datafiles -myController $myPrimaryController -myVserver $myPrimaryVserver -Backup) -eq $false ) {
+			#	Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
+			#	clean_and_exit 1
+		  	#}
             return $True
         })
         $BackupJob=[System.Management.Automation.PowerShell]::Create()
@@ -1246,7 +1255,11 @@ if ( $ShowDR ) {
 		$NcSecondaryCtrl = $null
 	}
 	Write-LogDebug "show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR"
-	$ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR
+	if($MSID.IsPresent){
+		$ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -MSID
+	}else{
+		$ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR
+	}
 	clean_and_exit 0
 }
 
@@ -1292,12 +1305,10 @@ if ( $ConfigureDR ) {
 			clean_and_exit 1
 		}
 	}else{
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy)[-1] -ne $False ) {
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
 			clean_and_exit 1
 		}
 	}
-	
-
   	if ( ( $ret=svmdr_db_switch_datafiles -myController $NcPrimaryCtrl -myVserver $Vserver ) -eq $false ) {
         	Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
         	clean_and_exit 1
@@ -1306,7 +1317,7 @@ if ( $ConfigureDR ) {
 	$CifService = Get-NcCifsServer  -VserverContext  $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
 	if ( $CifService -eq $null ) {
-		Write-Log "No CIFS services in vserver [$VserverDR]"
+		Write-Log "[$VserverDR] No CIFS services"
 	} else {
 		if ( $CifService.AdministrativeStatus -eq 'up' ) {
 			Write-LogDebug "stop-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -Confirm:$False"
@@ -1386,12 +1397,12 @@ if($Migrate){
     	# Write-LogError "ERROR: analyse_junction_path" 
 		# clean_and_exit 1
 	# }
-    Write-Warning "SVM DR script does not manage FCP configuration and SYMLINK"
+    Write-Warning "SVMTOOL script does not manage FCP configuration and SYMLINK"
     Write-Warning "You will have to backup and recreate all these configurations manually after the Migrate step"
     Write-Warning "Files Locks are not migrated during the Migration process"
-    $ASK_WAIT=Read-HostOptions "Have all clients saved their work [$Vserver] ?" "y/n"
+    $ASK_WAIT=Read-HostOptions "[$Vserver] Have all clients saved their work ?" "y/n"
     if($ASK_WAIT -eq 'y'){
-        Write-LogDebug "Clients ready to migrate. User chose to continue migration procedure"
+        Write-LogDebug "Clients ready to migrate. User choose to continue migration procedure"
 		Write-Log "[$VserverDR] Run last UpdateDR" -firstValueIsSpecial
 		if ( ( $ret=create_update_cron_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl ) -ne $True ) {
 			Write-LogError "ERROR: create_update_cron_dr"
@@ -1405,11 +1416,11 @@ if($Migrate){
 			clean_and_exit 1
 		}
 
-		# if ( $LastSnapshot ) {
-				# $UseLastSnapshot = $True
-		# } else {
-				# $UseLastSnapshot = $False
-		# }
+		if ( $LastSnapshot.IsPresent ) {
+			$UseLastSnapshot = $True
+		} else {
+			$UseLastSnapshot = $False
+		}
 		if ( ( $ret=update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -NoInteractive) -ne $True ) {
 			    Write-LogError "ERROR: update_cifs_usergroup failed"   
 		}
@@ -1433,7 +1444,6 @@ if($Migrate){
 		{ 
 			Write-LogError  "ERROR: wait_snapmirror_dr failed"  
 		}
-
 		if ( ( $ret=break_snapmirror_vserver_dr -myController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
 			Write-LogError "ERROR: Unable to break all relations from Vserver [$VserverDR] on [$SecondaryClusterName]"
 			clean_and_exit 1
@@ -1477,10 +1487,10 @@ if($Migrate){
 		    $NfsService = Get-NcNfsService -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
 		    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNfsService failed [$ErrorVar]" }
 		    if ( $NfsService -eq $null ) {
-			    Write-Log "No NFS services in vserver [$VserverDR]"
+			    Write-Log "[$VserverDR] No NFS services in vserver"
 		    } else {
 			    if ( $NfsService.GeneralAccess -ne $True ) {
-				    Write-Log "Enable NFS on Vserver [$VserverDR]"
+				    Write-Log "[$VserverDR] Enable NFS"
 				    Write-LogDebug "Enable-NcNfs -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
 				    $out=Enable-NcNfs -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar -Confirm:$False
 				    if ( $? -ne $True ) {
@@ -1501,10 +1511,10 @@ if($Migrate){
 		    $IscsiService = Get-NcIscsiService -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
 		    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcIscsiService failed [$ErrorVar]" }
 		    if ( $IscsiService -eq $null ) {
-			    Write-Log "No iSCSI services in Vserver [$VserverDR]"
+			    Write-Log "[$VserverDR] No iSCSI services in Vserver"
 		    } else {
 			    if ( $IscsiService.IsAvailable -ne $True ) {
-				    Write-Log "Enable iSCSI service on Vserver [$VserverDR]"
+				    Write-Log "[$VserverDR] Enable iSCSI service on Vserver"
 				    Write-LogDebug "Enable-NcIscsi -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
 				    $out=Enable-NcIscsi -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar -Confirm:$False
 				    if ( $? -ne $True ) {
@@ -1513,8 +1523,8 @@ if($Migrate){
 				    }
 			    }
 		    }
-		    Write-Log "Vserver [$Vserver] has been migrated on destination cluster [$SecondaryClusterName]"
-		    Write-Log "Users can now connect on destination"
+		    Write-Log "[$Vserver] has been migrated on destination cluster [$SecondaryClusterName]"
+		    Write-Log "[$Vserver] Users can now connect on destination"
             if ( ( $ret=set_vol_options_from_voldb -myController $NcSecondaryCtrl -myVserver $VserverDR -NoCheck) -ne $True ) {
                 Write-LogError "ERROR: set_vol_options_from_voldb failed"
             }
@@ -1539,7 +1549,7 @@ if($Migrate){
 		            return $false
 	            }
 
-		        Write-Log "Rename Vserver [$VserverDR] to [$Vserver]"
+		        Write-Log "[$VserverDR] Renamed to [$Vserver]"
 		        Write-LogDebug "Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl"
 		        $out=Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
 		        if ( $? -ne $True ) { throw "ERROR: Rename-NcVserver failed [$ErrorVar]"} 
@@ -1548,14 +1558,14 @@ if($Migrate){
 		            Write-LogError "ERROR: remove_vserver_dr: Unable to remove vserver [$VserverDR]" 
 		            clean_and_exit 1
 	            }
-                Write-Log "SVM [$Vserver] completely removed on [$PrimaryClusterName]"
+                Write-Log "[$Vserver] completely removed on [$PrimaryClusterName]"
                 clean_and_exit 0
             }else{
-                Write-Log "User choose not to delete source Vserver [$Vserver] on cluster [$PrimaryClusterName]"
+                Write-Log "User choose not to delete source Vserver [$Vserver] on Source Cluster [$PrimaryClusterName]"
 			    Write-Log "Vserver [$Vserver] will only be stopped on [$PrimaryClusterName]"
-                Write-Log "In this case the SVM object name on [$SecondaryClusterName] is still [$VserverDR]"
-                Write-Log "But CIFS identity is correclty migrated to [$Vserser]"
-                Write-Log "Final rename will be done when [DeleteSource] step will be executed, once you are ready to completely delete [$Vserver] on [$PrimaryClusterName]"
+                Write-Log "In this case the SVM object name on Destination Cluster [$SecondaryClusterName] is still [$VserverDR]"
+                Write-Log "But CIFS identity is correclty migrated to [$Vserver]"
+                Write-Log "Final rename will be done when [-DeleteSource] step will be executed, once you are ready to completely delete [$Vserver] on Source Cluster [$PrimaryClusterName]"
 			    Write-LogDebug "Stop-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl -Confirm:$False"
 			    $ret=Stop-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl -Confirm:$False -ErrorVariable ErrorVar
 			    if ( $? -ne $True ) 
@@ -1565,13 +1575,13 @@ if($Migrate){
 			    } 
             }
         }else{
-            Write-Log "Migration process has been stopped by user"
-            Write-Log "You could restart the [Migrate] step when ready"
-            Write-Log "Or resynchronize your DR by running a [Resync -ForceRecreate] then a [ConfigureDR] step"
+            Write-Log "[$Vserver] Migration process has been stopped by user"
+            Write-Log "[$Vserver] You could restart the [Migrate] step when ready"
+            Write-Log "[$Vserver] Or resynchronize your DR by running a [Resync -ForceRecreate] then a [ConfigureDR] step"
         }
     }else{
         Write-LogDebug "Client not ready for Migrate"
-		Write-Log "Migration canceled"
+		Write-Log "[$Vserver] Migration canceled"
         clean_and_exit 1
     }
 	clean_and_exit 0
@@ -1608,7 +1618,7 @@ if( $DeleteSource ) {
         Write-Log "ERROR : SVM [$Vserver] not correctly migrated to destination [$SecondaryClusterName]. Failed to delete on source"
         clean_and_exit 1
     }else{
-        Write-Warning "Delete Source SVM could not be interrupted or rollback"
+        Write-Warning "[$Vserver] Delete Source SVM could not be interrupted or rollback"
         $ASK_WAIT=Read-HostOptions "Do you want to completely delete [$Vserver] on [$PrimaryClusterName] ?" "y/n"
         if($ASK_WAIT -eq 'y'){
             if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
@@ -1621,19 +1631,19 @@ if( $DeleteSource ) {
 		        return $false
 	        }
 
-		    Write-Log "Rename Vserver [$VserverDR] to [$Vserver]"
+		    Write-Log "[$VserverDR] Renamed to [$Vserver]"
 		    Write-LogDebug "Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl"
 		    $out=Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
 		    if ( $? -ne $True ) { throw "ERROR: Rename-NcVserver failed [$ErrorVar]"} 
-		    Write-Log "Vserver [$Vserver] will be deleted on cluster [$PrimaryClusterName]"
+		    Write-Log "[$Vserver] will be deleted on cluster [$PrimaryClusterName]"
 		    if ( ( $ret=remove_vserver_source -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -eq $False ) {
 		        Write-LogError "ERROR: remove_vserver_dr: Unable to remove vserver [$VserverDR]" 
 		        clean_and_exit 1
 	        }
-            Write-Log "SVM [$Vserver] completely deleted on [$PrimaryClusterName]"
+            Write-Log "[$Vserver] completely deleted on [$PrimaryClusterName]"
             clean_and_exit 0
         }else{
-            Write-Log "SVM [$Vserver] will not be deleted on [$PrimaryClusterName]"
+            Write-Log "[$Vserver] will not be deleted on [$PrimaryClusterName]"
             clean_and_exit 0
         }
     }
@@ -1672,8 +1682,7 @@ if ( $UpdateDR ) {
 		Write-LogError "ERROR: check_cluster_peer failed"
 		clean_and_exit 1
 	}
-
-	if ( $LastSnapshot ) {
+	if ( $LastSnapshot.IsPresent ) {
     		$UseLastSnapshot = $True
 	} else {
     		$UseLastSnapshot = $False
@@ -1689,13 +1698,9 @@ if ( $UpdateDR ) {
 			 clean_and_exit 1
 		}
 	}
-	
-
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
     }
-
-
     #if ( ( update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
     #    Write-LogError "ERROR: update_cifs_usergroup failed"
 	#	clean_and_exit 1
@@ -1984,7 +1989,7 @@ if ( $UpdateReverse ) {
 		Write-LogError "ERROR: check_cluster_peer" 
 		clean_and_exit 1
 	}
-	if ( $LastSnapshot ) {
+	if ( $LastSnapshot.IsPresent ) {
     		$UseLastSnapshot = $True
 	} else {
     		$UseLastSnapshot = $False

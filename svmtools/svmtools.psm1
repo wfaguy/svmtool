@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : September 5th, 2018
+    Release : September 9th, 2018
 #>
 
 #############################################################################################
@@ -607,30 +607,8 @@ Try {
 }
 
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-	return $false
+	handle_error $_ $myPrimaryVserver
+	return $False
 }
 }
 #############################################################################################
@@ -719,29 +697,7 @@ Try {
 }
 
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myController
 	return $false
 }
 }
@@ -764,29 +720,7 @@ Try {
 	}
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item:  [$FailedItem]"
-	Write-LogDebug  "Trap Type:  [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception:    [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $False
 }
 }
@@ -1384,30 +1318,8 @@ Function create_update_vscan_dr (
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-        return $Return        
+        handle_error $_ $myPrimaryVserver
+	    return $Return        
     }
 }
 
@@ -1491,30 +1403,8 @@ Function create_update_firewallpolicy_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-        return $false        
+        handle_error $_ $myPrimaryVserver
+	    return $false        
     }
 }
 
@@ -1604,29 +1494,7 @@ Function create_update_usermapping_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return        
     }
 }
@@ -1874,30 +1742,8 @@ Function create_update_localuser_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
-        return $Return        
+        handle_error $_ $myPrimaryVserver
+	    return $Return        
     }
 }
 
@@ -2053,29 +1899,7 @@ Function create_update_localunixgroupanduser_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return        
     }
 }
@@ -2142,7 +1966,7 @@ Function create_update_role_dr(
                     $roleCommandDirectoryName=$role.CommandDirectoryName
                     $roleQuery=$role.RoleQuery
                     $roleVserver=$mySecondaryVserver
-                    Write-Log "Delete this role : [$roleName] [$roleAccessLevel] [$roleCommandDirectoryName] from [$roleVserver]"
+                    Write-Log "[$workOn] Delete this role : [$roleName] [$roleAccessLevel] [$roleCommandDirectoryName] from [$roleVserver]"
                     Write-LogDebug "Remove-NcRole -Role $roleName -Vserver $roleVserver -CommandDirectory $roleCommandDirectoryName -Controller $mySecondaryCluster"
                     $out=Remove-NcRole -Role $roleName -Vserver $roleVserver -CommandDirectory $roleCommandDirectoryName -Controller $mySecondaryController -Confirm:$false -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return=$false; throw "Failed to delete role : [$roleName] [$roleAccessLevel] [$roleCommandDirectoryName] from [$roleVserver]"}
@@ -2154,7 +1978,7 @@ Function create_update_role_dr(
                 $roleCommandDirectoryName=$role.CommandDirectoryName
                 $roleQuery=$role.RoleQuery
                 $roleVserver=$mySecondaryVserver
-                Write-Log "Create this role : [$roleName] [$roleAccessLevel] [$roleCommandDirectoryName] [$roleQuery] on [$roleVserver]"
+                Write-Log "[$workOn] Create this role : [$roleName] [$roleAccessLevel] [$roleCommandDirectoryName] [$roleQuery] on [$roleVserver]"
                 if($roleQuery.length -eq 0 -or $roleQuery.count -eq 0){
                     Write-LogDebug "Set roleQuery to null string"
                     $roleQuery=""
@@ -2236,29 +2060,7 @@ Function create_update_role_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return       
     }
 }
@@ -2946,29 +2748,7 @@ Function create_update_fpolicy_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return        
     }
 }
@@ -3193,29 +2973,7 @@ Function create_update_qospolicy_dr(
     }
     catch
     {
-        $ErrorMessage = $_.Exception.Message
-        $FailedItem = $_.Exception.ItemName
-        $Type = $_.Exception.GetType().FullName
-        $CategoryInfo = $_.CategoryInfo
-        $ErrorDetails = $_.ErrorDetails
-        $Exception = $_.Exception
-        $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-        $PipelineIterationInfo = $_.PipelineIterationInfo
-        $ScriptStackTrace = $_.ScriptStackTrace
-        $TargetObject = $_.TargetObject
-        Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-        Write-LogDebug  "Trap Item: [$FailedItem]"
-        Write-LogDebug  "Trap Type: [$Type]"
-        Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-        Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-        Write-LogDebug  "Trap Exception: [$Exception]"
-        Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-        Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-        Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-        Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-        Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+        handle_error $_ $myPrimaryVserver
         return $Return        
     }
 }
@@ -3292,29 +3050,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $ctrlName
 	return $Return
 }
 }
@@ -3519,29 +3255,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -3640,12 +3354,12 @@ Function create_update_efficiency_policy_dr(
                             $PrimaryVersion=(Get-NcSystemVersionInfo -Controller $myPrimaryController).VersionTupleV    
                         }
                         if($PrimaryVersion.Major -ge 9 -and $PrimaryVersion.Minor -ge 3){
-                            Write-Log "[auto] Efficiency Policy is factory created since ONTAP 9.3. Bypass on destination"
+                            Write-Log "[$workOn] [auto] Efficiency Policy is factory created since ONTAP 9.3. Bypass on destination"
                             continue
                         }else{
                             $SecondaryVersion=(Get-NcSystemVersionInfo -Controller $mySecondaryController).VersionTupleV
                             if($SecondaryVersion.Major -ge 9 -and $SecondaryVersion.Minor -ge 3){
-                                Write-Log "[auto] Efficiency Policy already exist since ONTAP 9.3 as a factory Policy."
+                                Write-Log "[$workOn] [auto] Efficiency Policy already exist since ONTAP 9.3 as a factory Policy."
                                 continue  
                             }
                         }
@@ -3672,7 +3386,7 @@ Function create_update_efficiency_policy_dr(
                 } 
                 elseif (($SecondaryPolicyDuration -ne $PrimaryPolicyDuration) -or ($PrimaryPolicySchedule -ne $SecondaryPolicySchedule) -or ($PrimaryPolicyEnable -ne $SecondaryPolicyEnable) -or ($PrimaryPolicyQosPolicy -ne $SecondaryPolicyQosPolicy) -or ($PrimaryPolicyType -ne $SecondaryPolicyType) -or ($PrimaryPolicyThreshold -ne $SecondaryPolicyThreshold))
                 {
-                    Write-Log "[$mySecondaryVserver] Sis Policy [$PrimaryPolicyName] already exists with difference, will update"
+                    Write-Log "[$workOn] Sis Policy [$PrimaryPolicyName] already exists with difference, will update"
                     if($SecondaryPolicyType -eq "threshold")
                     {
                         write-logDebug "Set-NcSisPolicy -controller $mySecondaryController -VserverContext $mySecondaryVserver -name $PrimaryPolicyName -ChangelogThresholdPercent $PrimaryPolicyThreshold -PolicyType $PrimaryPolicyType -Enabled $PrimaryPolicyEnable -QosPolicy $PrimaryPolicyQosPolicy  -ErrorVariable ErrorVar"
@@ -3689,7 +3403,7 @@ Function create_update_efficiency_policy_dr(
                 }
                 else
                 {
-                    Write-Log "Sis Policy [$PrimaryPolicyName] already exist and identical"
+                    Write-Log "[$workOn] Sis Policy [$PrimaryPolicyName] already exist and identical"
                 }
             }
         }
@@ -3698,29 +3412,7 @@ Function create_update_efficiency_policy_dr(
     }
     Catch 
     {
-	    $ErrorMessage = $_.Exception.Message
-	    $FailedItem = $_.Exception.ItemName
-	    $Type = $_.Exception.GetType().FullName
-	    $CategoryInfo = $_.CategoryInfo
-	    $ErrorDetails = $_.ErrorDetails
-	    $Exception = $_.Exception
-	    $FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	    $InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	    $PipelineIterationInfo = $_.PipelineIterationInfo
-	    $ScriptStackTrace = $_.ScriptStackTrace
-	    $TargetObject = $_.TargetObject
-	    Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	    Write-LogDebug  "Trap Item: [$FailedItem]"
-	    Write-LogDebug  "Trap Type: [$Type]"
-	    Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	    Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	    Write-LogDebug  "Trap Exception: [$Exception]"
-	    Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	    Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	    Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	    Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	    Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	    handle_error $_ $myPrimaryVserver
 	    return $Return
     }
 }
@@ -3847,29 +3539,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -3973,29 +3643,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -4166,29 +3814,7 @@ Try {
 	return $Return
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-    $InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -4333,29 +3959,7 @@ Function set_serial_lundr (
     } 
     Catch 
     {
-    	$ErrorMessage = $_.Exception.Message
-    	$FailedItem = $_.Exception.ItemName
-    	$Type = $_.Exception.GetType().FullName
-    	$CategoryInfo = $_.CategoryInfo
-    	$ErrorDetails = $_.ErrorDetails
-    	$Exception = $_.Exception
-    	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-    	$InvocationInfoLine = $_.InvocationInfo.Line
-		$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-    	$PipelineIterationInfo = $_.PipelineIterationInfo
-    	$ScriptStackTrace = $_.ScriptStackTrace
-    	$TargetObject = $_.TargetObject
-    	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-    	Write-LogDebug  "Trap Item: [$FailedItem]"
-    	Write-LogDebug  "Trap Type: [$Type]"
-    	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-    	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-    	Write-LogDebug  "Trap Exception: [$Exception]"
-    	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-    	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-    	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-    	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-    	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+    	handle_error $_ $myPrimaryVserver
     }
 	if ( $NeedChangeSerial ) 
     {
@@ -4441,29 +4045,7 @@ Try {
 	Return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -4573,29 +4155,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -4623,6 +4183,10 @@ Function set_all_lif(
     if($Restore -eq $True){
         if(Test-Path $($Global:JsonPath+"Get-NcNetInterface.json")){
             $lifssource=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") | ConvertFrom-Json
+            if($lifssource -eq $null){
+                Write-LogDebug "No Lif on source vserver"
+                return $True
+            }
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetInterface.json")
@@ -4632,6 +4196,10 @@ Function set_all_lif(
     }
     if($Backup -eq $False -and $Restore -eq $False){
         $lifssource=Get-NcNetInterface -vserver $myPrimaryVserver -Controller $myPrimaryController | select Address
+        if($lifssource -eq $null){
+            Write-LogDebug "No Lif on source vserver"
+            return $True
+        }
     }
 	$IPsource=$lifssource  | ForEach-Object {$_.Address}
 	$set=$false
@@ -4887,29 +4455,7 @@ Try {
 	return $Return 
 }
 Catch {
-	$ErrorMessage = $_.Exception.Message
-	$FailedItem = $_.Exception.ItemName
-	$Type = $_.Exception.GetType().FullName
-	$CategoryInfo = $_.CategoryInfo
-	$ErrorDetails = $_.ErrorDetails
-	$Exception = $_.Exception
-	$FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-	$InvocationInfoLine = $_.InvocationInfo.Line
-	$InvocationInfoLineNumber = $_.InvocationInfo.ScriptLineNumber
-	$PipelineIterationInfo = $_.PipelineIterationInfo
-	$ScriptStackTrace = $_.ScriptStackTrace
-	$TargetObject = $_.TargetObject
-	Write-LogError  "Trap Error: [$myPrimaryVserver] [$ErrorMessage]"
-	Write-LogDebug  "Trap Item: [$FailedItem]"
-	Write-LogDebug  "Trap Type: [$Type]"
-	Write-LogDebug  "Trap CategoryInfo: [$CategoryInfo]"
-	Write-LogDebug  "Trap ErrorDetails: [$ErrorDetails]"
-	Write-LogDebug  "Trap Exception: [$Exception]"
-	Write-LogDebug  "Trap FullyQualifiedErrorId: [$FullyQualifiedErrorId]"
-	Write-LogDebug  "Trap InvocationInfo: [$InvocationInfoLineNumber] [$InvocationInfoLine]"
-	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
-	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
-	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+	handle_error $_ $myPrimaryVserver
 	return $Return
 }
 }
@@ -5965,8 +5511,12 @@ Function wait_snapmirror_dr(
     		$count++
     		$loop = $False
     		Write-LogDebug "Get-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-    		$relationList = Get-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-    		if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirror failed [$ErrorVar]" }
+            $relationList = Get-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirror failed [$ErrorVar]" }
+            if($relationList -eq $null){
+                Write-LogDebug "No SnapMirror relationship"
+                return $True
+            }
     		foreach ( $relation in ( $relationList | Skip-Null ) ) 
             {
     			$MirrorState=$relation.MirrorState
@@ -6054,13 +5604,13 @@ Try {
     if($PrimaryVersion.Major -ge 9 -and $SecondaryVersion.Major -ge 9){
 	    $vfrEnable=$True
 	}
-	Write-Log "VFR mode is set to [$vfrEnable]"
+	Write-Log "[$workOn] VFR mode is set to [$vfrEnable]"
     if($Global:SelectVolume -eq $True)
     {
         $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
         if($Selected.state -ne $True)
         {
-            Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+            Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
             Write-logDebug "check_update_voldr: end with error"
             return $False  
         }else{
@@ -6093,12 +5643,12 @@ Try {
                 {
                     if($vfrEnable -eq $False){
         			    Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-        			    Write-Log "Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
+        			    Write-Log "[$workOn] Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
         			    $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }else{
                         Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
-        			    Write-Log "Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
+        			    Write-Log "[$workOn] Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
         			    $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }
@@ -6114,12 +5664,12 @@ Try {
                 {
                     if($vfrEnable -eq $False){
                         Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-        			    Write-Log "Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
+        			    Write-Log "[$workOn] Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
         			    $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }else{
                         Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
-        			    Write-Log "Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
+        			    Write-Log "[$workOn] Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
         			    $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }   
@@ -6139,14 +5689,14 @@ Try {
                         $RelationshipStatus=$relationDR.RelationshipStatus
                         if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) 
                         {
-                            Write-Log "Break relation [$SourceLocation] -> [$DestinationLocation]"
+                            Write-Log "[$workOn] Break relation [$SourceLocation] -> [$DestinationLocation]"
                             if($DebugLevel){Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"}
                             $out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
                             if ( $? -ne $True ) 
                             {
                                 $Return = $False ; throw "ERROR: Invoke-NcSnapmirrorBreak failed"
                             }
-                            Write-Log "Remove relation [$SourceLocation] -> [$DestinationLocation]"
+                            Write-Log "[$workOn] Remove relation [$SourceLocation] -> [$DestinationLocation]"
                             Write-LogDebug "Remove-NcSnapmirror -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
                             $out=Remove-NcSnapmirror -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False   
                             if ( $? -ne $True ) 
@@ -6162,7 +5712,7 @@ Try {
                                 $ANS=Read-HostOptions "Do you want to break this relation ?" "y/n"
                                 if ( $ANS -eq 'y' ) 
                                 {
-                                    Write-Log "Break relation [$SourceLocation] -> [$DestinationLocation]"
+                                    Write-Log "[$workOn] Break relation [$SourceLocation] -> [$DestinationLocation]"
                                     Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
                                     $out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
                                     if ( $? -ne $True ) 
@@ -6172,7 +5722,7 @@ Try {
                                 
                                 }
                             }
-                            Write-Log "Remove relation [$SourceLocation] -> [$DestinationLocation]"
+                            Write-Log "[$workOn] Remove relation [$SourceLocation] -> [$DestinationLocation]"
                             Write-LogDebug "Remove-NcSnapmirror -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
                             $out=Remove-NcSnapmirror -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False   
                             if ( $? -ne $True ) 
@@ -6183,16 +5733,16 @@ Try {
                         }
                         if($vfrEnable -eq $False){
                             Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-                            Write-Log "Create relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
+                            Write-Log "[$workOn] Create relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
                             $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         }else{
                             Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
-                            Write-Log "Create VF relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
+                            Write-Log "[$workOn] Create VF relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
                             $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         }
-                        Write-Log "Resync relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
+                        Write-Log "[$workOn] Resync relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
                         Write-LogDebug "Invoke-NcSnapmirrorResync -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                         $out=Invoke-NcSnapmirrorResync -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
                         if ( $? -ne $True ) 
@@ -6205,7 +5755,7 @@ Try {
 			} 
             else 
             {
-				Write-Log "Relation [${myPrimaryController}:${myPrimaryVserver}:${PrimaryVol}] [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] already exist"
+				Write-Log "[$workOn] Relation [${myPrimaryController}:${myPrimaryVserver}:${PrimaryVol}] [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] already exist"
 			}
 			if ( $relation.MirrorState -eq "uninitialized" ) 
             {
@@ -6418,7 +5968,6 @@ Try {
                 $global:mutexconsole.WaitOne(200) | Out-Null
             }
             catch [System.Threading.AbandonedMutexException]{
-                #AbandonedMutexException means another thread exit without releasing the mutex, and this thread has acquired the mutext, therefore, it can be ignored
                 Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                 [void]$global:mutexconsole.ReleaseMutex()
             }
@@ -6479,8 +6028,6 @@ Try {
                                 $SecondaryDefaultRoute=Get-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoutingGroupRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
                                 $SecondaryGateway=$SecondaryDefaultroute.GatewayAddress
-                            
-                            
                                 if ( ( $myGateway -eq $null ) -or ( $myGateway -eq "" )  ) 
                                 {
                                     Write-Log "[$workOn] No default Gateway for lif [$PrimaryInterfaceName]"
@@ -6976,25 +6523,35 @@ Function check_update_CIFS_server_dr (
     [string] $mySecondaryVserver,
     [string]$workOn=$mySecondaryVserver
 ) {
-
     Try {
 	    $Return=$false
 
-        # check first before tryingt sync
+        # check first before trying sync
         $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
         if ( $PrimaryCifsServerInfos -eq $null ) {
-            Write-Log "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
-            return $false
-        }
+            Write-LogDebug "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
+            $cifsServerSource=$False
+        }else{$cifsServerSource=$True}
         $SecondaryCifsServerInfos = Get-NcCifsServer -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
         if ( $SecondaryCifsServerInfos -eq $null ) {
-            Write-LogWarn "[$workOn] No CIFS Server in Vserver [$mySecondaryVserver]:[$mySecondaryController]"
-            Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
-            return $false
+            if($cifsServerSource -eq $True){
+                Write-LogWarn "[$workOn] No CIFS Server in Vserver [$mySecondaryVserver]:[$mySecondaryController]"
+                Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
+            }
+            $cifsServerDest=$False
         }
-        return $true
+        else{$cifsServerDest=$True}
+        if($cifsServerSource -eq $False){
+            return $False
+        }
+        if($cifsServerSource -ne $cifsServerDest)
+        {
+            return $False
+        }else{
+            return $True
+        }
     }
     Catch {
         handle_error $_ $myPrimaryVserver
@@ -7017,7 +6574,7 @@ Try {
 
     if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
           Write-LogDebug "update_CIFS_server_dr: end"
-          return $false
+          return $true
     }
 
     Write-Log "[$workOn] Check SVM CIFS Server options"
@@ -8000,7 +7557,7 @@ Try {
 
     if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
           Write-LogDebug "create_update_CIFS_shares_dr: end"
-          return $false
+          return $True
     }
 
     Write-Log "[$workOn] Check SVM CIFS shares"
@@ -8567,7 +8124,8 @@ Function show_vserver_dr (
     [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
     [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
     [string] $myPrimaryVserver,
-    [string] $mySecondaryVserver ) 
+    [string] $mySecondaryVserver,
+    [switch] $MSID) 
 {
     Try 
     {
@@ -8822,7 +8380,7 @@ Function show_vserver_dr (
                 if ( $SecondaryVserver -eq $null ) {
                     $PrimaryVolAttr="${PrimaryVolName}:${PrimaryVolStyle}:${PrimaryVolLang}:${PrimaryVolExportPolicy}:${PrimaryVolJunctionPath}"
                     Format-ColorBrackets "Primary:   [$PrimaryVolAttr]"
-                    Format-ColorBrackets "Secondary: [$SecondaryVolAttr]`n" -F red
+                    Write-Host "Secondary: [$SecondaryVolAttr]`n" -F red
                 } 
                 else  
                 {
@@ -8842,7 +8400,7 @@ Function show_vserver_dr (
                     $SecondaryVolMSID=$SecondaryVol.VolumeIdAttributes.Msid
                     $PrimaryVolAttr="${PrimaryVolName}:${PrimaryVolStyle}:${PrimaryVolLang}:${PrimaryVolExportPolicy}:${PrimaryVolJunctionPath}"
                     $SecondaryVolAttr="${SecondaryVolName}:${SecondaryVolStyle}:${SecondaryVolLang}:${SecondaryVolExportPolicy}:${SecondaryVolJunctionPath}"
-                    if($MSID -eq $True){
+                    if($MSID.IsPresent){
                         if ( ($PrimaryVolAttr -eq $SecondaryVolAttr) -and ( $SecondaryVolMSID -eq $PrimaryVolMSID) ) 
                         {
                             Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]"
@@ -8850,7 +8408,7 @@ Function show_vserver_dr (
                         }
                         else{
                             Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]" 
-                            Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" -F yellow
+                            Write-Host  "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" -F yellow
                         }
                     } 
                     elseif ($PrimaryVolAttr -eq $SecondaryVolAttr)
@@ -8859,7 +8417,7 @@ Function show_vserver_dr (
                         Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n"
                     }else{
                         Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
-                        Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n" -F yellow
+                        Write-Host  "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n" -F yellow
                     }
                 }
             }
@@ -8993,7 +8551,7 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Format-ColorBrackets $rel -F red
+                    Write-Host $rel -F red
                 }
             }
         }
@@ -9201,7 +8759,7 @@ Try {
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
-    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_share" ; $Return = $False } 
+    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
 
@@ -9714,9 +9272,8 @@ Try {
 	$relationList = Get-NcSnapmirror -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapMrirror failed [$ErrorVar]" }
 	if ( ( $relationList -eq $null ) -or ( $relationList.count -eq 0 ) ) {
-		Write-Host "ERROR: No Snapmirror relation [$myPrimaryVserver]->[$mySecondaryVserver]"
-		$Return = $False
-		return $False
+		Write-Log "[$mySecondaryVserver] No Snapmirror relation [$myPrimaryVserver]->[$mySecondaryVserver]"
+		return $True
 	}
 	foreach ( $relation in ( $relationList | Skip-Null ) ) {
 		$MirrorState=$relation.MirrorState
@@ -9726,7 +9283,7 @@ Try {
 		$DestinationLocation=$relation.DestinationLocation
 		$RelationshipStatus=$relation.RelationshipStatus
 		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) {
-			Write-Log "Update relation [$SourceLocation] [$DestinationLocation]" 
+			Write-Log "[$mySecondaryVserver] Update relation [$SourceLocation] [$DestinationLocation]" 
 			if ( $UseLastSnapshot -eq $True ) {
 				$LastSnapName=get_last_snapshot -myController  $myPrimaryController  -myVserver $myPrimaryVserver -myVolume $SourceVolume
 				if ( $LastSnapName -eq $null ) {
@@ -9760,7 +9317,7 @@ Try {
 		$RelationshipStatus=$relation.RelationshipStatus
 		$LastTransferEndTimestamp=$relation.LastTransferEndTimestamp
 		$LAG = get-lag ($LastTransferEndTimestamp)
-		Write-Log "Status relation [$SourceLocation] [$DestinationLocation]:[$RelationshipStatus] [$MirrorState] [$LAG]"
+		Write-Log "[$mySecondaryVserver] Status relation [$SourceLocation] [$DestinationLocation]:[$RelationshipStatus] [$MirrorState] [$LAG]"
 	}
     Write-LogDebug "update_snapmirror_vserver: end"
 	return $Return 
@@ -9808,7 +9365,7 @@ Try {
 		$RelationshipStatus=$relation.RelationshipStatus
 		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) 
         {
-			Write-Log "Break relation [$SourceLocation] [$DestinationLocation]" -f red
+			Write-Log "[$mySecondaryVserver] Break relation [$SourceLocation] [$DestinationLocation]" -f red
 			Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"
 			$out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController  -ErrorVariable ErrorVar -Confirm:$False
 			if ( $? -ne $True ) 
@@ -9884,14 +9441,14 @@ try{
         if($LIFinformation -ne $null){
             $LIFaddress=$LIFinformation.Address
             $LIFnetmask=$LIFinformation.Netmask
-            Write-Log "Set [$LIFname] down on [$myPrimaryVserver]"
+            Write-Log "[$mySecondaryVserver] Set [$LIFname] down on [$myPrimaryVserver]"
             Write-LogDebug "Set-NcNetInterface -Name $LIFname -AdministrativeStatus down -Vserver $myPrimaryVserver -Controller $myPrimaryController"
             $out=Set-NcNetInterface -Name $LIFname -AdministrativeStatus down -Vserver $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
             if ( $? -ne $True ) 
             {
                 $Return = $False ; throw "ERROR: Set-NcNetInterface failed [$ErrorVar]"
             }
-            Write-Log "Set [$LIFname] up with address [$LIFaddress] and netmask [$LIFnetmask] on [$mySecondaryVserver]"
+            Write-Log "[$mySecondaryVserver] Set [$LIFname] up with address [$LIFaddress] and netmask [$LIFnetmask] on [$mySecondaryVserver]"
             Write-LogDebug "Set-NcNetInterface -Name $LIFname -AdministrativeStatus up -Vserver $mySecondaryVserver -Controller $mySecondaryController"
             $out=Set-NcNetInterface -Name $LIFname -Address $LIFaddress -Netmask $LIFnetmask -AdministrativeStatus up -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
             if ( $? -ne $True )
@@ -9995,7 +9552,7 @@ try{
 
     if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
           Write-LogDebug "update_cifs_usergroup: end"
-          return $false
+          return $True
     }
 
     Write-Log "[$workOn] Update CIFS Local User & Local Group"
@@ -10005,7 +9562,7 @@ try{
     Write-LogDebug "[$myPrimaryVserver] Set Lif up to authenticate user" 
     Write-LogDebug "[$myPrimaryVserver] Get-NcCifsLocalUser -VserverContext $mySecondaryVserver -controller $mySecondaryController"
     if($Restore -eq $False){
-        Write-LogDebug "Get-Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController"
+        Write-LogDebug "Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController"
         $PrimaryCifs=Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
     }else{
@@ -10324,13 +9881,9 @@ Function update_vserver_dr (
     [string] $myDataAggr,
     [bool] $DDR,
     [boolean] $UseLastSnapshot ) {
-	
 	$Return = $True
-	
 	Write-LogDebug "update_vserver_dr: start"
-	
 	if ( ( check_update_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed check update vserver" ; return $False }
-
 	if ( $myDataAggr ) {
 		Write-LogDebug "update_vserver_dr: Create required new volumes $mySecondaryController Vserver $Vserver"
 		if ( ( create_volume_voldr -NoInteractive -myDataAggr $myDataAggr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; return $False }
@@ -10341,89 +9894,74 @@ Function update_vserver_dr (
 		Write-LogDebug "update_vserver_dr: Wait new Snapmirror transfer terminate $mySecondaryController Vserver $Vserver"
 		if ( ( wait_snapmirror_dr -NoInteractive -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed snapmirror relations bad status " ; return $False }
 	}
-
 	Write-LogDebug "update_vserver_dr: Update Snapmirror Controller $mySecondaryController Vserver $Vserver"
 	if ( ( update_snapmirror_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -UseLastSnapshot $UseLastSnapshot ) -ne $True ) {
 		Write-LogError "ERROR: update_snapmirror_vserver failed" 
 		return  $False
 	}
-
 	Write-LogDebug "update_vserver_dr: Update igroup"
 	if ( ( create_update_igroupdr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: create_update_igroupdr failed" 
 		$Return = $False
 	}
-	
 	Write-LogDebug "update_vserver_dr: Update policy"
 	if ( ( create_update_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver )  -ne $True ) {
 		Write-LogError "ERROR: create_update_policy_dr failed" 
 		$Return = $False
 	}
-
     Write-LogDebug "update_vserver_dr: Update efficiency policy"
 	if ( ( create_update_efficiency_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver )  -ne $True ) {
 		Write-LogError "ERROR: create_update_efficiency_policy_dr failed" 
 		$Return = $False
 	}
-    
     Write-LogDebug "update_vserver_dr: Update firewall policy"
     if ( ( create_update_firewallpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) { 
         Write-LogError "ERROR: Failed to create all Firewall policy" 
         $Return = $False 
     }
-
     #Write-LogDebug "update_vserver_dr: Update lif dr"
 	#if ( ( create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
     #    Write-LogError "ERROR: create_lif_dr failed" 
 	#	$Return = $True
     #}
-	
     #Write-LogDebug "update_vserver_dr: Update local user dr"
     #if ( ( create_update_localuser_dr  -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
     #    Write-LogError "ERROR: Failed to create all LIF"
     #    $Return = $True 
     #}
-    
     Write-LogDebug "update_vserver_dr: Update local Unix User & Group"
     if ( ( create_update_localunixgroupanduser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: Failed to create all Local Unix User and Group"
         $Return = $True 
     }
-	
     if ( ( create_update_usermapping_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: Failed to create User Mapping"
         $Return = $True
     }
-
     Write-LogDebug "update_vserver_dr: Update Vscan dr"
 	if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: create_update_vscan_dr failed" 
         $Return = $False 
     }
-
     Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
 	if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: create_update_fpolicy_dr failed" 
         $Return = $False 
     }
-
 	Write-LogDebug "update_vserver_dr: Check Destination Volumes"
 	if ( ( check_update_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: check_update_voldr failed" 
 		$Return = $False
 	}
-	
 	Write-LogDebug "update_vserver_dr: mount all volume"
 	if ( ( mount_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: mount_voldr Failed failed" 
 		$Return = $False
 	}
-
 	if ( ( create_update_DNS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
 		Write-LogError "ERROR: create_update_DNS_dr failed" 
 		$Return = $False 
 	}
-
 	if ( ( create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
 		Write-LogError "ERROR: create_update_NIS_dr failed" 
 		$Return = $False 
@@ -10436,7 +9974,6 @@ Function update_vserver_dr (
 		Write-LogError "ERROR: create_update_ISCSI_dr failed" 
 		$Return = $False 
 	}
-
 	if ( ( create_update_CIFS_shares_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: create_update_CIFS_share failed" 
 		$Return = $False 
@@ -10445,23 +9982,18 @@ Function update_vserver_dr (
 		Write-LogError "ERROR: Failed to map all LUNs failed" 
 		$Return = $False 
 	}
-
 	if ( ( set_serial_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
 		Write-Log "ERROR: Failed to change LUN serial Numbers"  
 		$Return = $False 
 	}
-
     if ( ( create_update_qospolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: create_update_qospolicy_dr"
         $Return = $False 
     }
-    
     if ( ( create_update_role_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) {
 		Write-LogError "ERROR: create_update_role_dr"
 	}
-    
     if ( ( $ret=update_qtree_export_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {Write-Log "ERROR Failed to modify all Qtree Export Policy" ; $Return = $False}
-
     Write-LogDebug "update_vserver_dr: end"
 	return $Return
 }
@@ -11320,7 +10852,7 @@ Function svmdr_db_switch_datafiles (
 	[string]$myVserver) {
 Try {
 	$Return = $True
-    Write-Log "Switch Datafiles"
+    Write-Log "[$myVserver] Switch Datafiles"
     Write-LogDebug "svmdr_db_switch_datafiles: start"
 	Write-LogDebug "svmdr_db_switch_datafiles: [$Global:SVMTOOL_DB]"
         if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
@@ -11336,8 +10868,7 @@ Try {
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirrorDestination failed [$ErrorVar]" } 
   	if ( $relationlist -eq $null ) { 
 		Write-LogDebug "svmdr_db_switch_datafiles: SnapMirror No Relations found"
-        $Return=$False
-		return $Return
+        return $True
   	}
     $switch_time= get-date -uformat "%Y%m%d%H%M%S"
   	foreach ( $relation in $relationlist ) {
@@ -11417,7 +10948,7 @@ Function save_quota_rules_to_quotadb (
     [string] $mySecondaryVserver) {
 Try {
 	$Return = $True
-    Write-Log "Save Quota rules"
+    Write-Log "[$mySecondaryVserver] Save Quota rules"
 	Write-LogDebug "save_quota_rules_to_quotadb: Start"
 	if ( ( svmdr_db_check -myController $myPrimaryController -myVserver $myPrimaryVserver ) -eq $false ) {
         	Write-LogError "ERROR: Failed to access quotadb" 
@@ -11715,7 +11246,7 @@ Function save_vol_options_to_voldb (
 {
     Try 
     {
-        Write-Log "Save volumes options"
+        Write-Log "[$myVserver] Save volumes options"
     	$Return = $True
 
     	Write-LogDebug "save_vol_options_to_voldb: start"
@@ -12101,8 +11632,7 @@ Function save_shareacl_options_to_shareacldb (
                     else{
                         Write-LogDebug "Add ShareAcl for ShareName [$ShareName] with Live data : $ShareAclList_LIVE"
                         $ShareAclList_LIVE | Out-File -FilePath $ShareAclFilename -Width 2000        
-                    }
-                    
+                    }  
                 }
 				Write-LogDebug "ShareAcl for share [$ShareName] updated"
 				Write-LogDebug "Break Loop"
