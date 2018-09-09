@@ -8970,7 +8970,7 @@ Try {
         $sourceMSID=$sourceVol.VolumeIdAttributes.Msid
 		
         if($destMSID -ne $sourceMSID){
-            Write-Log "Restamp MSID for volume [$VolName] on [$mySecondaryVserver]"
+            Write-Log "[$mySecondaryVserver] Restamp MSID for volume [$VolName]"
             #Write-logDebug "Dismount-NcVol -Name $VolName -VserverContext $mySecondaryVserver -Force -Confirm:$False -Controller $mySecondaryController"
             #$ret=Dismount-NcVol -Name $VolName -VserverContext $mySecondaryVserver -Force -Confirm:$False -Controller $mySecondaryController -ErrorVariable ErrorVar
             #if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Dismount-NcVol failed [$ErrorVar]" }
@@ -9011,7 +9011,7 @@ Try {
             #     }
             # }
             if($restampSucceeded -eq $True){
-                Write-log "Volume [$VolName] MSID modified from [$destMSID] to [$sourceMSID]"
+                Write-log "[$mySecondaryVserver] Volume [$VolName] MSID modified from [$destMSID] to [$sourceMSID]"
             }else{
                 Write-Warning "Failed to modifed MSID for volume [$VolName]."
                 Write-Warning "Reason : `r`n$detailInvoke"

@@ -71,7 +71,7 @@ Use an MCC for source or destination or both | Yes
 Two differents DR destination | Yes
 DR inside the same cluster, between HA pair in different rooms | Yes
 Use Version Flexible SnapMirror when necessary<br>(by example: build a DR from 9.X to 8.3.2) | Yes
-Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the same,<br>so users will only have to reconnect just by refreshing explorer<br>or double-click on folder<br>For NFS, MSID cannot be preserved during Migration<br><span style="color:red">**MSID cannot be preserved if destination is on a MetroCluster**</span> | Yes
+Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the same,<br>so users will only have to reconnect just by refreshing explorer<br>or double-click on folder<br><span style="color:red">**MSID cannot be preserved if destination is on a MetroCluster**</span> | Yes
 Select subset of sources volumes that will be replicated | Yes
 
 ### BACKUP & RESTORE Purpose
