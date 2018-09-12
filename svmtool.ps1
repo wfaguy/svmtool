@@ -80,8 +80,9 @@
 .PARAMETER Migrate
     Allow to migrate a source SVM to destination SVM
     ConfigureDR and UpdateDR should have already being successfull
-    Will cleanly delete source SVM and start dest SVM with source identity
-    -Instance <instance name> -Vserver <vserver source name> -Migrate
+	You could choose to cleanly delete source SVM
+	Destination SVM is started with source identity (IP address and CIFS server identity)
+    -Instance <instance name> -Vserver <vserver source name> -Migrate [-ForceUpdateSnapPolicy]
 .PARAMETER CreateQuotaDR
     Allow to recreate all quota rules on the DR SVM
 	-Instance <instance name> -Vserver <vserver source name> -CreateQuotaDR
@@ -119,7 +120,7 @@
     -Instance <instance name> -Vserver <vserver source name> -Resync
 .PARAMETER ActivateDR
     Allow to activate a DR SVM for test or after a real crash on the source
-    -Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate]
+    -Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate] [-ForceUpdateSnapPolicy]
 .PARAMETER ForceActivate
     Mandatory argument in case of disaster in Source site
     Used only with ActivateDR when source site is unjoinable
@@ -130,7 +131,12 @@
 .PARAMETER ForceRecreate
     Optional argument used only in double DR scenario or during Source creation after disaster
     Allow to forcibly recreate a SnapMirror relationship
-    Used with ReaActivate, Resync and ResyncReverse
+	Used with ReaActivate, Resync and ResyncReverse
+.PARAMETER ForceUpdateSnapPolicy
+	Optional argument
+	Allow to forcibly update SnapShot Policy on destination volume, based on source Snapshot Policy
+	Warning:	If Source & Destination volume have different number of snapshot (XDP relationship)
+			This could cause the deletion of snapshot on destination
 .PARAMETER AlwaysChooseDataAggr
     Optional argument used to always ask to choose a Data Aggregate to store each Data volume
     Used with ConfigureDR only
@@ -142,7 +148,7 @@
     -Instance <instance name> -Vserver <vserver source name> -ResyncReverse
 .PARAMETER ReActivate
     Allow to reactivate a source SVM following a test or real crash managed with an ActivateDR
-    -Instance <instance name> -Vserver <vserver source name> -ReActivate
+    -Instance <instance name> -Vserver <vserver source name> -ReActivate [-ForceUpdateSnapPolicy]
 .PARAMETER Version
     Display version of the script
 .PARAMETER DRfromDR
@@ -186,7 +192,8 @@
 .EXAMPLE
     svmtool.ps1 -Instance test -Vserver svm_source -ActivateDR
     
-    Activate the DR SVM associated with source SVM svm_source
+	Activate the DR SVM associated with source SVM svm_source
+	Snapshot Policy on destination volume will not beeing updated
     Access will be allowed on DR SVM
 .EXAMPLE
     svmtool.ps1 -Instance test -Vserver svm_source -ResyncReverse
@@ -200,6 +207,29 @@
     svmtool.ps1 -Instance test -Vserver svm_source -ReActivate
 
 	Following an ActivateDR, restart production on source SVM
+.EXAMPLE
+	svmtools.ps1 -Instance test -Vserver source_svm -ShowDR [-Schedule] [-Lag] [-MSID]
+
+	Display status and details of source SVM object and destination SVM object, as well as all SnapMirror relatiohships
+	Use color to display destination volume different from source
+	With option -Schedule, it also display SnapMirror schedule that is set
+	With option -Lag, it also display SnapMirror Lag
+	With option -MSID, it also display volume MSID
+.EXAMPLE
+	svmtool.ps1 -Instance test -Vserver svm_source -Migrate -ForceUpdateSnapPolicy
+
+	Following successful ConfigureDR and UpdateDR, Migrate an SVM to destination cluster
+	During this step, you will be prompt to delete or not source SVM and all its objects
+	If not deleted, source SVM is stopped
+	Once Migration is done, destination SVM gain source identity
+	Temporary IP address are replaced by source IP address and CIFS server identity is changed with source name
+.EXAMPLE
+	svmtool.ps1 -Instance test -Vserver svm_source -DeleteSource
+	
+	When Migrate is performed without deleting source SVM, you can choose (when ready)
+	to delete source SVM by using -DeleteSource option
+	During this step, SVM name on destination Cluster will be renamed with source name
+	And all objects of source SVM, and source SVM itself will be destroyed
 .EXAMPLE
 	svmtool.ps1 -Backup clusterA [-Vserver <svm name>]
 
@@ -230,6 +260,8 @@
         - 0.0.4 : Bugfix, typos and added ParameterSets
 		- 0.0.5 : Bugfixes, advancements and colorcoding
 		- 0.0.6 : Change behaviour when SVM has no LIF, nor data volume
+		- 0.0.7 : Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
+		    	  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ... 
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -409,7 +441,12 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-    [switch]$ForceRecreate,
+	[switch]$ForceRecreate,
+	
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [switch]$ForceUpdateSnapPolicy,
 
     [Parameter(Mandatory = $true, ParameterSetName='Backup')]
     [switch]$Recreateconf,
@@ -536,7 +573,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.6"
+$Global:RELEASE="0.0.7"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -1215,6 +1252,7 @@ $Global:CorrectQuotaError=$CorrectQuotaError
 $Global:ForceDeleteQuota=$ForceDeleteQuota
 $Global:ForceActivate=$ForceActivate
 $Global:ForceRecreate=$ForceRecreate
+$Global:ForceUpdateSnapPolicy=$ForceUpdateSnapPolicy
 $Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
 $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
@@ -1232,6 +1270,7 @@ Write-LogDebug "OPTION CorrectQuotaError    		 [$Global:CorrectQuotaError]"
 Write-LogDebug "OPTION ForceDelete          		 [$Global:ForceDeleteQuota]"
 Write-LogDebug "OPTION ForceActivate        		 [$Global:ForceActivate]"
 Write-LogDebug "OPTION ForceRecreate        		 [$Global:ForceRecreate]"
+Write-LogDebug "OPTION ForceUpdateSnapPolicy         [$Global:ForceUpdateSnapPolicy]"
 Write-LogDebug "OPTION AlwaysChooseDataAggr 		 [$Global:AlwaysChooseDataAggr]"
 Write-LogDebug "OPTION SelectVolume         		 [$Global:SelectVolume]"
 Write-LogDebug "OPTION IgnoreQtreeExportPolicy       [$Global:IgnoreQtreeExportPolicy]"
@@ -1732,7 +1771,7 @@ if ( $ActivateDR ) {
 	} 
     else 
     {
-		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] [$PRIMARY_CLUSTER] ? ?" "y/n"
+		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ? ?" "y/n"
 		if ( $ANS -eq 'y' ) {
 			$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 			$tmp_str=$MyCred.UserName

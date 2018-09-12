@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : September 9th, 2018
+    Release : September 13th, 2018
 #>
 
 #############################################################################################
@@ -5832,7 +5832,7 @@ Try {
 			}
 	}
 	
-    if($NoRelease -eq $False){
+    if(!$NoRelease.IsPresent){
 	    if($DebugLevel) {Write-LogDebug "Get-NcSnapmirrorDestination  -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver  -VserverContext $myPrimaryVserver -Controller $myPrimaryController"}
 	    $relationList=Get-NcSnapmirrorDestination  -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
 	    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirrorDestination failed [$ErrorVar]" }
@@ -9161,7 +9161,7 @@ Try {
 		return $true
 	}
 
-	$ANS=Read-HostOptions "Do You really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ?" "y/n"
+	$ANS=Read-HostOptions "Do you really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		return $true
 	}
@@ -11324,14 +11324,14 @@ Function save_vol_options_to_voldb (
                     Remove-Item -path $VOL_DB_SRC_FILE | out-null
                     $count_delete_SRC++
                 }#>
-    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimaryVolExportPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_SRC_FILE -Append -NoClobber
+    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_SRC_FILE -Append -NoClobber
                 <#if( (Test-Path $VOL_DB_DST_FILE) -eq $True -and $count_delete_DST -eq 0)
                 { 
                     Remove-Item -path $VOL_DB_DST_FILE | out-null
                     $count_delete_DST++
                 }#>
     			Write-LogDebug "save_vol_options_to_voldb: file [$VOL_DB_DST_FILE]"
-    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimaryVolExportPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_DST_FILE -Append -NoClobber
+    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_DST_FILE -Append -NoClobber
     	 	}
       	}
     	Write-LogDebug "save_vol_options_to_voldb: end"
@@ -11416,17 +11416,16 @@ Function set_vol_options_from_voldb (
     					Get-Content $VOL_DB_FILE | Select-Object -uniq | foreach {
         					$VolName=$_.split(':')[0]
         					$VolSnapshotPolicy=$_.split(':')[1]
-        					$VolExportPolicy=$_.split(':')[2]
-                            $VolSisPolicy=$_.split(':')[3]
-                            $VolSisSchedule=$_.split(':')[4]
-                           	Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] ExportPolicy [$VolExportPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
+        					$VolSisPolicy=$_.split(':')[2]
+                            $VolSisSchedule=$_.split(':')[3]
+                           	Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
         					$myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
         					if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
         					if ( $myVol -ne $null ) 
                             {
         						$myVolSnapshotPolicy=$myVol.VolumeSnapshotAttributes.SnapshotPolicy
         						Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
-        						if ( $VolSnapshotPolicy -ne $myVolSnapshotPolicy ) 
+        						if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
                                 {
         							$attributes = Get-NcVol -Template
         							$mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
@@ -11798,7 +11797,7 @@ Function create_quota_rules_from_quotadb (
             }
         }
 	    if ( $myVserver -eq $null ) { $myVserver = "*" }
-	    Write-Log "Create quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]" 
+	    Write-Log "Create Quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]" 
 	    if ( $myVolume -eq $null ) { $myVolume  = "*" }
 	    $NcCluster = Get-NcCluster -Controller $myController
 	    $ClusterName = $NcCluster.ClusterName
