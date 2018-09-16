@@ -25,14 +25,14 @@ function rotate_log {
         if($info.Length -gt $global:LOG_MAXSIZE){
             Rename-Item -Path $global:LOGFILE -NewName $($info.DirectoryName+"\"+$info.BaseName+$info.LastWriteTime.ToString("_yyyyMMdd_HHmmss")+".oldlog")
         }
-        $listlog=Get-Item $($info.DirectoryName+"\"+$info.BaseName+"*.*")
-        foreach ($log in $listlog)
+        $listOldLog=Get-Item $($info.DirectoryName+"\"+$info.BaseName+"*.oldlog")
+        foreach ($log in $listOldLog)
         {
             $date_log=$log.CreationTime
             #$now-$date_log
             if( ($now-$date_log).Days -gt $global:LOG_DAY2KEEP )
             {
-                if($listlog.count -gt 1){
+                if($listOldLog.count -gt 1){
                     Remove-Item $log -Force -Confirm:$False
                 }
             }
@@ -799,10 +799,11 @@ Catch {
 
 #############################################################################################
 # $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress 
-Function ask_IpAddr_from_cli ([string]$myIpAddr ) {
+Function ask_IpAddr_from_cli ([string] $myIpAddr,[string] $workOn="") {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskIPAddr = Read-HostDefault "Please Enter a valid IP Address" $myIPAddr
+        #Wait-Debugger
+		$AskIPAddr = Read-HostDefault "[$workOn] Please Enter a valid IP Address" $myIPAddr
 		if ( ( validate_ip_format $AskIPAddr ) -eq $True ) {
 				$loop = $False
 				return $AskIPAddr
@@ -813,10 +814,11 @@ Function ask_IpAddr_from_cli ([string]$myIpAddr ) {
 
 
 #############################################################################################
-Function ask_gateway_from_cli ([string]$myGateway ) {
+Function ask_gateway_from_cli ([string]$myGateway,[string] $workOn="" ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskGateway = Read-HostDefault "Please Enter a valid Default Gateway Address" $myGateway
+        #Wait-Debugger
+		$AskGateway = Read-HostDefault "[$workOn] Please Enter a valid Default Gateway Address" $myGateway
 		if ( ( validate_ip_format -IpAddr $AskGateway -AllowNullIP ) -eq $True ) {
 				$loop = $False
 				return $AskGateway
@@ -827,10 +829,11 @@ Function ask_gateway_from_cli ([string]$myGateway ) {
 
 #############################################################################################
 # $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryAddress
-Function ask_NetMask_from_cli ([string]$myNetMask ) {
+Function ask_NetMask_from_cli ([string]$myNetMask,[string] $workOn="" ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
-		$AskNetMask = Read-HostDefault "Please Enter a valid IP NetMask" $myNetMask
+        #Wait-Debugger
+		$AskNetMask = Read-HostDefault "[$workOn] Please Enter a valid IP NetMask" $myNetMask
 		if ( ( validate_ip_format $AskNetMask ) -eq $True ) {
 				$loop = $False
 				return $AskNetMask
@@ -1075,7 +1078,7 @@ Function create_update_vscan_dr (
                         -or ($PrimaryScannerPoolSesTeardTimeout -ne $SecondaryScannerPoolSesTeardTimeout) `
                         -or ($PrimaryScannerPoolMaxSesSetupRetry -ne $SecondaryScannerPoolMaxSesSetupRetry)) ) 
                     {
-                        Write-Log "Modify Vscan Scanner Pool on Secondary Vserver [$mySecondaryVserver]:[$PrimaryScannerPoolName]"
+                        Write-Log "[$workOn] Modify Vscan Scanner Pool [$PrimaryScannerPoolName]"
                         if($fromConfigureDR -eq $True)
                         {
                             try {
@@ -1099,8 +1102,8 @@ Function create_update_vscan_dr (
                             }
                             while($ANS -ne 'n')
                             {
-                                $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($myScannerPoolVscanServers[$num++])
-                                $ANS=Read-HostOptions "Do you want to add another Scan Server ?" "y/n"
+                                $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
+                                $ANS=Read-HostOptions "[$workOn] Do you want to add another Scan Server ?" "y/n"
                             }
                             Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1125,15 +1128,15 @@ Function create_update_vscan_dr (
                         Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                         [void]$global:mutexconsole.ReleaseMutex()
                     }
-                    Write-Log "Create Vscan Scanner Pool on Secondary Vserver [$mySecondaryVserver]:[$PrimaryScannerPoolName]"
-                    Write-Log "Enter IP Address of a Vscan Server"
+                    Write-Log "[$workOn] Create Vscan Scanner Pool [$PrimaryScannerPoolName]"
+                    Write-Log "[$workOn] Enter IP Address of a Vscan Server"
                     $ANS='y'
                     $SecondaryScannerPoolVscanServers=@()
                     $num=0
                     while($ANS -ne 'n')
                     {
-                        $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli($PrimaryScannerPoolVscanServers[$num++])
-                        $ANS=Read-HostOptions "Do you want to add another Scan Server ?" "y/n"
+                        $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
+                        $ANS=Read-HostOptions "[$workOn] Do you want to add another Scan Server ?" "y/n"
                     }
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1207,7 +1210,7 @@ Function create_update_vscan_dr (
                             #-or ($PrimaryOnAccessPolicyProtocol -ne $SecondaryOnAccessPolicyProtocol) ` 
                         {
                             if($PrimaryOnAccessPolicyFilters.count -eq 0 ){$PrimaryOnAccessPolicyFilters+="-"}
-                            Write-Log "Modify VscanOnAccessPolicy on Secondary Vserver [$mySecondaryVserver]:[$PrimaryOnAccessPolicyName]"
+                            Write-Log "[$workOn] Modify VscanOnAccessPolicy [$PrimaryOnAccessPolicyName]"
                             Write-LogDebug "Set-NcVscanOnAccessPolicy -Name $PrimaryOnAccessPolicyName -Filter $PrimaryOnAccessPolicyFilters -MaxFileSize $PrimaryOnAccessPolicyMaxFileSize -ExcludePath $PrimaryOnAccessPolicyExcludePath -ExcludeExtension $PrimaryOnAccessPolicyFileExtToExclude -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar"
                             $out=Set-NcVscanOnAccessPolicy -Name $PrimaryOnAccessPolicyName `
                             -Filter $PrimaryOnAccessPolicyFilters `
@@ -1221,7 +1224,7 @@ Function create_update_vscan_dr (
                     else 
                     {
                         if($PrimaryOnAccessPolicyFilters.count -eq 0 ){$PrimaryOnAccessPolicyFilters+="-"}
-                        Write-Log "Create Vscan OnAccess Policy on Secondary Vserver [$mySecondaryVserver]:[$PrimaryOnAccessPolicyName]"
+                        Write-Log "[$workOn] Create Vscan OnAccess Policy [$PrimaryOnAccessPolicyName]"
                         Write-LogDebug "New-NcVscanOnAccessPolicy -Name $PrimaryOnAccessPolicyName `
                         -Protocol $PrimaryOnAccessPolicyProtocol `
                         -Filter $PrimaryOnAccessPolicyFilters `
@@ -1377,12 +1380,12 @@ Function create_update_firewallpolicy_dr(
                     $Service=$diff.Service
                     $AllowList=$diff.AllowList
                     if($diff.SideIndicator -eq "=>"){
-                        Write-Log "Delete Firewall Rule : [$Policy] [$Service] [$AllowList] from [$mySecondaryVserver]"
+                        Write-Log "[$workOn] Delete Firewall Rule : [$Policy] [$Service] [$AllowList]"
                         Write-LogDebug "Remove-NcNetFirewallPolicy -Name $Policy -Vserver $mySecondaryVserver -Service $Service -AllowAddress $AllowList -Controller $mySecondaryCluster"
                         $out=Remove-NcNetFirewallPolicy -Name $Policy -Vserver $mySecondaryVserver -Service $Service -AllowAddress $AllowList -Controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcNetFirewallPolicy failed [$ErrorVar]"  }
                     }elseif($diff.SideIndicator -eq "<="){
-                        Write-Log "Create this Firewall Rule : [$Policy] [$Service] [$AllowList] on [$mySecondaryVserver]"
+                        Write-Log "[$workOn] Create this Firewall Rule : [$Policy] [$Service] [$AllowList]"
                         $out=New-NcNetFirewallPolicy -Name $Policy -Vserver $mySecondaryVserver -Service $Service -AllowAddress $AllowList -Controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetFirewallPolicy failed [$ErrorVar]"  }
                     }
@@ -1392,7 +1395,7 @@ Function create_update_firewallpolicy_dr(
                     $Policy=$FirPol.Policy
                     $Service=$FirPol.Service
                     $AllowList=$FirPol.AllowList
-                    Write-Log "Create Firewall Rule : [$Policy] [$Service] [$AllowList] on [$mySecondaryVserver]"
+                    Write-Log "[$workOn] Create Firewall Rule : [$Policy] [$Service] [$AllowList]"
                     $out=New-NcNetFirewallPolicy -Name $Policy -Vserver $mySecondaryVserver -Service $Service -AllowAddress $AllowList -Controller $mySecondaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetFirewallPolicy failed [$ErrorVar]"  }
                 }
@@ -1566,7 +1569,7 @@ Function create_update_localuser_dr(
                         $out=Remove-NcUser -UserName $Username -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR : Remove-NcUser failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
                     }elseif($user.SideIndicator -eq "<="){
-                        Write-Log "Add user [$Username] [$Application] [$Authmet] [$Rolename] [$Islocked] on [$mySecondaryVserver]"
+                        Write-Log "[$workOn] Add user [$Username] [$Application] [$Authmet] [$Rolename] [$Islocked]"
                         #Write-LogDebug "New-NcUser -UserName $Username -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Controller $mySecondaryController"
                         if($Authmet -eq "password" -and $Username -notin $PasswordEntered){
                             $passwordIsGood=$False
@@ -1627,7 +1630,7 @@ Function create_update_localuser_dr(
                     $Authmet=$user.AuthMethod
                     $Rolename=$user.RoleName
                     $Islocked=$user.IsLocked
-                    Write-Log "Add user [$Username] [$Application] [$Authmet] [$Rolename] [$Islocked] on [$mySecondaryVserver]"
+                    Write-Log "[$workOn] Add user [$Username] [$Application] [$Authmet] [$Rolename] [$Islocked]"
                     if($Authmet -eq "password" -and $Username -notin $PasswordEntered){ 
                         $passwordIsGood=$False
                         do{
@@ -1692,7 +1695,7 @@ Function create_update_localuser_dr(
                     if($DebugLevel){Write-LogDebug "Need to unlock user [$userName] on [$mySecondaryVserver]"}
                     $passwordIsGood=$False
                     do{
-                        Write-Log "Please Enter password for user [$userName]"
+                        Write-Log "[$workOn] Please Enter password for user [$userName]"
                         do{
                             $ReEnter=$false
                             $pass1=Read-Host "[$workOn] Password for [$userName]" -AsSecureString
@@ -2168,7 +2171,7 @@ Function create_update_fpolicy_dr(
                         -or ($PrimaryFpolicyEngineCertificateSerial -ne $SecondaryFpolicyEngineCertificateSerial) `
                         -or ($PrimaryFpolicyEngineCertificateCa -ne $SecondaryFpolicyEngineCertificateCa) )
                     {
-                        Write-Log "Modify Fpolicy External Engine on Secondary Vserver [$workOn]:[$PrimaryFpolicyEngineName]"
+                        Write-Log "[$workOn] Modify Fpolicy External Engine [$PrimaryFpolicyEngineName]"
                         if($fromConfigureDR -eq $True)
                         {
                             try {
@@ -2179,7 +2182,7 @@ Function create_update_fpolicy_dr(
                                 Write-Host -f Red "catch abandoned mutex for [$workOn]"
                                 [void]$global:mutexconsole.ReleaseMutex()
                             }
-                            Write-Log "Enter IP Address of a Primary External Server"
+                            Write-Log "[$workOn] Enter IP Address of a Primary External Server"
                             $ANS='y'
                             $num=(($SecondaryFpolicyEnginePrimaryServers.count)-1)
                             if($num -ge 0)
@@ -2192,13 +2195,13 @@ Function create_update_fpolicy_dr(
                             }
                             while($ANS -ne 'n')
                             {
-                                $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli($myFpolicyEnginePrimaryServers[$num++])
-                                $ANS=Read-HostOptions "Do you want to add more Primary External Server ?" "y/n"
+                                $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
+                                $ANS=Read-HostOptions "[$workOn] Do you want to add more Primary External Server ?" "y/n"
                             }
                             if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
                                 -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null)) )
                             {
-                                Write-Log "Enter IP Address of a Secondary External Server"
+                                Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
                                 $ANS='y'
                                 $num=(($SecondaryFpolicyEngineSecondaryServers.count)-1)
                                 if($num -ge 0)
@@ -2211,7 +2214,7 @@ Function create_update_fpolicy_dr(
                                 }
                                 while($ANS -ne 'n')
                                 {
-                                    $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli($myFpolicyEngineSecondaryServers[$num++])
+                                    $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
                                     $ANS=Read-HostOptions "Do you want to add more Secondary External Server ?" "y/n"
                                 }        
                             }
@@ -2313,26 +2316,26 @@ Function create_update_fpolicy_dr(
                         Write-Host -f Red "catch abandoned mutex for [$workOn]"
                         [void]$global:mutexconsole.ReleaseMutex()
                     }
-                    Write-Log "Create Fpolicy External Engine on Secondary Vserver [$workOn] [$PrimaryFpolicyEngineName]"
-                    Write-Log "Enter IP Address of a Primary External Server"
+                    Write-Log "[$workOn] Create Fpolicy External Engine [$PrimaryFpolicyEngineName]"
+                    Write-Log "[$workOn] Enter IP Address of a Primary External Server"
                     $ANS='y'
                     $num=(($PrimaryFpolicyEnginePrimaryServers.count)-1)
                     $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
                     while($ANS -ne 'n')
                     {
-                        $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli($myFpolicyEnginePrimaryServers[$num++])
+                        $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
                         $ANS=Read-HostOptions "Do you want to add more Primary External Server ?" "y/n"
                     }
                     if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
                     {
-                        Write-Log "Enter IP Address of a Secondary External Server"
+                        Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
                         $ANS='y'
                         $num=(($PrimaryFpolicyEngineSecondaryServers.count)-1)
                         $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
                         while($ANS -ne 'n')
                         {
-                            $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli($myFpolicyEngineSecondaryServers[$num++])
-                            $ANS=Read-HostOptions "Do you want to add more Secondary External Server ?" "y/n"
+                            $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
+                            $ANS=Read-HostOptions "[$workOn] Do you want to add more Secondary External Server ?" "y/n"
                         }    
                     }
                     [void]$global:mutexconsole.ReleaseMutex()
@@ -2433,7 +2436,7 @@ Function create_update_fpolicy_dr(
                             -and (($PrimaryFpolEvtProtocol -ne $null) -and ($SecondaryFpolEvtProtocol -ne $null))) `
                             -or ($PrimaryFpolEvtVolumeOperation -ne $SecondaryFpolEvtVolumeOperation) )
                         {
-                            Write-Log "Modify Fpolicy Event on Secondary Vserver [$workOn] [$PrimaryFpolEvtEventName]"
+                            Write-Log "[$workOn] Modify Fpolicy Event [$PrimaryFpolEvtEventName]"
                             Write-LogDebug "Set-NcFpolicyEvent -Name $PrimaryFpolEvtEventName -Protocol $PrimaryFpolEvtProtocol -FileOperation $PrimaryFpolEvtFileOperations `
                             -VolumeOperation $PrimaryFpolEvtVolumeOperation -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Set-NcFpolicyEvent -Name $PrimaryFpolEvtEventName -Protocol $PrimaryFpolEvtProtocol -FileOperation $PrimaryFpolEvtFileOperations `
@@ -2443,7 +2446,7 @@ Function create_update_fpolicy_dr(
                     }
                     else 
                     {
-                        Write-Log "Create Fpolicy Event on Secondary Vserver [$workOn] [$PrimaryFpolEvtEventName]"
+                        Write-Log "[$workOn] Create Fpolicy Event [$PrimaryFpolEvtEventName]"
                         if($PrimaryFpolEvtVolumeOperation -eq $True)
                         {
                             Write-LogDebug "New-NcFpolicyEvent -Name $PrimaryFpolEvtEventName -Protocol $PrimaryFpolEvtProtocol -FileOperation $PrimaryFpolEvtFileOperations `
@@ -2502,7 +2505,7 @@ Function create_update_fpolicy_dr(
                             -or ($PrimaryFpolPolAllowPrivilegedUserName -ne $SecondaryFpolPolAllowPrivilegedUserName) `
                             -or ($PrimaryFpolPolAllowIsPassthroughReadEnabled -ne $SecondaryFpolPolAllowIsPassthroughReadEnabled))
                         {
-                            Write-Log "Modify Fpolicy Policy on Secondary Vserver [$workOn] [$PrimaryFpolPolName]"
+                            Write-Log "[$workOn] Modify Fpolicy Policy [$PrimaryFpolPolName]"
                             Write-LogDebug "Set-NcFpolicyPolicy -Name $PrimaryFpolPolName -Event $PrimaryFpolEvtEventName -EngineName $PrimaryFpolicyEngineName `
                             -Mandatory $PrimaryFpolPolIsMandatory -AllowPrivilegedAccess $PrimaryFpolPolAllowPrivilegedAccess `
                             -PrivilegedUserName $PrimaryFpolPolAllowPrivilegedUserName -IsPassthroughReadEnabled $PrimaryFpolPolAllowIsPassthroughReadEnabled `
@@ -2516,7 +2519,7 @@ Function create_update_fpolicy_dr(
                     }
                     else 
                     {
-                        Write-Log "Create Fpolicy Policy on Secondary Vserver [$workOn] [$PrimaryFpolPolName]"
+                        Write-Log "[$workOn] Create Fpolicy Policy [$PrimaryFpolPolName]"
                         if($PrimaryFpolPolIsMandatory -eq $True)
                         {
                             if($PrimaryFpolPolAllowPrivilegedAccess -eq $True)
@@ -2614,7 +2617,7 @@ Function create_update_fpolicy_dr(
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyScope failed [$ErrorVar]" }
                     if($SecondaryFpolScope -ne $null)
                     {
-                        Write-Log "Modify Fpolicy Scope on Secondary Vserver [$workOn]"
+                        Write-Log "[$workOn] Modify Fpolicy Scope [$workOn]"
                         $SecondaryFpolScopeCheckExtensionsOnDirectories=$SecondaryFpolScope.CheckExtensionsOnDirectories
                         $SecondaryFpolScopeExportPoliciesToExclude=$SecondaryFpolScope.ExportPoliciesToExclude
                         $SecondaryFpolScopeExportPoliciesToInclude=$SecondaryFpolScope.ExportPoliciesToInclude
@@ -2652,7 +2655,7 @@ Function create_update_fpolicy_dr(
                     }
                     else
                     {
-                        Write-Log "Create Fpolicy Scope on Secondary Vserver [$workOn]"
+                        Write-Log "[$workOn] Create Fpolicy Scope on Secondary Vserver [$workOn]"
                         if($PrimaryFpolScopeCheckExtensionsOnDirectories -eq $True)
                         {
                             Write-LogDebug "New-NcFpolicyScope -PolicyName $PrimaryFpolPolName -SharesToInclude $PrimaryFpolScopeSharesToInclude `
@@ -2723,7 +2726,7 @@ Function create_update_fpolicy_dr(
                     {
                         if($PrimaryFpolStatusEnabled -eq $True)
                         {
-                            Write-Log "Enable Fpolicy on Secondary Vserver [$workOn] [$PrimaryFpolPolName]"
+                            Write-Log "[$workOn] Enable Fpolicy [$PrimaryFpolPolName]"
                             Write-LogDebug "Enable-NcFpolicyPolicy -Name $PrimaryFpolPolName -SequenceNumber $PrimaryFpolStatusSequenceNumber -VserverContext $mySecondaryVserver `
                             -Controller $mySecondaryController"
                             $out=Enable-NcFpolicyPolicy -Name $PrimaryFpolPolName -SequenceNumber $PrimaryFpolStatusSequenceNumber -VserverContext $mySecondaryVserver `
@@ -2732,7 +2735,7 @@ Function create_update_fpolicy_dr(
                         }
                         else
                         {
-                            Write-Log "Disable Fpolicy on Secondary Vserver [$workOn] [$PrimaryFpolPolName]"
+                            Write-Log "[$workOn] Disable Fpolicy [$PrimaryFpolPolName]"
                             Write-LogDebug "Disable-NcFpolicyPolicy -Name $PrimaryFpolPolName -VserverContext $mySecondaryVserver `
                             -Controller $mySecondaryController"
                             $out=Disable-NcFpolicyPolicy -Name $PrimaryFpolPolName -VserverContext $mySecondaryVserver `
@@ -2809,14 +2812,14 @@ Function create_update_qospolicy_dr(
                     {
                         if($SINGLE_CLUSTER -eq $True)
                         {
-                            Write-Log "Update QOS Policy Group [$PrimaryQosGroupName`_$workOn] on [$workOn]"
+                            Write-Log "[$workOn] Update QOS Policy Group [$PrimaryQosGroupName`_$workOn]"
                             Write-LogDebug "Set-NcQosPolicyGroup -Name $PrimaryQosGroupName`_$mySecondaryVserver -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController"
                             $out=Set-NcQosPolicyGroup -Name $($PrimaryQosGroupName+"_"+$mySecondaryVserver) -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcQosPolicyGroup failed [$ErrorVar]" }
                         }
                         else
                         {
-                            Write-Log "Update QOS Policy Group [$PrimaryQosGroupName] on [$workOn]"
+                            Write-Log "[$workOn] Update QOS Policy Group [$PrimaryQosGroupName]"
                             Write-LogDebug "Set-NcQosPolicyGroup -Name $PrimaryQosGroupName -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController"
                             $out=Set-NcQosPolicyGroup -Name $PrimaryQosGroupName -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcQosPolicyGroup failed [$ErrorVar]" }
@@ -2827,14 +2830,14 @@ Function create_update_qospolicy_dr(
                 {
                     if($SINGLE_CLUSTER -eq $True)
                     {
-                        Write-Log "Create QOS Policy Group [$PrimaryQosGroupName`_$workOn] on [$workOn]" 
+                        Write-Log "[$workOn] Create QOS Policy Group [$PrimaryQosGroupName`_$workOn]" 
                         Write-LogDebug "New-NcQosPolicyGroup -Name $PrimaryQosGroupName`_$mySecondaryVserver -Vserver $mySecondaryVserver -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController"
                         $out=New-NcQosPolicyGroup -Name $($PrimaryQosGroupName+"_"+$mySecondaryVserver) -Vserver $mySecondaryVserver -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController  -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcQosPolicyGroup failed [$ErrorVar]" }
                     }
                     else
                     {
-                        Write-Log "Create QOS Policy Group [$PrimaryQosGroupName] on [$workOn]" 
+                        Write-Log "[$workOn] Create QOS Policy Group [$PrimaryQosGroupName]" 
                         Write-LogDebug "New-NcQosPolicyGroup -Name $PrimaryQosGroupName -Vserver $mySecondaryVserver -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController"
                         $out=New-NcQosPolicyGroup -Name $PrimaryQosGroupName -Vserver $mySecondaryVserver -MaxThroughput $PrimaryQosGroupMaxThroughput -controller $mySecondaryController  -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcQosPolicyGroup failed [$ErrorVar]" }
@@ -2890,7 +2893,7 @@ Function create_update_qospolicy_dr(
                 $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
                 if($Selected.state -ne $True)
                 {
-                    Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+                    Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
                     Write-logDebug "check_update_voldr: end with error"
                     return $False  
                 }else{
@@ -2928,7 +2931,7 @@ Function create_update_qospolicy_dr(
                         $mySecondaryVolQosName=$mySecondaryVolQosName -replace "$mySecondaryVserver",""
                         if($PrimaryVolQosName -ne $mySecondaryVolQosName)
                         {
-                            Write-log "Update Qos Policy Group name [$PrimaryVolQosName`_$workOn] for volume [$PrimaryVolName] on [$workOn]"
+                            Write-log "[$workOn] Update Qos Policy Group name [$PrimaryVolQosName`_$workOn] for volume [$PrimaryVolName]"
                             Write-LogDebug "Get-NcVol -Template -controller $mySecondaryController"
                             $query=Get-NcVol -Template -controller $mySecondaryController  -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
@@ -2948,7 +2951,7 @@ Function create_update_qospolicy_dr(
                     {
                         if($PrimaryVolQosName -ne $mySecondaryVolQosName)
                         {
-                            Write-log "Update Qos Policy Group name [$PrimaryVolQosName] for volume [$PrimaryVolName] on [$workOn]"
+                            Write-log "[$workOn] Update Qos Policy Group name [$PrimaryVolQosName] for volume [$PrimaryVolName]"
                             Write-LogDebug "Get-NcVol -Template -controller $mySecondaryController"
                             $query=Get-NcVol -Template -controller $mySecondaryController  -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
@@ -3084,7 +3087,7 @@ Try {
         $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
         if($Selected.state -ne $True)
         {
-            Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+            Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
             Write-logDebug "create_update_snap_policy_dr: end with error"
             return $False  
         }else{
@@ -3176,7 +3179,7 @@ Try {
                                 $Count=$PrimarySched.Count
                                 $SnapmirrorLabel=$PrimarySched.SnapmirrorLabel
                                 if($SnapmirrorLabel -eq "-"){$SnapmirrorLabel="`n"}
-                                Write-Log "Modify schedule [$Schedule] in Policy [$PolicyName] on [$mySecondaryController]"
+                                Write-Log "[$workOn] Modify schedule [$Schedule] in Policy [$PolicyName]"
                                 Write-LogDebug "Set-NcSnapshotPolicySchedule -Name $PolicyName -Schedule $Schedule -Count $Count -SnapmirrorLabel $SnapmirrorLabel -Controller $mySecondaryController"
                                 $out=Set-NcSnapshotPolicySchedule -Name $PolicyName -Schedule $Schedule -Count $Count -SnapmirrorLabel $SnapmirrorLabel -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Add-NcSnapshotPolicySchedule failed [$ErrorVar]" }
@@ -3205,7 +3208,7 @@ Try {
                         $Count=$PrimarySchedule.Count
                         $Prefix=$PrimarySchedule.Prefix
                         $SnapmirrorLabel=$PrimarySchedule.SnapmirrorLabel
-                        Write-Log "Add new schedule [$Schedule] in Policy [$PolicyName] on [$mySecondaryController]"
+                        Write-Log "[$workOn] Add new schedule [$Schedule] in Policy [$PolicyName]"
                         Write-LogDebug "Add-NcSnapshotPolicySchedule -Name $PolicyName -Schedule $Schedule -Count $Count -Prefix $Prefix -SnapmirrorLabel $SnapmirrorLabel -Controller $mySecondaryController"
                         $out=Add-NcSnapshotPolicySchedule -Name $PolicyName -Schedule $Schedule -Count $Count -Prefix $Prefix -SnapmirrorLabel $SnapmirrorLabel -Controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Add-NcSnapshotPolicySchedule failed [$ErrorVar]" }
@@ -3214,8 +3217,8 @@ Try {
             }
             else # add new policy
             {
-                Write-Log "Policy [$PolicyName] does not exist on [$mySecondaryController]"
-                Write-Log "Create Policy and associated rules on [$mySecondaryController]"
+                Write-Log "[$workOn] Policy [$PolicyName] does not exist"
+                Write-Log "[$workOn] Create Policy and associated rules"
                 $firstSchedule=0
                 foreach($SnapshotPolicySchedule in $SnapshotPolicySchedules)
                 {
@@ -3364,7 +3367,7 @@ Function create_update_efficiency_policy_dr(
                             }
                         }
                     }
-                    Write-Log "Efficiency Policy [$PrimaryPolicyName] create on [$mySecondaryVserver]"
+                    Write-Log "[$workOn] Efficiency Policy [$PrimaryPolicyName] created"
                     if($PrimaryPolicyType -eq "threshold")
                     {
                         Write-LogDebug "create_update_efficiency_policy_dr: New-NcSisPolicy -Controller $mySecondaryController -VserverContext $mySecondaryVserver -Name $PrimaryPolicyName -ChangelogThresholdPercent $PrimaryPolicyThreshold  -PolicyType $PrimaryPolicyType -Enabled $PrimaryPolicyEnable -QosPolicy $PrimaryPolicyQosPolicy  -ErrorVariable ErrorVar"
@@ -3606,7 +3609,7 @@ Try {
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcIgroup failed [$ErrorVar]" }
                 $add_initiator = $True
             } else {
-                Write-Log "igroup initiator [$PrimaryName] already exist"
+                Write-Log "[$workOn] igroup initiator [$PrimaryName] already exist"
                 $SecondaryName=$SecondaryIgroup.Name
                 $SecondaryType=$SecondaryIgroup.Type
                 $SecondaryProtocol=$SecondaryProtocol
@@ -3680,7 +3683,7 @@ Try {
         $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
         if($Selected.state -ne $True)
         {
-            Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+            Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
             Write-logDebug "check_update_voldr: end with error"
             return $False  
         }else{
@@ -3759,13 +3762,13 @@ Try {
                         $SecondaryLunMap = Get-NcLunMap -Query $Query -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLunMap failed [$ErrorVar]" } 
                         if ( $SecondaryLunMap -eq $null ) {
-                            Write-Log "Map Lun [$PrimaryLunPath] [$workOn] [$mySecondaryController] on [$PrimaryInitiatorGroup]"
+                            Write-Log "[$workOn] Map Lun [$PrimaryLunPath] [$workOn] [$mySecondaryController] on [$PrimaryInitiatorGroup]"
                             Write-LogDebug "Add-NcLunMap -Path $PrimaryLunPath -InitiatorGroup $PrimaryInitiatorGroup -Id $PrimaryLunId -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out = Add-NcLunMap -Path $PrimaryLunPath -InitiatorGroup $PrimaryInitiatorGroup -Id $PrimaryLunId -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Add-NcLunMap failed [$ErrorVar]" }
 
                         } else {
-                            Write-Log "Lun [$PrimaryLunPath] [$workOn] [$mySecondaryController] already mapped on [$PrimaryInitiatorGroup]"
+                            Write-Log "[$workOn] Lun [$PrimaryLunPath] [$workOn] [$mySecondaryController] already mapped on [$PrimaryInitiatorGroup]"
                         }
                     }
                 }
@@ -3853,7 +3856,7 @@ Function set_serial_lundr (
             $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
             if($Selected.state -ne $True)
             {
-                Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+                Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
                 Write-logDebug "check_update_voldr: end with error"
                 return $False  
             }else{
@@ -3896,7 +3899,7 @@ Function set_serial_lundr (
                     $SecondaryLunSerialNumber = $SecondaryLun.SerialNumber
                     if ( $PrimaryLunSerialNumber -ne $SecondaryLunSerialNumber ) 
                     {
-                        Write-Log "Lun [$PrimaryLunPath] serial [$SecondaryLunSerialNumber] different [$PrimaryLunSerialNumber]"
+                        Write-Log "[$workOn] Lun [$PrimaryLunPath] serial [$SecondaryLunSerialNumber] different [$PrimaryLunSerialNumber]"
                         $NeedChangeSerial = $True
                     }
                 }
@@ -3907,14 +3910,14 @@ Function set_serial_lundr (
             {
                 if($Restore -eq $False -and $Backup -eq $False){
                     # Wait SnapMirror Relations
-                    Write-Log "Wait for all relations to transfer [$workOn] to change LUN Serials Number"
+                    Write-Log "[$workOn] Wait for all relations before change LUN Serials Number"
                     if ( ( wait_snapmirror_dr -NoInteractive -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) 
                     { 
                         $Return = $False
                         throw "ERROR: wait_snapmirror_dr failed"  
                     }
                     # Break SnapMirror Relations
-                    Write-Log "Break all relations from [$workOn] to change LUN Serials Number"
+                    Write-Log "[$workOn] Break all relations to change LUN Serials Number"
                     Write-LogDebug "break_snapmirror_vserver_dr -NoInteractive -myController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver"
                     if ( ( break_snapmirror_vserver_dr -NoInteractive -myController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) 
                     {
@@ -3963,7 +3966,7 @@ Function set_serial_lundr (
     }
 	if ( $NeedChangeSerial ) 
     {
-		Write-Log "Resync [$workOn]"
+		Write-Log "[$workOn] Resync"
 		Write-LogDebug "resync_vserver_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver" 
 		if ( ( resync_vserver_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) 
         {
@@ -4218,7 +4221,7 @@ Function set_all_lif(
     }
 	if($set -eq $false){
         if($Restore -eq $False){
-            Write-Log "ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
+            Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
             return $False
         }else{
             return $True
@@ -4289,7 +4292,7 @@ Try {
         $SecondaryRootVolExportPolicy=$SecondaryRootVolume.VolumeExportAttributes.Policy
         Write-LogDebug "PrimaryRootVolumeName [$PrimaryRootVolumeName] SecondaryRootVolumeName [$SecondaryRootVolumeName] PrimaryRootVolExportPolicy [$PrimaryRootVolExportPolicy] SecondaryRootVolExportPolicy [$SecondaryRootVolExportPolicy]" 
         if ( $PrimaryRootVolExportPolicy -ne $SecondaryRootVolExportPolicy ) {
-            Write-Log "Secondary Root Volume [$SecondaryRootVolumeName] use a different export: modify Policy"
+            Write-Log "[$workOn] Secondary Root Volume [$SecondaryRootVolumeName] use a different export: modify Policy"
             $attributes = Get-NcVol -Template -Controller $mySecondaryController
             $attributes.VolumeExportAttributes=$PrimaryRootVolume.VolumeExportAttributes
             $query=Get-NcVol -Template -Controller $mySecondaryController
@@ -4318,7 +4321,7 @@ Try {
         $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
         if($Selected.state -ne $True)
         {
-            Write-Log "Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
+            Write-Log "[$workOn] Failed to get Selected Volume from DB, check selectvolume.db file inside $Global:SVMTOOL_DB"
             Write-logDebug "check_update_voldr: end with error"
             return $False  
         }else{
@@ -4392,7 +4395,7 @@ Try {
                     }
                     if ( $PrimaryVolExportPolicy -ne $SecondaryVolExportPolicy ) 
                     {
-                        Write-Log "Secondary Volume [$SecondaryVolName] use a different export: modify Policy"
+                        Write-Log "[$workOn] Secondary Volume [$SecondaryVolName] use a different export: modify Policy"
                         $attributes = Get-NcVol -Template -Controller $mySecondaryController
                         $attributes.VolumeExportAttributes=$PrimaryVol.VolumeExportAttributes
                         $query=Get-NcVol -Template -Controller $mySecondaryController
@@ -4443,7 +4446,7 @@ Try {
             }
             else 
             {
-                Write-Log "Ignore volume [$PrimaryVolName]" 
+                Write-Log "[$workOn] Ignore volume [$PrimaryVolName]" 
                 Write-LogDebug "check_update_voldr: PrimaryVolState  [$PrimaryVolState]"
                 Write-LogDebug "check_update_voldr: PrimaryVolIsVserverRoot [$PrimaryVolIsVserverRoot]"
                 Write-LogDebug "check_update_voldr: PrimaryVolIsInfiniteVolume [$PrimaryVolIsInfiniteVolume]"
@@ -4522,6 +4525,24 @@ Try {
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcVol.json")"
             $Return=$False
         }
+        $PrimarySisList = Get-NcSis -Controller $myPrimaryController -Vserver $myPrimaryVserver  -ErrorVariable ErrorVar  
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSis failed [$ErrorVar]" }
+        $PrimarySisList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcSis.json") -Encoding ASCII -Width 65535
+        if( ($ret=get-item $($Global:JsonPath+"Get-NcSis.json") -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$($Global:JsonPath+"Get-NcSis.json") saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcSis.json")"
+            $Return=$False
+        }
+        $PrimarySisPolicyList = Get-NcSisPolicy -Controller $myPrimaryController -Vserver $myPrimaryVserver  -ErrorVariable ErrorVar  
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSisPolicy failed [$ErrorVar]" }
+        $PrimarySisPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcSisPolicy.json") -Encoding ASCII -Width 65535
+        if( ($ret=get-item $($Global:JsonPath+"Get-NcSisPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$($Global:JsonPath+"Get-NcSisPolicy.json") saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcSisPolicy.json")"
+            $Return=$False
+        }
     } 
     if( ($Restore -eq $False -and $Backup -eq $False) -and $Global:SelectVolume -eq $False ){
         # remove selectvolume.db file for source and dest
@@ -4570,7 +4591,7 @@ Try {
                         if ( $ANS -eq 'n' ) {
                             Write-LogDebug "SelectVolume volume [$PrimaryVolName] excluded"
                             if($PreviousSelectVolumes.contains($PrimaryVolName)){
-                                Write-Log "[$PrimaryVolName] was previously selected for replication"
+                                Write-Log "[$workOn] [$PrimaryVolName] was previously selected for replication"
                                 $ANS=Read-HostOptions "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]?" "y/n"
                                 if($ANS -eq 'y'){
                                     if((delete_snapmirror_relationship $myPrimaryController $mySecondaryController $myPrimaryVserver $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: delete_snapmirror_relationship failed";return $false}
@@ -4675,7 +4696,7 @@ Try {
                     }
                 } 
                 else {
-                    Write-Log "Volume [$PrimaryVol] already exist on  [$workOn]"
+                    Write-Log "[$workOn] Volume [$PrimaryVol] already exist on  [$workOn]"
                     # ADD Volume Type
                     $SecondaryVolType=$SecondaryVol.VolumeIdAttributes.Type
                     if ( $SecondaryVolType -ne "DP" -and $Restore -eq $False -and $Backup -eq $False) {
@@ -5083,7 +5104,7 @@ Try {
                             } else {
                                 $retry = $True
                             }
-                            Write-Log "Snapmirror [$SourceLocation] [$DestinationLocation] in state [$RelationshipStatus] [$MirrorState] retry"						
+                            Write-Log "[$workOn] Snapmirror [$SourceLocation] [$DestinationLocation] in state [$RelationshipStatus] [$MirrorState] retry"						
                             Write-LogDebug "Wait [$count] and retry [$retry]"
                             Start-Sleep $count
                         } else {
@@ -5284,7 +5305,7 @@ Try {
             if ( $Peer -eq $null ) {
                 $Peer = Get-NcVserverPeer -Vserver $mySecondaryVserver  -PeerVserver $myPrimaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar	
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserverPeer failed [$ErrorVar]" } 
-                Write-Log "create vserver peer: [$myPrimaryVserver] [$myPrimaryController] [$workOn] [$mySecondaryCluster]"
+                Write-Log "[$workOn] create vserver peer: [$myPrimaryVserver] [$myPrimaryController] [$workOn] [$mySecondaryCluster]"
                 Write-LogDebug "create_vserver_peer: New-NcVserverPeer -Vserver $myPrimaryVserver -Application snapmirror  -PeerVserver $mySecondaryVserver -PeerCluster $mySecondaryCluster -Controller $myPrimaryController"
                 try{
                     $Peer=New-NcVserverPeer -Vserver $myPrimaryVserver -PeerVserver $mySecondaryVserver -Application snapmirror -PeerCluster $mySecondaryCluster -Controller $myPrimaryController  -ErrorVariable ErrorVar
@@ -5327,7 +5348,7 @@ Try {
             try{
                 $ret=New-NcVserverPeer -Vserver $PVserver -PeerVserver $PVserverPeer -Application $PPeerApplication -PeerCluster $PPeerCluster -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$false
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVserverPeer failed [$ErrorVar]" }
-                Write-Log "Don't forget to accept Vserver Peering on Cluster [$PPeerCluster] for SVM [$PVserverPeer]"
+                Write-Log "[$workOn] Don't forget to accept Vserver Peering on Cluster [$PPeerCluster] for SVM [$PVserverPeer]"
             }catch{
                 Write-LogWarn "Failed to create new Vserver Peer relationship reason [$_]"
             }
@@ -5980,16 +6001,16 @@ Try {
                     $ANS1 = Read-HostOptions "[$mySecondaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ?" "y/n"
                     if ( $ANS1 -eq 'y' ) 
                     {
-                        $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress 
-                        $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask
-                        $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway
+                        $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress -workOn $workOn
+                        $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask -workOn $workOn
+                        $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway -workOn $workOn
                         $myNode=select_node_from_cli -myController $mySecondaryController -myQuestion "Please select secondary node for LIF [$PrimaryInterfaceName] :" 
                         $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] " -myDefault $PrimaryCurrentPort
                         $LIF = '[' + $PrimaryInterfaceName + '] [' + $myIpAddr + '] [' + $myNetMask +  '] [' + $myGateway + '] [' +$myNode + '] [' + $myPort + ']'					
                             $ANS2 = Read-HostOptions "[$mySecondaryVserver] Ready to create the LIF $LIF ?" "y/n"
                         if ( $ANS2 -eq 'y' ) 
                         {
-                            Write-Log "Create the LIF $LIF"
+                            Write-Log "[$workOn] Create the LIF $LIF"
                             if ( ( $PrimaryFirewallPolicy -eq "mgmt" ) -and ( $PrimaryDataProtocols -eq "none" ) ) 
                             {
                                 Write-Log "[$workOn] LIF [$LIF] is the Administration LIF it must be in Administrative up status"
@@ -6521,28 +6542,37 @@ Function check_update_CIFS_server_dr (
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
     [string] $mySecondaryVserver,
-    [string]$workOn=$mySecondaryVserver
+    [string] $workOn=$mySecondaryVserver,
+    [bool] $Backup=$False,
+    [bool] $Restore=$False
 ) {
     Try {
 	    $Return=$false
 
         # check first before trying sync
-        $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
-        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
-        if ( $PrimaryCifsServerInfos -eq $null ) {
-            Write-LogDebug "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
-            $cifsServerSource=$False
-        }else{$cifsServerSource=$True}
-        $SecondaryCifsServerInfos = Get-NcCifsServer -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
-        if ( $SecondaryCifsServerInfos -eq $null ) {
-            if($cifsServerSource -eq $True){
-                Write-LogWarn "[$workOn] No CIFS Server in Vserver [$mySecondaryVserver]:[$mySecondaryController]"
-                Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
-            }
-            $cifsServerDest=$False
+        if($Restore -ne $True){
+            $PrimaryCifsServerInfos = Get-NcCifsServer  -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
+            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+            if ( $PrimaryCifsServerInfos -eq $null ) {
+                Write-LogDebug "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
+                $cifsServerSource=$False
+                if($Backup -eq $True){return $False}
+            }else{$cifsServerSource=$True}
         }
-        else{$cifsServerDest=$True}
+        if($Backup -ne $True){
+            $SecondaryCifsServerInfos = Get-NcCifsServer -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+            if ( $SecondaryCifsServerInfos -eq $null ) {
+                if($cifsServerSource -eq $True){
+                    Write-LogWarn "[$workOn] No CIFS Server in Vserver [$mySecondaryVserver]:[$mySecondaryController]"
+                    Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
+                }
+                $cifsServerDest=$False
+                if($Restore -eq $True){return $False}
+            }
+            else{$cifsServerDest=$True}
+
+        }
         if($cifsServerSource -eq $False){
             return $False
         }
@@ -6571,17 +6601,16 @@ Function update_CIFS_server_dr (
 
 Try {
 	$Return=$True
-
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
-          Write-LogDebug "update_CIFS_server_dr: end"
-          return $true
-    }
-
+    $RunBackup=$False
+    $RunRestore=$False
     Write-Log "[$workOn] Check SVM CIFS Server options"
     Write-LogDebug "update_CIFS_server_dr[$myPrimaryVserver]: start"
-    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
-    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
-
+    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
+    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+        Write-LogDebug "update_CIFS_server_dr: end"
+        return $true
+    }
     $ONTAPVersionDiff=$False
     if($Restore -eq $False){
         Write-LogDebug "Get-NcCifsOption -VserverContext $myPrimaryVserver -controller $myPrimaryController"
@@ -7554,16 +7583,16 @@ Function create_update_CIFS_shares_dr (
 Try {
 
 	$Return=$True
-
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
-          Write-LogDebug "create_update_CIFS_shares_dr: end"
-          return $True
-    }
-
+    $RunBackup=$False
+    $RunRestore=$False
     Write-Log "[$workOn] Check SVM CIFS shares"
     Write-LogDebug "create_update_CIFS_shares_dr[$myPrimaryVserver]: start"
-    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
-    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
+    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
+    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+        Write-LogDebug "create_update_CIFS_shares_dr: end"
+        return $True
+    }
     if($Restore -eq $False){
         $PrimaryVersion=(Get-NcSystemVersionInfo -Controller $myPrimaryController).VersionTupleV
     }else{
@@ -8619,14 +8648,14 @@ function check_create_dir{
 
 #############################################################################################
 Function create_vserver_dr (
-    [NetApp.Ontapi.Filer.C.NcController]$myPrimaryController,
-    [NetApp.Ontapi.Filer.C.NcController]$mySecondaryController,
-	[string]$myPrimaryVserver,
-    [string]$mySecondaryVserver,
-    [string]$workOn=$mySecondaryVserver,
-    [bool]$DDR,
-    [switch]$Backup,
-    [switch]$Restore){
+    [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
+    [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
+	[string] $myPrimaryVserver,
+    [string] $mySecondaryVserver,
+    [string] $workOn=$mySecondaryVserver,
+    [bool] $DDR,
+    [switch] $Backup,
+    [switch] $Restore){
 Try {
 	$Return = $True
     $runBackup=$False
@@ -8694,7 +8723,7 @@ Try {
                 Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                 [void]$global:mutexconsole.ReleaseMutex()
             }
-            Write-Log "Create new vserver $mySecondaryVserver"
+            Write-Log "[$workOn] Create new vserver"
             if ( ($RootAggr) -eq $null -or ($RootAggr -eq "" ) ) {
                 $mySecondaryVserver
                 $Question = "Please Select root aggregate for [$mySecondaryVserver] on Cluster [$MySecondaryController]:"
@@ -8710,7 +8739,7 @@ Try {
                 clean_and_exit 1 
             }
             [void]$global:mutexconsole.ReleaseMutex()
-            Write-Log "create vserver dr: [$mySecondaryVserver] [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$RootAggr]"
+            Write-Log "[$workOn] create vserver dr: [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$RootAggr]"
             Write-LogDebug "create_vserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
             $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
             if ( $? -ne $True ) {
@@ -8790,6 +8819,7 @@ Try {
         }
         #Wait-Debugger
         if ( ( $ret=mount_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to mount all volumes " ; $Return = $False }
+        #Wait-Debugger
         if($Backup -eq $False){
             if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -workOn $workOn  -state up -Backup $runBackup -Restore $runRestore) -ne $True ) {
                 Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
@@ -9549,16 +9579,16 @@ Function update_cifs_usergroup (
     [bool]$Restore) {
 try{    
     $Return = $True
-
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver)){
-          Write-LogDebug "update_cifs_usergroup: end"
-          return $True
-    }
-
+    $RunBackup=$False
+    $RunRestore=$False
     Write-Log "[$workOn] Update CIFS Local User & Local Group"
     Write-LogDebug "update_cifs_usergroup[$myPrimaryVserver]: start"
-    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
-    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
+    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
+    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
+    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+        Write-LogDebug "update_cifs_usergroup: end"
+        return $True
+    }
     Write-LogDebug "[$myPrimaryVserver] Set Lif up to authenticate user" 
     Write-LogDebug "[$myPrimaryVserver] Get-NcCifsLocalUser -VserverContext $mySecondaryVserver -controller $mySecondaryController"
     if($Restore -eq $False){
@@ -10849,90 +10879,122 @@ Try {
 #############################################################################################
 Function svmdr_db_switch_datafiles (
 	[NetApp.Ontapi.Filer.C.NcController] $myController,
-	[string]$myVserver) {
+    [string] $myVserver,
+    [switch] $Backup) {
 Try {
-	$Return = $True
+    $Return = $True
     Write-Log "[$myVserver] Switch Datafiles"
     Write-LogDebug "svmdr_db_switch_datafiles: start"
-	Write-LogDebug "svmdr_db_switch_datafiles: [$Global:SVMTOOL_DB]"
-        if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
-                $out=new-item -Path $Global:SVMTOOL_DB -ItemType directory
-                if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
-                        Write-LogError "ERROR: Unable to create new item $Global:SVMTOOL_DB" 
-                        return $false
-                }
+    Write-LogDebug "svmdr_db_switch_datafiles: [$Global:SVMTOOL_DB]"
+    if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
+            $out=new-item -Path $Global:SVMTOOL_DB -ItemType directory
+            if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
+                    Write-LogError "ERROR: Unable to create new item $Global:SVMTOOL_DB" 
+                    return $false
+            }
+    }
+    $NcCluster = Get-NcCluster -Controller $myController
+    $SourceCluster = $NcCluster.ClusterName
+    $switch_time=get-date -uformat "%Y%m%d%H%M%S"
+    if($Backup.IsPresent){
+        $NcVserver=Get-NcVserver -Vserver $myVserver -Controller $myController -ErrorVariable ErrorVar 
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" } 
+        $Policy = $NcVserver.QuotaPolicy
+        Write-LogDebug "svmdr_db_switch_datafiles: Policy [$Policy]"
+
+        $SVMTOOL_DB_SRC_CLUSTER=$Global:JsonPath + '\' + $SourceCluster + '.cluster'
+        $SVMTOOL_DB_SRC_VSERVER=$SVMTOOL_DB_SRC_CLUSTER + '\' + $myVserver + '.vserver'
+
+        $QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy
+        $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+        if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+            Write-LogDebug "svmdr_db_switch_datafiles: switch [$QUOTA_DB_FILE_SWITCH]" ;
+            Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
         }
-  	$NcCluster = Get-NcCluster -Controller $myController
-  	$SourceCluster = $NcCluster.ClusterName
-    $relationlist=Get-NcSnapmirrorDestination  -SourceVserver $myVserver -VserverContext $myVserver -Controller $myController  -ErrorVariable ErrorVar
-	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirrorDestination failed [$ErrorVar]" } 
-  	if ( $relationlist -eq $null ) { 
-		Write-LogDebug "svmdr_db_switch_datafiles: SnapMirror No Relations found"
-        return $True
-  	}
-    $switch_time= get-date -uformat "%Y%m%d%H%M%S"
-  	foreach ( $relation in $relationlist ) {
-		$SourceVolume = $relation.SourceVolume
-		$SourceVserver = $relation.SourceVserver
-		$DestinationVolume = $relation.DestinationVolume
-		$DestinationVserver = $relation.DestinationVserver
-		$DestinationLocation = $relation.DestinationLocation
-		$RelationshipType =$relation.RelationshipType
-		if ( ( $RelationshipType -eq "data_protection" -or $RelationshipType -eq "extended_data_protection") -and ( $SourceVserver -ne $DestinationVserver  )  ) {
-			$NcVserverPeer=Get-NcVserverPeer -Controller $myController -Vserver $SourceVserver -PeerVserver $DestinationVserver  -ErrorVariable ErrorVar
-			if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserverPeer failed [$ErrorVar]" } 
-			$DestinationCluster=$NcVserverPeer.PeerCluster
-			Write-LogDebug "svmdr_db_switch_datafiles: [$SourceVserver] [$SourceVolume] -> [$DestinationCluster] [$DestinationVserver] [$DestinationVolume] [$RelationshipType]" ;
-			$NcVserver=Get-NcVserver -Vserver $SourceVserver -Controller $myController  -ErrorVariable ErrorVar 
-			if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" } 
-			$Policy = $NcVserver.QuotaPolicy
-			Write-LogDebug "svmdr_db_switch_datafiles: Policy [$Policy]"
+        $QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy + '.err' 
+        $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+        if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+            Write-LogDebug "svmdr_db_switch_datafiles: [$QUOTA_DB_FILE_SWITCH]" ;
+            Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
+        }
+        $VOL_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\volume.options'
+        $VOL_DB_FILE_SWITCH=$VOL_DB_FILE + '.' + $switch_time
+        if ((Test-Path $VOL_DB_FILE) -eq $True ) { 
+            Write-LogDebug "svmdr_db_switch_datafiles: switch [$VOL_DB_FILE_SWITCH]" ;
+            Rename-Item $VOL_DB_FILE $VOL_DB_FILE_SWITCH
+        }
+        Write-LogDebug "svmdr_db_switch_datafiles: end"
+        return $Return
+    }else{
+       $relationlist=Get-NcSnapmirrorDestination  -SourceVserver $myVserver -VserverContext $myVserver -Controller $myController  -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirrorDestination failed [$ErrorVar]" } 
+        if ( $relationlist -eq $null ) { 
+            Write-LogDebug "svmdr_db_switch_datafiles: SnapMirror No Relations found"
+            return $True
+        }
+        foreach ( $relation in $relationlist ) {
+            $SourceVolume = $relation.SourceVolume
+            $SourceVserver = $relation.SourceVserver
+            $DestinationVolume = $relation.DestinationVolume
+            $DestinationVserver = $relation.DestinationVserver
+            $DestinationLocation = $relation.DestinationLocation
+            $RelationshipType =$relation.RelationshipType
+            if ( ( $RelationshipType -eq "data_protection" -or $RelationshipType -eq "extended_data_protection") -and ( $SourceVserver -ne $DestinationVserver  )  ) {
+                $NcVserverPeer=Get-NcVserverPeer -Controller $myController -Vserver $SourceVserver -PeerVserver $DestinationVserver  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserverPeer failed [$ErrorVar]" } 
+                $DestinationCluster=$NcVserverPeer.PeerCluster
+                Write-LogDebug "svmdr_db_switch_datafiles: [$SourceVserver] [$SourceVolume] -> [$DestinationCluster] [$DestinationVserver] [$DestinationVolume] [$RelationshipType]" ;
+                $NcVserver=Get-NcVserver -Vserver $SourceVserver -Controller $myController  -ErrorVariable ErrorVar 
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" } 
+                $Policy = $NcVserver.QuotaPolicy
+                Write-LogDebug "svmdr_db_switch_datafiles: Policy [$Policy]"
 
-			$SVMTOOL_DB_SRC_CLUSTER=$Global:SVMTOOL_DB + '\' + $SourceCluster + '.cluster'
-			$SVMTOOL_DB_SRC_VSERVER=$SVMTOOL_DB_SRC_CLUSTER + '\' +$SourceVserver + '.vserver'
+                $SVMTOOL_DB_SRC_CLUSTER=$Global:SVMTOOL_DB + '\' + $SourceCluster + '.cluster'
+                $SVMTOOL_DB_SRC_VSERVER=$SVMTOOL_DB_SRC_CLUSTER + '\' +$SourceVserver + '.vserver'
 
-			$QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy
-			$QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
-			if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: switch [$QUOTA_DB_FILE_SWITCH]" ;
-				Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
-			}
-			$QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy + '.err' 
-			$QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
-			if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: [$QUOTA_DB_FILE_SWITCH]" ;
-				Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
-			}
-			$VOL_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\volume.options'
-			$VOL_DB_FILE_SWITCH=$VOL_DB_FILE + '.' + $switch_time
-			if ((Test-Path $VOL_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: switch [$VOL_DB_FILE_SWITCH]" ;
-				Rename-Item $VOL_DB_FILE $VOL_DB_FILE_SWITCH
-			}
-			$SVMTOOL_DB_DST_CLUSTER=$Global:SVMTOOL_DB + '\' + $DestinationCluster + '.cluster'
-			$SVMTOOL_DB_DST_VSERVER=$SVMTOOL_DB_DST_CLUSTER + '\' +$DestinationVserver + '.vserver'
-			$QUOTA_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\quotarules.' + $Policy
-			$QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
-			if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: switch [$QUOTA_DB_FILE_SWITCH]" ;
-				Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
-			}
-			$QUOTA_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\quotarules.' + $Policy + '.err' 
-			$QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
-			if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: [$QUOTA_DB_FILE_SWITCH]" ;
-				Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
-			}
-			$VOL_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\volume.options'
-			$VOL_DB_FILE_SWITCH=$VOL_DB_FILE + '.' + $switch_time
-			if ((Test-Path $VOL_DB_FILE) -eq $True ) { 
-				Write-LogDebug "svmdr_db_switch_datafiles: switch [$VOL_DB_FILE_SWITCH]" ;
-				Rename-Item $VOL_DB_FILE $VOL_DB_FILE_SWITCH
-			}
-		}
-	}	
-    Write-LogDebug "svmdr_db_switch_datafiles: end"
-	return $Return
+                $QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy
+                $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+                if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: switch [$QUOTA_DB_FILE_SWITCH]" ;
+                    Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
+                }
+                $QUOTA_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\quotarules.' + $Policy + '.err' 
+                $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+                if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: [$QUOTA_DB_FILE_SWITCH]" ;
+                    Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
+                }
+                $VOL_DB_FILE=$SVMTOOL_DB_SRC_VSERVER + '\volume.options'
+                $VOL_DB_FILE_SWITCH=$VOL_DB_FILE + '.' + $switch_time
+                if ((Test-Path $VOL_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: switch [$VOL_DB_FILE_SWITCH]" ;
+                    Rename-Item $VOL_DB_FILE $VOL_DB_FILE_SWITCH
+                }
+                $SVMTOOL_DB_DST_CLUSTER=$Global:SVMTOOL_DB + '\' + $DestinationCluster + '.cluster'
+                $SVMTOOL_DB_DST_VSERVER=$SVMTOOL_DB_DST_CLUSTER + '\' +$DestinationVserver + '.vserver'
+                $QUOTA_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\quotarules.' + $Policy
+                $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+                if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: switch [$QUOTA_DB_FILE_SWITCH]" ;
+                    Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
+                }
+                $QUOTA_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\quotarules.' + $Policy + '.err' 
+                $QUOTA_DB_FILE_SWITCH=$QUOTA_DB_FILE + '.' + $switch_time
+                if ((Test-Path $QUOTA_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: [$QUOTA_DB_FILE_SWITCH]" ;
+                    Rename-Item $QUOTA_DB_FILE $QUOTA_DB_FILE_SWITCH
+                }
+                $VOL_DB_FILE=$SVMTOOL_DB_DST_VSERVER + '\volume.options'
+                $VOL_DB_FILE_SWITCH=$VOL_DB_FILE + '.' + $switch_time
+                if ((Test-Path $VOL_DB_FILE) -eq $True ) { 
+                    Write-LogDebug "svmdr_db_switch_datafiles: switch [$VOL_DB_FILE_SWITCH]" ;
+                    Rename-Item $VOL_DB_FILE $VOL_DB_FILE_SWITCH
+                }
+            }
+        }	
+        Write-LogDebug "svmdr_db_switch_datafiles: end"
+        return $Return
+    }
 }
 Catch {
     handle_error $_ $myPrimaryVserver
@@ -11242,23 +11304,21 @@ Function Save_Volume_To_Selectvolumedb (
 #############################################################################################
 Function save_vol_options_to_voldb (
 	[NetApp.Ontapi.Filer.C.NcController] $myController,
-	[string] $myVserver) 
+    [string] $myVserver,
+    [switch] $Backup) 
 {
     Try 
     {
         Write-Log "[$myVserver] Save volumes options"
     	$Return = $True
-
     	Write-LogDebug "save_vol_options_to_voldb: start"
     	if ( ( svmdr_db_check -myController $myController -myVserver $myVserver ) -eq $false ) {
     		Write-LogError "ERROR: Failed to access quotadb" 
             Write-LogDebug "save_vol_options_to_voldb: end"
     		return $False
     	}
-
     	$NcCluster = Get-NcCluster -Controller $myController
     	$SourceCluster = $NcCluster.ClusterName
-
     	Write-LogDebug "Get-NcSnapmirrorDestination -SourceVserver $myVserver -VserverContext $myVserver -Controller $myController"
     	$relationlist=Get-NcSnapmirrorDestination -SourceVserver $myVserver -VserverContext $myVserver -Controller $myController  -ErrorVariable ErrorVar
     	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirrorDestination failed [$ErrorVar]" }
@@ -11346,140 +11406,224 @@ Function save_vol_options_to_voldb (
 
 #############################################################################################
 Function set_vol_options_from_voldb (
-	[NetApp.Ontapi.Filer.C.NcController]$myController,
-	[string]$myVserver,
-    [switch]$NoCheck ) 
+	[NetApp.Ontapi.Filer.C.NcController] $myController,
+	[string] $myVserver,
+    [switch] $NoCheck,
+    [switch] $Restore ) 
 {
     Try 
     {
     	$Return = $true
         Write-logDebug "set_vol_options_from_voldb: start"
-    	$VolumeListToRestartQuota= @()
-        if($NoCheck -eq $False){
-        	if ( ( svmdr_db_check -myController $myController -myVserver $myVserver ) -eq $false ) 
-            {
-        		Write-LogError "ERROR: Failed to access quotadb" 
-        		return $False
-        	}
-        }
-
-    	if ( $myVserver -eq $null ) { $myVserver = "*" }
-    	Write-Log "Set volumes options for vserver [$myVserver] from SVMTOOL_DB [$Global:SVMTOOL_DB]"
-    	if ( $myVolume -eq $null ) { $myVolume  = "*" }
-
-    	$NcCluster = Get-NcCluster -Controller $myController
-    	$ClusterName = $NcCluster.ClusterName
-    	Write-LogDebug "set_vol_options_from_voldb: ClusterName [$ClusterName]"
-
-    	$SVMTOOL_DB_CLUSTER=$Global:SVMTOOL_DB + '\' + $ClusterName  + '.cluster'
-
-    	if ( ( Test-Path $SVMTOOL_DB_CLUSTER -pathType container ) -eq $false ) 
-        {
-    	 	Write-LogError "ERROR: Cluster [$ClusterName] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]" 
-    		return $false
-    	}
-
-    	if ( ( Test-Path $SVMTOOL_DB_CLUSTER/$myVserver.vserver -pathType container ) -eq $false ) 
-        {
-      		Write-LogError "ERROR: Vserver [$ClusterName] [$myVserver] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]"
-    		return $false
-    	}
-    	Write-LogDebug "set_vol_options_from_voldb: SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"
-    	$VserverListItem = Get-Item "${SVMTOOL_DB_CLUSTER}/${myVserver}.vserver"
-    	if ( $VserverListItem -eq $null ) 
-        {
-    		Write-Warning "No Vserver File found in SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"  
-    	} 
-        else 
-        {
-    		foreach ( $VserverItem in  ( $VserverListItem  | Skip-Null ) ) 
-            {
-    			$VserverItemName=$VserverItem.Name
-    			$VserverName=$VserverItemName.Split('.')[0] 
-    			$VOL_DB_VSERVER=$SVMTOOL_DB_CLUSTER + '\' + $VserverItemName
-    			$VOL_DB_FILE=$VOL_DB_VSERVER + '\volume.options'
-      			Write-LogDebug "set_vol_options_from_voldb: read VOL_DB_FILE for Cluster [$ClusterName] Vserver [$VserverName] [$VOL_DB_FILE]"
-    			if ( ( Test-Path $VOL_DB_FILE  )  -eq $false ) 
+        if($Restore.IsPresent){
+            if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
+                $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+            }else{
+                $Return=$False
+                $filepath=$($Global:JsonPath+"Get-NcVserver.json")
+                Throw "ERROR: failed to read $filepath"
+            }
+            if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
+                $PrimaryVolumes=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+            }else{
+                $Return=$False
+                $filepath=$($Global:JsonPath+"Get-NcVol.json")
+                Throw "ERROR: failed to read $filepath"
+            }
+            if(Test-Path $($Global:JsonPath+"Get-NcSis.json")){
+                $PrimarySis=Get-Content $($Global:JsonPath+"Get-NcSis.json") | ConvertFrom-Json
+            }else{
+                $Return=$False
+                $filepath=$($Global:JsonPath+"Get-NcSis.json")
+                Throw "ERROR: failed to read $filepath"
+            }
+            foreach($vol in $PrimaryVolumes | Where-object {$_.Name -ne $PrimaryVserver.RootVolume}){
+                $VolName=$vol.Name
+                $VolSnapshotPolicy=$vol.VolumeSnapshotAttributes.SnapshotPolicy
+                $VolSisPolicy=($PrimarySis | Where-Object {$_.Path -eq $("/vol/"+$VolName)}).Policy
+                $VolSisSchedule=($PrimarySis | Where-Object {$_.Path -eq $("/vol/"+$VolName)}).Schedule
+                Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
+                $myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
+                if ( $myVol -ne $null ) 
                 {
-    				Write-Warning "No Volumes files found for Cluster [$ClusterName] Vserver [$VserverName]"  
-    			} 
-                else 
-                {
-    				$CheckVserver=Get-NcVserver -Controller $myController -Name $VserverName
-    				if ( $CheckVserver -eq $null ) 
+                    $myVolSnapshotPolicy=$myVol.VolumeSnapshotAttributes.SnapshotPolicy
+                    Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
+                    if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
                     {
-    		  			Write-LogError "ERROR: [$ClusterName] [$myVserver] no such vserver" 
-    					$Return = $false
-    				} 
+                        $attributes = Get-NcVol -Template
+                        $mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
+                        $mySnapshotAttributes.SnapshotPolicy= $VolSnapshotPolicy
+                        $attributes.VolumeSnapshotAttributes=$mySnapshotAttributes
+                        $tmpStr=$attributes.VolumeSnapshotAttributes.SnapshotPolicy
+                        Write-LogDebug "attributes[$tmpStr]"
+                        $query=Get-NcVol -Template
+                        $query.name=$VolName
+                        $query.vserver=$myVserver
+                        $query.NcController=$myController
+                        Write-LogDebug "Update-NcVol -Controller $myController -Query `$query -Attributes `$attributes"
+                        $out=Update-NcVol -Controller $myController -Query $query -Attributes $attributes  -ErrorVariable ErrorVar 
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                        $message=$out.FailureList.ErrorMessage
+                        if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
+                    }
+                    if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
+                    {
+                        Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
+                        $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
+                        if($SisInfo -ne $Null)
+                        {	
+                            $myVolSisPolicy=$SisInfo.Policy
+                            if ($myVolSisPolicy -ne $VolSisPolicy)
+                            {
+                                Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
+                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
+                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                            }
+                        }    
+                    }
+                    if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
+                    {
+                        Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
+                        $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
+                        if($SisInfo -ne $Null)
+                        {
+                            $myVolSisSchedule=$SisInfo.Schedule
+                            if($myVolSisSchedule -ne $VolSisSchedule)
+                            {
+                                Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
+                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
+                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
+                            }
+                        }
+                    }
+                }
+            }
+        }else{
+            $VolumeListToRestartQuota= @()
+            if($NoCheck -eq $False){
+                if ( ( svmdr_db_check -myController $myController -myVserver $myVserver ) -eq $false ) 
+                {
+                    Write-LogError "ERROR: Failed to access quotadb" 
+                    return $False
+                }
+            }
+            if ( $myVserver -eq $null ) { $myVserver = "*" }
+            Write-Log "Set volumes options for vserver [$myVserver] from SVMTOOL_DB [$Global:SVMTOOL_DB]"
+            if ( $myVolume -eq $null ) { $myVolume  = "*" }
+            $NcCluster = Get-NcCluster -Controller $myController
+            $ClusterName = $NcCluster.ClusterName
+            Write-LogDebug "set_vol_options_from_voldb: ClusterName [$ClusterName]"
+            $SVMTOOL_DB_CLUSTER=$Global:SVMTOOL_DB + '\' + $ClusterName  + '.cluster'
+            if ( ( Test-Path $SVMTOOL_DB_CLUSTER -pathType container ) -eq $false ) 
+            {
+                Write-LogError "ERROR: Cluster [$ClusterName] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]" 
+                return $false
+            }
+            if ( ( Test-Path $SVMTOOL_DB_CLUSTER/$myVserver.vserver -pathType container ) -eq $false ) 
+            {
+                Write-LogError "ERROR: Vserver [$ClusterName] [$myVserver] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]"
+                return $false
+            }
+            Write-LogDebug "set_vol_options_from_voldb: SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"
+            $VserverListItem = Get-Item "${SVMTOOL_DB_CLUSTER}/${myVserver}.vserver"
+            if ( $VserverListItem -eq $null ) 
+            {
+                Write-Warning "No Vserver File found in SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"  
+            } 
+            else 
+            {
+                foreach ( $VserverItem in  ( $VserverListItem  | Skip-Null ) ) 
+                {
+                    $VserverItemName=$VserverItem.Name
+                    $VserverName=$VserverItemName.Split('.')[0] 
+                    $VOL_DB_VSERVER=$SVMTOOL_DB_CLUSTER + '\' + $VserverItemName
+                    $VOL_DB_FILE=$VOL_DB_VSERVER + '\volume.options'
+                    Write-LogDebug "set_vol_options_from_voldb: read VOL_DB_FILE for Cluster [$ClusterName] Vserver [$VserverName] [$VOL_DB_FILE]"
+                    if ( ( Test-Path $VOL_DB_FILE  )  -eq $false ) 
+                    {
+                        Write-Warning "No Volumes files found for Cluster [$ClusterName] Vserver [$VserverName]"  
+                    } 
                     else 
                     {
-    					Get-Content $VOL_DB_FILE | Select-Object -uniq | foreach {
-        					$VolName=$_.split(':')[0]
-        					$VolSnapshotPolicy=$_.split(':')[1]
-        					$VolSisPolicy=$_.split(':')[2]
-                            $VolSisSchedule=$_.split(':')[3]
-                           	Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
-        					$myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
-        					if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
-        					if ( $myVol -ne $null ) 
-                            {
-        						$myVolSnapshotPolicy=$myVol.VolumeSnapshotAttributes.SnapshotPolicy
-        						Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
-        						if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
+                        $CheckVserver=Get-NcVserver -Controller $myController -Name $VserverName
+                        if ( $CheckVserver -eq $null ) 
+                        {
+                            Write-LogError "ERROR: [$ClusterName] [$myVserver] no such vserver" 
+                            $Return = $false
+                        } 
+                        else 
+                        {
+                            Get-Content $VOL_DB_FILE | Select-Object -uniq | foreach {
+                                $VolName=$_.split(':')[0]
+                                $VolSnapshotPolicy=$_.split(':')[1]
+                                $VolSisPolicy=$_.split(':')[2]
+                                $VolSisSchedule=$_.split(':')[3]
+                                Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
+                                $myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
+                                if ( $myVol -ne $null ) 
                                 {
-        							$attributes = Get-NcVol -Template
-        							$mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
-        							$mySnapshotAttributes.SnapshotPolicy= $VolSnapshotPolicy
-        							$attributes.VolumeSnapshotAttributes=$mySnapshotAttributes
-        							$tmpStr=$attributes.VolumeSnapshotAttributes.SnapshotPolicy
-        							Write-LogDebug "attributes[$tmpStr]"
-        							$query=Get-NcVol -Template
-        							$query.name=$VolName
-        							$query.vserver=$myVserver
-        							$query.NcController=$myController
-        							Write-LogDebug "Update-NcVol -Controller $myController -Query `$query -Attributes `$attributes"
-        							$out=Update-NcVol -Controller $myController -Query $query -Attributes $attributes  -ErrorVariable ErrorVar 
-        							if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
-        							$message=$out.FailureList.ErrorMessage
-        							if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
-        						}
-                                if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
-                                {
-                                    Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
-                                    $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-									if($SisInfo -ne $Null)
-									{	
-                                    	$myVolSisPolicy=$SisInfo.Policy
-                                    	if ($myVolSisPolicy -ne $VolSisPolicy)
-                                    	{
-                                        	Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
-                                        	Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
-                                        	$out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                                        	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }
-                                    	}
-									}    
+                                    $myVolSnapshotPolicy=$myVol.VolumeSnapshotAttributes.SnapshotPolicy
+                                    Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
+                                    if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
+                                    {
+                                        $attributes = Get-NcVol -Template
+                                        $mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
+                                        $mySnapshotAttributes.SnapshotPolicy= $VolSnapshotPolicy
+                                        $attributes.VolumeSnapshotAttributes=$mySnapshotAttributes
+                                        $tmpStr=$attributes.VolumeSnapshotAttributes.SnapshotPolicy
+                                        Write-LogDebug "attributes[$tmpStr]"
+                                        $query=Get-NcVol -Template
+                                        $query.name=$VolName
+                                        $query.vserver=$myVserver
+                                        $query.NcController=$myController
+                                        Write-LogDebug "Update-NcVol -Controller $myController -Query `$query -Attributes `$attributes"
+                                        $out=Update-NcVol -Controller $myController -Query $query -Attributes $attributes  -ErrorVariable ErrorVar 
+                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                                        $message=$out.FailureList.ErrorMessage
+                                        if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
+                                    }
+                                    if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
+                                    {
+                                        Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
+                                        $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
+                                        if($SisInfo -ne $Null)
+                                        {	
+                                            $myVolSisPolicy=$SisInfo.Policy
+                                            if ($myVolSisPolicy -ne $VolSisPolicy)
+                                            {
+                                                Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
+                                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
+                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                                            }
+                                        }    
+                                    }
+                                    if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
+                                    {
+                                        Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
+                                        $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
+                                        if($SisInfo -ne $Null)
+                                        {
+                                            $myVolSisSchedule=$SisInfo.Schedule
+                                            if($myVolSisSchedule -ne $VolSisSchedule)
+                                            {
+                                                Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
+                                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
+                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
+                                            }
+                                        }
+                                    }
                                 }
-                                if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
-                                {
-                                    Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
-                                    $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-									if($SisInfo -ne $Null)
-									{
-                                    	$myVolSisSchedule=$SisInfo.Schedule
-                                    	if($myVolSisSchedule -ne $VolSisSchedule)
-                                    	{
-                                        	Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
-                                        	Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
-                                        	$out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                                        	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
-                                    	}
-									}
-                                }
-        					}
-    				    }   
-    			    }
-    		    }
-      	    }
+                            }   
+                        }
+                    }
+                }
+            }
         }
         Write-logDebug "set_vol_options_from_voldb: end"
         return $Return
@@ -11778,11 +11922,240 @@ Function set_shareacl_options_from_shareacldb (
 }
 
 #############################################################################################
+Function restore_quota (
+	[NetApp.Ontapi.Filer.C.NcController] $myController,
+	[string] $myVserver, 
+	[string] $myPolicy="default")
+{
+    Try 
+    {
+        return $Return
+        Write-LogDebug "restore_quota: start"
+        $VolumeListToRestartQuota= @()
+        if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
+            $VolumeList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+        }else{
+            $filepath=$($Global:JsonPath+"Get-NcVol.json")
+            Write-LogDebug "ERROR: failed to read $filepath"
+            return $False
+        }
+        if(Test-Path $($Global:JsonPath+"Get-NcQuotaPolicy.json")){
+            $QuotaPolicyList=Get-Content $($Global:JsonPath+"Get-NcQuotaPolicy.json") | ConvertFrom-Json
+        }else{
+            $filepath=$($Global:JsonPath+"Get-NcQuotaPolicy.json")
+            Write-LogDebug "ERROR: failed to read $filepath"
+            return $False
+        }
+        if(Test-Path $($Global:JsonPath+"Get-NcQuota.json")){
+            $QuotaRulesList=Get-Content $($Global:JsonPath+"Get-NcQuota.json") | ConvertFrom-Json
+        }else{
+            $filepath=$($Global:JsonPath+"Get-NcQuota.json")
+            Write-LogDebug "ERROR: failed to read $filepath"
+            return $False
+        }
+        if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
+            $SourceVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+        }else{
+            $filepath=$($Global:JsonPath+"Get-NcVserver.json")
+            Write-LogDebug "ERROR: failed to read $filepath"
+            return $False
+        }
+        $DestVserver=Get-NcVserver -Controller $myController -Name $myVserver -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { Write-LogDebug "ERROR: Get-NcVserver failed [$ErrorVar]" ; return $False}
+        if ( $DestVserver -eq $null ) 
+        {
+            Write-LogError "ERROR: [$ClusterName] [$myVserver] no such vserver" 
+            return $False
+        }
+        $QuotaPolicyDest=$DestVserver.QuotaPolicy
+        $QuotaPolicySource=$SourceVserver.QuotaPolicy
+        Write-LogDebug "Dest Vserver [$myVserver] use Quota Policy [$QuotaPolicyDest]"
+        if($QuotaPolicyDest -ne $QuotaPolicySource){
+            Write-Log "Modify Quota Policy on Vserver [$myVserver]"
+            Write-LogDebug "Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $myPolicy"
+            $checkQuotaPolicy=$QuotaPolicyList | Where-Object {$_.PolicyName -eq $QuotaPolicySource}
+            if ($checkQuotaPolicy -eq $null){
+                Write-Log "Need to create Quota Policy [$QuotaPolicySource] on Vserver [$myVserver]"
+                Write-LogDebug "New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController"
+                $ret=New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcQuotaPolicy failed [$ErrorVar]" ; $Return = $False }
+            }
+            Write-LogDebug "Set-NcVserver -Name $myVserver -QuotaPolicy $QuotaPolicySource -Controller $myController"
+            $ret=Set-NcVserver -Name $myVserver -QuotaPolicy $QuotaPolicySource -Controller $myController -ErrorVariable ErrorVar
+            if ( $? -ne $True ) { Write-LogDebug "ERROR: Set-NcVserver failed [$ErrorVar]" ; $Return = $False }  
+        }
+        foreach($quota in $QuotaRulesList){
+            $ClusterName=$myController.Name
+            $Vserver=$myVserver
+            $Volume=$quota.Volume
+            $Qtree=$quota.Qtree
+            $QuotaType=$quota.QuotaType
+            $QuotaTarget=$quota.QuotaTarget
+            $DiskLimit=$quota.DiskLimit
+            $FileLimit=$quota.FileLimit
+            $SoftDiskLimit=$quota.SoftDiskLimit
+            $SoftFileLimit=$quota.SoftFileLimit
+            $Threshold=$quota.Threshold
+            Write-LogDebug "create_quota_rules_from_quotadb: ${ClusterName}:${Vserver}:${Volume}:${Qtree}:${QuotaType}:${QuotaTarget}:${DiskLimit}:${FileLimit}:${SoftDiskLimit}:${SoftFileLimit}:${Threshold}"
+            Write-LogDebug "create_quota_rules_from_quotadb: volume informations [${ClusterName}] [${Vserver}] [${Volume}]"
+            $VOL=$VolumeList | where-Object {$_.Name -eq $Volume}
+            if ( $VOL.VolumeMirrorAttributes.IsDataProtectionMirror -eq $True ) 
+            {
+                Write-LogError "ERROR: unable to set quota on volume [$Vserver] [$Volume] is DataProtectionMirror" 
+                $Return = $false
+            } 
+            else 
+            { 
+                $NcQuotaParamList=@{}
+                $Opts = ""  
+                if ( $DiskLimit -ne '-' ) 
+                {
+                    $size = $DiskLimit + 'k'
+                    $Opts = $Opts + '-DiskLimit ' + $size + ' '
+                    $NcQuotaParam = @{DiskLimit=$size}
+                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                }
+                if ( $SoftDiskLimit -ne '-' ) 
+                {
+                    $size = $SoftDiskLimit + 'k'
+                    $Opts = $Opts + '-SoftDiskLimit ' + $size + ' '
+                    $NcQuotaParam = @{SoftDiskLimit=$size}
+                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                }
+                if ( $FileLimit -ne '-' ) 
+                {
+                    $Opts = $Opts + '-FileLimit ' + $FileLimit + ' '
+                    $NcQuotaParam = @{FileLimit=$FileLimit}
+                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                }
+                if ( $SoftFileLimit -ne '-' ) 
+                {
+                    $Opts = $Opts + '-SoftFileLimit ' + $SoftFileLimit + ' '
+                    $NcQuotaParam = @{SoftFileLimit=$SoftFileLimit}
+                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                }
+                if ( $Threshold -ne '-' ) 
+                {
+                    $size = $Threshold + 'k'
+                    $Opts = $Opts + '-Threshold ' + $size + ' '
+                    $NcQuotaParam = @{Threshold=$size}
+                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                }
+                switch ($QuotaType) 
+                {
+                    'tree' 
+                    {
+                        #if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
+                        $Query=Get-NcQuota -Template
+                        $Query.QuotaTarget = $QuotaTarget
+                        $Query.Volume = $Volume
+                        $Query.Vserver = $Vserver
+                        $Query.QuotaType= 'tree'  
+                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query
+                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
+                            {
+                                if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
+                                Write-LogDebug "Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy"
+                                $Output=Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" } 
+                            }
+                        }
+                        if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
+                        try{
+                            Write-LogDebug "Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget $Opts -Policy $myPolicy"
+                            $Output=Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) { Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
+                        }catch{
+                            $ErrorMessage = $_.Exception.Message
+                            Write-Warning "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"  
+                        }
+                    }
+                    'user' 
+                    {
+                        $Query=Get-NcQuota -Template
+                        $Query.QuotaTarget = $QuotaTarget
+                        $Query.Volume = $Volume
+                        $Query.Vserver = $Vserver
+                        if ( $Qtree -ne "" ) { $Query.Qtree = $Qtree }
+                        $Query.QuotaType= 'user'
+                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
+                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) -and ( $Query.Qtree -eq $Quota.Qtree ) ) 
+                            {
+                                Write-LogDebug "Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
+                                $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                            }
+                        }
+                        try{
+                            Write-LogDebug "Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
+                            $Output=Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
+                        }catch{
+                            $ErrorMessage = $_.Exception.Message
+                            Write-Warning "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                        }
+                    }
+                    'group' 
+                    {
+                        $Query=Get-NcQuota -Template
+                        $Query.QuotaTarget = $QuotaTarget
+                        $Query.Volume = $Volume
+                        $Query.Qtree = $Qtree
+                        $Query.Vserver = $Vserver
+                        $Query.QuotaType= 'group'
+                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
+                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
+                            {
+                                Write-LogDebug "Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
+                                $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                            }
+                        }
+                        try{
+                            Write-LogDebug "Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
+                            $Output=Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
+                        }catch{
+                            $ErrorMessage = $_.Exception.Message
+                            Write-Warning "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                        }
+                    }
+                    default 
+                    {
+                        Write-LogError "ERROR: $QuotaType Unknown Type" 
+                        $Return = $false
+                    }
+                }
+            }
+        }
+        restart_quota_vol_from_list  -myController $myController -myVserver $myVserver -myVolumeList $VolumeListToRestartQuota
+        Write-LogDebug "restore_quota: end"
+        return $Return
+    }
+    Catch 
+    {
+        handle_error $_ $myVserver
+	    return $Return
+    }
+}
+
+#############################################################################################
 Function create_quota_rules_from_quotadb (
 	[NetApp.Ontapi.Filer.C.NcController] $myController,
-	[string]$myVserver, 
-	[string]$myPolicy="default",
-    [switch]$NoCheck) 
+	[string] $myVserver, 
+	[string] $myPolicy="default",
+    [switch] $NoCheck)
 {
     Try 
     {
@@ -11796,35 +12169,35 @@ Function create_quota_rules_from_quotadb (
                 return $False
             }
         }
-	    if ( $myVserver -eq $null ) { $myVserver = "*" }
-	    Write-Log "Create Quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]" 
-	    if ( $myVolume -eq $null ) { $myVolume  = "*" }
-	    $NcCluster = Get-NcCluster -Controller $myController
-	    $ClusterName = $NcCluster.ClusterName
-	    Write-LogDebug "create_quota_rules_from_quotadb: ClusterName [$ClusterName]"
-	    $SVMTOOL_DB_CLUSTER=$Global:SVMTOOL_DB + '\' + $ClusterName  + '.cluster'
-	    if ( ( Test-Path $SVMTOOL_DB_CLUSTER -pathType container ) -eq $false ) 
+        if ( $myVserver -eq $null ) { $myVserver = "*" }
+        if ( $myVolume -eq $null ) { $myVolume  = "*" }
+        $NcCluster = Get-NcCluster -Controller $myController
+        $ClusterName = $NcCluster.ClusterName
+        Write-LogDebug "create_quota_rules_from_quotadb: ClusterName [$ClusterName]"
+        Write-Log "Create Quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]"
+        $SVMTOOL_DB_CLUSTER=$Global:SVMTOOL_DB + '\' + $ClusterName  + '.cluster'
+        if ( ( Test-Path $SVMTOOL_DB_CLUSTER -pathType container ) -eq $false ) 
         {
-		    Write-LogError "ERROR: Cluster [$ClusterName] found in SVMTOOL_DB [$Global:SVMTOOL_DB]" 
-		    return $false
-  	    }
-	    if ( ( Test-Path $SVMTOOL_DB_CLUSTER/$myVserver.vserver -pathType container ) -eq $false ) 
+            Write-LogError "ERROR: Cluster [$ClusterName] found in SVMTOOL_DB [$Global:SVMTOOL_DB]" 
+            return $false
+        }
+        if ( ( Test-Path $SVMTOOL_DB_CLUSTER/$myVserver.vserver -pathType container ) -eq $false ) 
         {
-		    Write-LogError "ERROR: Vserver [$ClusterName] [$myVserver] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]"
-		    return $false
-	    }
-	    Write-LogDebug "create_quota_rules_from_quotadb: SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"
-	    $VserverListItem = Get-Item "${SVMTOOL_DB_CLUSTER}/${myVserver}.vserver"
-	    if ( $VserverListItem -eq $null ) 
+            Write-LogError "ERROR: Vserver [$ClusterName] [$myVserver] not found in SVMTOOL_DB [$Global:SVMTOOL_DB]"
+            return $false
+        }
+        Write-LogDebug "create_quota_rules_from_quotadb: SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"
+        $VserverListItem = Get-Item "${SVMTOOL_DB_CLUSTER}/${myVserver}.vserver"
+        if ( $VserverListItem -eq $null ) 
         {
-		    Write-Warning "Not Vserver File found in SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"  
-	    } 
+            Write-Warning "Not Vserver File found in SVMTOOL_DB_CLUSTER [$SVMTOOL_DB_CLUSTER]"  
+        } 
         else 
         {
-  	        foreach ( $VserverItem in  ( $VserverListItem  | Skip-Null ) ) {
-		        $VserverItemName=$VserverItem.Name
-		        $VserverName=$VserverItemName.Split('.')[0] 
-		        $QUOTA_DB_VSERVER=$SVMTOOL_DB_CLUSTER + '\' + $VserverItemName
+            foreach ( $VserverItem in  ( $VserverListItem  | Skip-Null ) ) {
+                $VserverItemName=$VserverItem.Name
+                $VserverName=$VserverItemName.Split('.')[0] 
+                $QUOTA_DB_VSERVER=$SVMTOOL_DB_CLUSTER + '\' + $VserverItemName
                 $QUOTA_DB_FILE=$QUOTA_DB_VSERVER + '\quotarules.' + $myPolicy
                 $available_QUOTA_DB_FILE=(Get-Item $($QUOTA_DB_VSERVER + '\quotarules*') | Sort-Object -Property LastWriteTime)[-1]
                 if($available_QUOTA_DB_FILE -eq $null -or $available_QUOTA_DB_FILE.length -eq 0){
@@ -11836,20 +12209,20 @@ Function create_quota_rules_from_quotadb (
                     $QUOTA_DB_FILE=$available_QUOTA_DB_FILE.FullName
                     $myPolicy=$available_QUOTA_DB_FILE.Name.split(".")[-1]
                 }
-  		        Write-LogDebug "create_quota_rules_from_quotadb: read QUOTA_DB_FILE for Cluster [$ClusterName] Vserver [$VserverName] Policy [$myPolicy] "
-		        if ( ( Test-Path $QUOTA_DB_FILE  )  -eq $false ) 
+                Write-LogDebug "create_quota_rules_from_quotadb: read QUOTA_DB_FILE for Cluster [$ClusterName] Vserver [$VserverName] Policy [$myPolicy] "
+                if ( ( Test-Path $QUOTA_DB_FILE  )  -eq $false ) 
                 {
                     Write-Warning "No quota activated on any Vserver's volume" 
                     Write-LogDebug "WARNING: No quota activated on any Vserver's volume" 
-		        } 
+                } 
                 else 
                 {
-			        $CheckVserver=Get-NcVserver -Controller $myController -Name $VserverName 
-			        if ( $CheckVserver -eq $null ) 
+                    $CheckVserver=Get-NcVserver -Controller $myController -Name $VserverName 
+                    if ( $CheckVserver -eq $null ) 
                     {
-	  			        Write-LogError "ERROR: [$ClusterName] [$myVserver] no such vserver" 
-				        $Return = $false
-			        } 
+                        Write-LogError "ERROR: [$ClusterName] [$myVserver] no such vserver" 
+                        $Return = $false
+                    } 
                     else 
                     {
                         $actualQuotaPolicy=$CheckVserver.QuotaPolicy
@@ -11863,120 +12236,120 @@ Function create_quota_rules_from_quotadb (
                                 Write-Log "Need to create Quota Policy [$myPolicy] on Vserver [$VserverName]"
                                 Write-LogDebug "New-NcQuotaPolicy -PolicyName $myPolicy -Vserver $VserverName -Controller $myController"
                                 $ret=New-NcQuotaPolicy -PolicyName $myPolicy -Vserver $VserverName -Controller $myController -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaPolicy failed [$ErrorVar]" }
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcQuotaPolicy failed [$ErrorVar]" }
                             }
                             Write-LogDebug "Set-NcVserver -Name $VserverName -QuotaPolicy $myPolicy -Controller $myController"
                             $ret=Set-NcVserver -Name $VserverName -QuotaPolicy $myPolicy -Controller $myController -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVserver failed [$ErrorVar]" }  
                         }
-				        Get-Content $QUOTA_DB_FILE | Select-Object -uniq | ForEach-Object {
-					        Write-LogDebug "[$_]"
-					        $ClusterName=$_.split(':')[0]
-					        $Vserver=$_.split(':')[1]
-					        $Volume=$_.split(':')[2]
-					        $Qtree=$_.split(':')[3]
-					        $QuotaType=$_.split(':')[4]
-					        $QuotaTarget=$_.split(':')[5]
-					        $DiskLimit=$_.split(':')[6]
-					        $FileLimit=$_.split(':')[7]
-					        $SoftDiskLimit=$_.split(':')[8]
-					        $SoftFileLimit=$_.split(':')[9]
-					        $Threshold=$_.split(':')[10]
-		   			        Write-LogDebug "create_quota_rules_from_quotadb: ${ClusterName}:${Vserver}:${Volume}:${Qtree}:${QuotaType}:${QuotaTarget}:${DiskLimit}:${FileLimit}:${SoftDiskLimit}:${SoftFileLimit}:${Threshold}"
-					        Write-LogDebug "create_quota_rules_from_quotadb: volume informations [${ClusterName}] [${Vserver}] [${Volume}]"
-					        $VOL=Get-NcVol -Controller $myController -Vserver $Vserver -Name $Volume
-					        if ( $VOL.VolumeMirrorAttributes.IsDataProtectionMirror -eq $True ) 
+                        Get-Content $QUOTA_DB_FILE | Select-Object -uniq | ForEach-Object {
+                            Write-LogDebug "[$_]"
+                            $ClusterName=$_.split(':')[0]
+                            $Vserver=$_.split(':')[1]
+                            $Volume=$_.split(':')[2]
+                            $Qtree=$_.split(':')[3]
+                            $QuotaType=$_.split(':')[4]
+                            $QuotaTarget=$_.split(':')[5]
+                            $DiskLimit=$_.split(':')[6]
+                            $FileLimit=$_.split(':')[7]
+                            $SoftDiskLimit=$_.split(':')[8]
+                            $SoftFileLimit=$_.split(':')[9]
+                            $Threshold=$_.split(':')[10]
+                            Write-LogDebug "create_quota_rules_from_quotadb: ${ClusterName}:${Vserver}:${Volume}:${Qtree}:${QuotaType}:${QuotaTarget}:${DiskLimit}:${FileLimit}:${SoftDiskLimit}:${SoftFileLimit}:${Threshold}"
+                            Write-LogDebug "create_quota_rules_from_quotadb: volume informations [${ClusterName}] [${Vserver}] [${Volume}]"
+                            $VOL=Get-NcVol -Controller $myController -Vserver $Vserver -Name $Volume
+                            if ( $VOL.VolumeMirrorAttributes.IsDataProtectionMirror -eq $True ) 
                             {
-	  					        Write-LogError "ERROR: unable to set quota on volume [$Vserver] [$Volume] is DataProtectionMirror" 
-						        $Return = $false
-					        } 
+                                Write-LogError "ERROR: unable to set quota on volume [$Vserver] [$Volume] is DataProtectionMirror" 
+                                $Return = $false
+                            } 
                             else 
                             { 
-						        $NcQuotaParamList=@{}
-						        $Opts = ""  
-						        if ( $DiskLimit -ne '-' ) 
+                                $NcQuotaParamList=@{}
+                                $Opts = ""  
+                                if ( $DiskLimit -ne '-' ) 
                                 {
-							        $size = $DiskLimit + 'k'
-							        $Opts = $Opts + '-DiskLimit ' + $size + ' '
-							        $NcQuotaParam = @{DiskLimit=$size}
-							        $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
-						        }
-						        if ( $SoftDiskLimit -ne '-' ) 
+                                    $size = $DiskLimit + 'k'
+                                    $Opts = $Opts + '-DiskLimit ' + $size + ' '
+                                    $NcQuotaParam = @{DiskLimit=$size}
+                                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                                }
+                                if ( $SoftDiskLimit -ne '-' ) 
                                 {
-								        $size = $SoftDiskLimit + 'k'
-							        $Opts = $Opts + '-SoftDiskLimit ' + $size + ' '
-							        $NcQuotaParam = @{SoftDiskLimit=$size}
-							        $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
-						        }
-						        if ( $FileLimit -ne '-' ) 
+                                    $size = $SoftDiskLimit + 'k'
+                                    $Opts = $Opts + '-SoftDiskLimit ' + $size + ' '
+                                    $NcQuotaParam = @{SoftDiskLimit=$size}
+                                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                                }
+                                if ( $FileLimit -ne '-' ) 
                                 {
-							        $Opts = $Opts + '-FileLimit ' + $FileLimit + ' '
-							        $NcQuotaParam = @{FileLimit=$FileLimit}
-							        $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
-						        }
-						        if ( $SoftFileLimit -ne '-' ) 
+                                    $Opts = $Opts + '-FileLimit ' + $FileLimit + ' '
+                                    $NcQuotaParam = @{FileLimit=$FileLimit}
+                                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                                }
+                                if ( $SoftFileLimit -ne '-' ) 
                                 {
-							        $Opts = $Opts + '-SoftFileLimit ' + $SoftFileLimit + ' '
-							        $NcQuotaParam = @{SoftFileLimit=$SoftFileLimit}
-							        $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
-						        }
-						        if ( $Threshold -ne '-' ) 
+                                    $Opts = $Opts + '-SoftFileLimit ' + $SoftFileLimit + ' '
+                                    $NcQuotaParam = @{SoftFileLimit=$SoftFileLimit}
+                                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                                }
+                                if ( $Threshold -ne '-' ) 
                                 {
-							        $size = $Threshold + 'k'
-							        $Opts = $Opts + '-Threshold ' + $size + ' '
-							        $NcQuotaParam = @{Threshold=$size}
-							        $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
-						        }
-						        switch ($QuotaType) 
+                                    $size = $Threshold + 'k'
+                                    $Opts = $Opts + '-Threshold ' + $size + ' '
+                                    $NcQuotaParam = @{Threshold=$size}
+                                    $NcQuotaParamList=$NcQuotaParamList + $NcQuotaParam
+                                }
+                                switch ($QuotaType) 
                                 {
-						            'tree' 
+                                    'tree' 
                                     {
-						                #if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
-						                $Query=Get-NcQuota -Template
-						                $Query.QuotaTarget = $QuotaTarget
-						                $Query.Volume = $Volume
-						                $Query.Vserver = $Vserver
-						                $Query.QuotaType= 'tree'  
-						                $QuotaList=Get-NcQuota -Controller $myController -Query $Query
-						                foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
-							                if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
+                                        #if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
+                                        $Query=Get-NcQuota -Template
+                                        $Query.QuotaTarget = $QuotaTarget
+                                        $Query.Volume = $Volume
+                                        $Query.Vserver = $Vserver
+                                        $Query.QuotaType= 'tree'  
+                                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query
+                                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
                                             {
                                                 if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
-							                    Write-LogDebug "Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy"
-							                    $Output=Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy  -ErrorVariable ErrorVar
-							                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" } 
-							                }
-						                }
+                                                Write-LogDebug "Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy"
+                                                $Output=Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy  -ErrorVariable ErrorVar
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" } 
+                                            }
+                                        }
                                         if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
-						                try{
+                                        try{
                                             Write-LogDebug "Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget $Opts -Policy $myPolicy"
-						                    $Output=Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
-						                    if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) { Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                                            $Output=Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
+                                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) { Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
                                             $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
                                         }catch{
                                             $ErrorMessage = $_.Exception.Message
                                             Write-Warning "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"
                                             Write-LogDebug "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"  
                                         }
-						            }
-						            'user' 
+                                    }
+                                    'user' 
                                     {
-							            $Query=Get-NcQuota -Template
-							            $Query.QuotaTarget = $QuotaTarget
-							            $Query.Volume = $Volume
-							            $Query.Vserver = $Vserver
-							            if ( $Qtree -ne "" ) { $Query.Qtree = $Qtree }
-							            $Query.QuotaType= 'user'
-							            $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
-							            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
-							            foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
-								            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) -and ( $Query.Qtree -eq $Quota.Qtree ) ) 
+                                        $Query=Get-NcQuota -Template
+                                        $Query.QuotaTarget = $QuotaTarget
+                                        $Query.Volume = $Volume
+                                        $Query.Vserver = $Vserver
+                                        if ( $Qtree -ne "" ) { $Query.Qtree = $Qtree }
+                                        $Query.QuotaType= 'user'
+                                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
+                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
+                                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) -and ( $Query.Qtree -eq $Quota.Qtree ) ) 
                                             {
-								                Write-LogDebug "Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
-								                $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
-								                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
-								            }
-							            }
+                                                Write-LogDebug "Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
+                                                $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                            }
+                                        }
                                         try{
                                             Write-LogDebug "Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                                             $Output=Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
@@ -11987,25 +12360,25 @@ Function create_quota_rules_from_quotadb (
                                             Write-Warning "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
                                             Write-LogDebug "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
                                         }
-						            }
-						            'group' 
+                                    }
+                                    'group' 
                                     {
-							            $Query=Get-NcQuota -Template
-							            $Query.QuotaTarget = $QuotaTarget
-							            $Query.Volume = $Volume
-							            $Query.Qtree = $Qtree
-							            $Query.Vserver = $Vserver
-							            $Query.QuotaType= 'group'
-							            $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
-							            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
-							            foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
-								            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
+                                        $Query=Get-NcQuota -Template
+                                        $Query.QuotaTarget = $QuotaTarget
+                                        $Query.Volume = $Volume
+                                        $Query.Qtree = $Qtree
+                                        $Query.Vserver = $Vserver
+                                        $Query.QuotaType= 'group'
+                                        $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
+                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
+                                        foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
+                                            if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
                                             {
-								                Write-LogDebug "Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
-								                $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
-								                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
-								            }
-							            }
+                                                Write-LogDebug "Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
+                                                $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                            }
+                                        }
                                         try{
                                             Write-LogDebug "Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                                             $Output=Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
@@ -12016,27 +12389,27 @@ Function create_quota_rules_from_quotadb (
                                             Write-Warning "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
                                             Write-LogDebug "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
                                         }
-						            }
-						            default 
+                                    }
+                                    default 
                                     {
-							            Write-LogError "ERROR: $QuotaType Unknown Type" 
-							            $Return = $false
-							        }
+                                        Write-LogError "ERROR: $QuotaType Unknown Type" 
+                                        $Return = $false
+                                    }
                                 }
-					        }
-				        }
-			        }
-		        }
-	        }
-	        # Restart Quota on Corrected volumes
-	        restart_quota_vol_from_list  -myController $myController -myVserver $myVserver -myVolumeList $VolumeListToRestartQuota
+                            }
+                        }
+                    }
+                }
+            }
+            # Restart Quota on Corrected volumes
+            restart_quota_vol_from_list  -myController $myController -myVserver $myVserver -myVolumeList $VolumeListToRestartQuota
         }
         Write-LogDebug "create_quota_rules_from_quotadb: end"
         return $Return
     }
     Catch 
     {
-        handle_error $_ $myPrimaryVserver
+        handle_error $_ $myVserver
 	    return $Return
     }
 }
@@ -12061,7 +12434,7 @@ Try {
 			$VolQuotaStatus=$status.Status
 			if ( $VolQuotaStatus -eq 'on' ) { 
 				Write-LogDebug "restart_quota_vol_from_list: Disable-NcQuota -Vserver $Vserver -Volume $Volume"
-				if ( $DebugLevel -eq 0 ) { Write-Host -NoNewLine "Disable quota on [$Vserver] Volume [$Volume]" }
+				if ( $DebugLevel ) { Write-Host -NoNewLine "Disable quota on [$Vserver] Volume [$Volume]" }
 				$Output=Disable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
 				if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcQuota failed [$ErrorVar]" }
 			}
@@ -12079,11 +12452,11 @@ Try {
 					$isTimeOut=$true
 					Write-LogError "WARNING: Stop quota volume [$Vserver] [$Volume] timeout"
 				}	
-				if ( $DebugLevel -eq 0 ) { Write-Host -NoNewLine '.' }
+				if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
 				Start-Sleep 2 
 			}
-			if ( $DebugLevel -eq 0 ) { Write-Host '.' }
-			if ( $DebugLevel -eq 0 ) { Write-Host -NoNewLine "Enable quota on [$Vserver] Volume [$Volume]" }
+			if ( $DebugLevel ) { Write-Host '.' }
+			if ( $DebugLevel ) { Write-Host -NoNewLine "Enable quota on [$Vserver] Volume [$Volume]" }
 
 			Write-LogDebug "restart_quota_vol_from_list: Enable-NcQuota -Vserver $Vserver -Volume $Volume"
 
@@ -12107,10 +12480,10 @@ Try {
 					$isTimeOut=$true
 					Write-LogError "WARNING: Start quota volume [$Vserver] [$Volume] timeout"
 				}
-				if ( $DebugLevel -eq 0 ) { Write-Host -NoNewLine '.' }
+				if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
 				Start-Sleep 2 
 			}
-			if ( $DebugLevel -eq 0 ) { Write-Host '.' }
+			if ( $DebugLevel ) { Write-Host '.' }
 		}
    	}
    }

@@ -368,22 +368,22 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='InternalTest')]
     [string]$Vserver,
 
-    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
     [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
-    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $true, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $true, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
@@ -448,7 +448,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [switch]$ForceUpdateSnapPolicy,
 
-    [Parameter(Mandatory = $true, ParameterSetName='Backup')]
+    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
     [switch]$Recreateconf,
 
     [Parameter(Mandatory = $true, ParameterSetName='Restore')]
@@ -539,7 +539,10 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
-    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[Parameter(Mandatory = $false, ParameterSetName='Backup')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[Parameter(Mandatory = $false, ParameterSetName='ImportInstance')]
 	[switch]$DebugLevel,
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
@@ -846,10 +849,32 @@ if ( $Backup ) {
 				return $False
 			}
 			Write-LogDebug "create_vserver_dr correctly finished [$ret]"
-			#if ( ( $ret=svmdr_db_switch_datafiles -myController $myPrimaryController -myVserver $myPrimaryVserver -Backup) -eq $false ) {
-			#	Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
-			#	clean_and_exit 1
-		  	#}
+			Write-Log "[$myPrimaryVserver] Check Quota"
+			$AllQuotaRulesList=Get-NcQuota -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
+    		if ( $? -ne $True ) { 
+				Write-LogDebug "ERROR: Get-NcQuota Failed"
+				return $False
+			}
+			$AllQuotaRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuota.json") -Encoding ASCII -Width 65535
+			if( ($ret=get-item $($Global:JsonPath+"Get-NcQuota.json") -ErrorAction SilentlyContinue) -ne $null ){
+				Write-LogDebug "$($Global:JsonPath+"Get-NcQuota.json") saved successfully"
+			}else{
+				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuota.json")"
+				return $False
+			}
+			Write-Log "[$myPrimaryVserver] Check Quota Policy"
+			$AllQuotaPolicyList=Get-NcQuotaPolicy -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
+    		if ( $? -ne $True ) { 
+				Write-LogDebug "ERROR: Get-NcQuotaPolicy Failed"
+				return $False
+			}
+			$AllQuotaPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuotaPolicy.json") -Encoding ASCII -Width 65535
+			if( ($ret=get-item $($Global:JsonPath+"Get-NcQuotaPolicy.json") -ErrorAction SilentlyContinue) -ne $null ){
+				Write-LogDebug "$($Global:JsonPath+"Get-NcQuotaPolicy.json") saved successfully"
+			}else{
+				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuotaPolicy.json")"
+				return $False
+			}
             return $True
         })
         $BackupJob=[System.Management.Automation.PowerShell]::Create()
@@ -1069,8 +1094,24 @@ if ( $Restore ) {
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
             if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False )[-1] -ne $True ){
+				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
                 return $False
-            }
+			}
+			Wait-Debugger
+			if($Global:VOLUME_TYPE -eq "RW"){
+				if ( ( $ret=set_vol_options_from_voldb -myVserver $SourceVserver -myController $DestinationController -Restore) -ne $True ){
+					Write-LogDebug "ERROR in create_vserver_dr [$ret]"
+					return $False
+				}
+				if ( ($ret=restore_quota -myController $DestinationController -myVserver $SourceVserver) -ne $True){
+					Write-LogDebug "restore_quota return False [$ret]"
+					return $False
+				}else{
+					return $True
+				}
+			}else{
+				Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
+			}
             return $True
         })
         $RestoreJob=[System.Management.Automation.PowerShell]::Create()
