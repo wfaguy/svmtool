@@ -1246,7 +1246,7 @@ Function create_update_vscan_dr (
                     {
                         if($PrimaryOnAccessPolicyEnabled -eq $True)
                         {
-                            $template=Get-NcVscanOnAccessPolicy -Template
+                            $template=Get-NcVscanOnAccessPolicy -Template -Controller $mySecondaryController
                             $template.IsPolicyEnabled=$True
                             Write-LogDebug "Get-NcVscanOnAccessPolicy -Query $template -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $policyEnabled=Get-NcVscanOnAccessPolicy -Query $template -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -3756,7 +3756,7 @@ Try {
                         Write-LogError "ERROR: Check your Snapmirror status and retry later" 
                         $Return = $False
                     } else {
-                        $Query=Get-NcLunMap -Template
+                        $Query=Get-NcLunMap -Template -Controller $mySecondaryController
                         $Query.InitiatorGroup =  $PrimaryLunMap.InitiatorGroup
                         $Query.Path = $PrimaryLunPath
                         $SecondaryLunMap = Get-NcLunMap -Query $Query -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -4622,11 +4622,11 @@ Try {
                             if( $Global:AlwaysChooseDataAggr -eq $true )
                             {
                                 Write-LogDebug "create_volume_voldr with `$Global:AlwaysChooseDataAggr enable, ask dataAggr for volume [$PrimaryVolName]"
-                                $Question = "Please Select a destination DATA aggregate for [$mySecondaryVserver]:[$PrimaryVolName] on Cluster [$MySecondaryController]:"
+                                $Question = "[$mySecondaryVserver] Please Select a destination DATA aggregate for [$PrimaryVolName] on Cluster [$MySecondaryController]:"
                             }
                             else
                             {
-                                $Question = "Please Select the default DATA aggregate for [$mySecondaryVserver] on Cluster [$MySecondaryController]:"
+                                $Question = "[$mySecondaryVserver] Please Select the default DATA aggregate on Cluster [$MySecondaryController]:"
                             }
                             try {
                                 $global:mutexconsole.WaitOne(200) | Out-Null
@@ -4655,7 +4655,7 @@ Try {
                         }
                         Write-LogWarn "Unable to create volume [$PrimaryVolName] [$PrimaryVolSize]"
                         Write-LogWarn "Not enough size available in aggr [$myDataAggr] [$Available]"
-                        $Question ="WARNING: Please select another Aggregate:"
+                        $Question ="[$workOn] WARNING: Please select another Aggregate:"
                         try {
                             $global:mutexconsole.WaitOne(200) | Out-Null
                         }
@@ -5252,7 +5252,7 @@ Try {
 	if ( ( $CheckVserver -eq $null ) -or ( $CheckVserver -eq "" ) ) { 
 		return $null
 	}
-	$Query=Get-NcVserverPeer -Template
+	$Query=Get-NcVserverPeer -Template -Controller $myPrimaryController
 	$Query.PeerCluster = $mySecondaryCluster
 	$Query.Vserver=$myPrimaryVserver
 	$Query.PeerState='peered'
@@ -5269,6 +5269,34 @@ Try {
 	}
 
 	return $ReturnVserverPeerList 
+}
+Catch {
+    handle_error $_ $myPrimaryVserver
+	return $Return
+}
+}
+
+#############################################################################################
+Function check_create_cluster_peer(
+    [NetApp.Ontapi.Filer.C.NcController]$SourceController,
+	[NetApp.Ontapi.Filer.C.NcController]$PeerController
+) {
+Try {
+    $Return = $True
+    Write-Log "[$workOn] Check Cluster Peering"
+    Write-LogDebug "check_create_cluster_peer [$myPrimaryVserver]: start"
+    $PeerClusterName=$PeerController.Name
+    $SourceClusterName=$SourceController.Name
+    Write-LogDebug "Get-NcClusterPeer -Name $PeerClusterName -Controller $SourceController"
+    $ret=Get-NcClusterPeer -Name $PeerClusterName -Controller $SourceController -ErrorVariable ErrorVar 
+    if ( $? -ne $True ) { Write-LogDebug "ERROR: Get-NcClusterPeer failed [$ErrorVar]"; return $False }
+    if($ret -eq $null){
+        Write-LogWarn "Cluster [$PeerClusterName] is not peered with Cluster [$SourceClusterName]"
+        Write-LogWarn "Create Cluster Peering manualy, before running the script"
+        $Return = $False
+    }
+    Write-LogDebug "check_create_cluster_peer[$myPrimaryVserver]: end"
+	return $Return 
 }
 Catch {
     handle_error $_ $myPrimaryVserver
@@ -5308,8 +5336,12 @@ Try {
                 Write-Log "[$workOn] create vserver peer: [$myPrimaryVserver] [$myPrimaryController] [$workOn] [$mySecondaryCluster]"
                 Write-LogDebug "create_vserver_peer: New-NcVserverPeer -Vserver $myPrimaryVserver -Application snapmirror  -PeerVserver $mySecondaryVserver -PeerCluster $mySecondaryCluster -Controller $myPrimaryController"
                 try{
-                    $Peer=New-NcVserverPeer -Vserver $myPrimaryVserver -PeerVserver $mySecondaryVserver -Application snapmirror -PeerCluster $mySecondaryCluster -Controller $myPrimaryController  -ErrorVariable ErrorVar
-                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVserverPeer failed [$ErrorVar]" }
+                    if ( ($ret=check_create_cluster_peer -SourceController $myPrimaryController -PeerController $mySecondaryCluster) -eq $True){
+                        $Peer=New-NcVserverPeer -Vserver $myPrimaryVserver -PeerVserver $mySecondaryVserver -Application snapmirror -PeerCluster $mySecondaryCluster -Controller $myPrimaryController  -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVserverPeer failed [$ErrorVar]" }
+                    }else {
+                        $Return = $False ; Write-LogWarn "Enable to create Vserver Peering"    
+                    }
                 }catch{
                     Write-LogWarn "Failed to create new Vserver Peer reason [$_]"
                 }
@@ -5346,9 +5378,13 @@ Try {
             $PPeerCluster=$svmpeer.PeerCluster
             $PPeerApplication=$svmpeer.Applications
             try{
-                $ret=New-NcVserverPeer -Vserver $PVserver -PeerVserver $PVserverPeer -Application $PPeerApplication -PeerCluster $PPeerCluster -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$false
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVserverPeer failed [$ErrorVar]" }
-                Write-Log "[$workOn] Don't forget to accept Vserver Peering on Cluster [$PPeerCluster] for SVM [$PVserverPeer]"
+                if ( ($ret=check_create_cluster_peer -SourceController $mySecondaryController -PeerController $PPeerCluster) -eq $True){
+                    $ret=New-NcVserverPeer -Vserver $PVserver -PeerVserver $PVserverPeer -Application $PPeerApplication -PeerCluster $PPeerCluster -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$false
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVserverPeer failed [$ErrorVar]" }
+                    Write-Log "[$workOn] Don't forget to accept Vserver Peering on Cluster [$PPeerCluster] for SVM [$PVserverPeer]"
+                }else{
+                    $Return = $False ; Write-LogWarn "Enable to create Vserver Peering"    
+                }
             }catch{
                 Write-LogWarn "Failed to create new Vserver Peer relationship reason [$_]"
             }
@@ -6337,8 +6373,10 @@ Catch {
 
 #############################################################################################
 Function compare_NFS_service (
-	[DataONTAP.C.Types.Nfs.NfsInfo] $RefNfsService, 
-	[DataONTAP.C.Types.Nfs.NfsInfo] $NfsService ) {
+	#[DataONTAP.C.Types.Nfs.NfsInfo] $RefNfsService, 
+	#[DataONTAP.C.Types.Nfs.NfsInfo] $NfsService ) {
+    [object] $RefNfsService, 
+	[object] $NfsService ) {
 Try {
 	if ( ($RefNfsService -eq $null) -or ($NfsService -eq $null ) ) {
 		Write-LogError "ERROR: compare_NFS_service null entry"
@@ -6572,7 +6610,10 @@ Function check_update_CIFS_server_dr (
             }
             else{$cifsServerDest=$True}
 
+        }else{
+            $cifsServerDest=$cifsServerSource  
         }
+
         if($cifsServerSource -eq $False){
             return $False
         }
@@ -7176,12 +7217,22 @@ Try {
                 $LDAPclientUseStartTls=$PrimaryLDAPclient.UseStartTls
                 $LDAPclientTcpPort=$PrimaryLDAPclient.TcpPort
                 if($DebugLevel){Write-LogDebug "LDAP config exist on [$mySecondaryVserver] need to delete config, before delete LDAP client"}
-                Write-LogDebug "Remove-NcLdapConfig -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                $out=Remove-NcLdapConfig -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
-                if($? -ne $True) {$Return = $False; throw "ERROR failed to remove LDAP config on [$mySecondaryVserver] reason [$ErrorVar]"}
-                Write-LogDebug "Remove-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false"
-                $out=Remove-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcLdapClient failed [$ErrorVar]" }
+                try{
+                    Write-LogDebug "Remove-NcLdapConfig -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                    $out=Remove-NcLdapConfig -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
+                    if($? -ne $True) {$Return = $False; throw "ERROR failed to remove LDAP config on [$mySecondaryVserver] reason [$ErrorVar]"}
+                }catch{
+                    $reason=$_.Exception.Message
+                    Write-LogDebug "Failed Remove-NcLdapConfig reason [$reason]"
+                }
+                try{
+                    Write-LogDebug "Remove-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false"
+                    $out=Remove-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcLdapClient failed [$ErrorVar]" }
+                }catch{
+                    $reason=$_.Exception.Message
+                    Write-LogDebug "Failed Remove-NcLdapClient reason [$reason]"    
+                }
             }
             Write-Log "[$workOn] Configure LDAP configuration on [$mySecondaryVserver]"
             try {
@@ -8527,7 +8578,7 @@ Function show_vserver_dr (
                     $("["+$RelationshipStatus+"]"),`
                     $("["+$MirrorState+"]"),`
                     $tmp_str)
-                    Format-ColorBrackets $rel -F red
+                    Write-Host $rel -F red
                 }
             }
         }
@@ -8726,7 +8777,7 @@ Try {
             Write-Log "[$workOn] Create new vserver"
             if ( ($RootAggr) -eq $null -or ($RootAggr -eq "" ) ) {
                 $mySecondaryVserver
-                $Question = "Please Select root aggregate for [$mySecondaryVserver] on Cluster [$MySecondaryController]:"
+                $Question = "[$mySecondaryVserver] Please Select root aggregate on Cluster [$MySecondaryController]:"
                 $RootAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question
             } 
             Write-LogDebug "Get-NcAggr -Controller $mySecondaryController -Name $RootAggr"
@@ -8789,9 +8840,7 @@ Try {
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
     if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
-
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
-
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$myPrimaryVserver]"    
     }
@@ -8854,7 +8903,7 @@ Try {
         Write-Warning "Do not forget to run UpdateDR (with -DataAggr option) frequently to update SVM DR and mount all new volumes"
     }
     Write-LogDebug "create_vserver_dr [$myPrimaryVserver]: end"
-	return $Return 
+    return $Return 
 } Catch {
     handle_error $_ $myPrimaryVserver
 	return $Return
@@ -11448,16 +11497,16 @@ Function set_vol_options_from_voldb (
                 if ( $myVol -ne $null ) 
                 {
                     $myVolSnapshotPolicy=$myVol.VolumeSnapshotAttributes.SnapshotPolicy
-                    Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
-                    if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
+                    if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and ($Global:ForceUpdateSnapPolicy -eq $True) ) 
                     {
-                        $attributes = Get-NcVol -Template
+                        Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
+                        $attributes = Get-NcVol -Template -controller $myController
                         $mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
                         $mySnapshotAttributes.SnapshotPolicy= $VolSnapshotPolicy
                         $attributes.VolumeSnapshotAttributes=$mySnapshotAttributes
                         $tmpStr=$attributes.VolumeSnapshotAttributes.SnapshotPolicy
                         Write-LogDebug "attributes[$tmpStr]"
-                        $query=Get-NcVol -Template
+                        $query=Get-NcVol -Template -controller $myController
                         $query.name=$VolName
                         $query.vserver=$myVserver
                         $query.NcController=$myController
@@ -11570,13 +11619,13 @@ Function set_vol_options_from_voldb (
                                     Write-LogDebug "Current SnapshotPolicy for [$VolName] is [$myVolSnapshotPolicy], need this one [$VolSnapshotPolicy]"
                                     if ( ($VolSnapshotPolicy -ne $myVolSnapshotPolicy) -and $Global:ForceUpdateSnapPolicy.IsPresent) 
                                     {
-                                        $attributes = Get-NcVol -Template
+                                        $attributes = Get-NcVol -Template -Controller $myController
                                         $mySnapshotAttributes= New-Object "DataONTAP.C.Types.Volume.VolumeSnapshotAttributes"
                                         $mySnapshotAttributes.SnapshotPolicy= $VolSnapshotPolicy
                                         $attributes.VolumeSnapshotAttributes=$mySnapshotAttributes
                                         $tmpStr=$attributes.VolumeSnapshotAttributes.SnapshotPolicy
                                         Write-LogDebug "attributes[$tmpStr]"
-                                        $query=Get-NcVol -Template
+                                        $query=Get-NcVol -Template -Controller $myController
                                         $query.name=$VolName
                                         $query.vserver=$myVserver
                                         $query.NcController=$myController
@@ -11929,7 +11978,7 @@ Function restore_quota (
 {
     Try 
     {
-        return $Return
+        $Return=$True
         Write-LogDebug "restore_quota: start"
         $VolumeListToRestartQuota= @()
         if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
@@ -11971,11 +12020,11 @@ Function restore_quota (
         $QuotaPolicySource=$SourceVserver.QuotaPolicy
         Write-LogDebug "Dest Vserver [$myVserver] use Quota Policy [$QuotaPolicyDest]"
         if($QuotaPolicyDest -ne $QuotaPolicySource){
-            Write-Log "Modify Quota Policy on Vserver [$myVserver]"
-            Write-LogDebug "Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $myPolicy"
+            Write-Log "[$myVserver] Modify Quota Policy"
+            #Write-LogDebug "Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $myPolicy"
             $checkQuotaPolicy=$QuotaPolicyList | Where-Object {$_.PolicyName -eq $QuotaPolicySource}
             if ($checkQuotaPolicy -eq $null){
-                Write-Log "Need to create Quota Policy [$QuotaPolicySource] on Vserver [$myVserver]"
+                Write-Log "[$myVserver] Need to create Quota Policy [$QuotaPolicySource] on Vserver"
                 Write-LogDebug "New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController"
                 $ret=New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcQuotaPolicy failed [$ErrorVar]" ; $Return = $False }
@@ -12046,7 +12095,7 @@ Function restore_quota (
                     'tree' 
                     {
                         #if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
-                        $Query=Get-NcQuota -Template
+                        $Query=Get-NcQuota -Template -Controller $myController
                         $Query.QuotaTarget = $QuotaTarget
                         $Query.Volume = $Volume
                         $Query.Vserver = $Vserver
@@ -12075,7 +12124,7 @@ Function restore_quota (
                     }
                     'user' 
                     {
-                        $Query=Get-NcQuota -Template
+                        $Query=Get-NcQuota -Template -Controller $myController
                         $Query.QuotaTarget = $QuotaTarget
                         $Query.Volume = $Volume
                         $Query.Vserver = $Vserver
@@ -12104,7 +12153,7 @@ Function restore_quota (
                     }
                     'group' 
                     {
-                        $Query=Get-NcQuota -Template
+                        $Query=Get-NcQuota -Template -Controller $myController
                         $Query.QuotaTarget = $QuotaTarget
                         $Query.Volume = $Volume
                         $Query.Qtree = $Qtree
@@ -12305,7 +12354,7 @@ Function create_quota_rules_from_quotadb (
                                     'tree' 
                                     {
                                         #if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
-                                        $Query=Get-NcQuota -Template
+                                        $Query=Get-NcQuota -Template -Controller $myController
                                         $Query.QuotaTarget = $QuotaTarget
                                         $Query.Volume = $Volume
                                         $Query.Vserver = $Vserver
@@ -12334,7 +12383,7 @@ Function create_quota_rules_from_quotadb (
                                     }
                                     'user' 
                                     {
-                                        $Query=Get-NcQuota -Template
+                                        $Query=Get-NcQuota -Template -Controller $myController
                                         $Query.QuotaTarget = $QuotaTarget
                                         $Query.Volume = $Volume
                                         $Query.Vserver = $Vserver
@@ -12363,7 +12412,7 @@ Function create_quota_rules_from_quotadb (
                                     }
                                     'group' 
                                     {
-                                        $Query=Get-NcQuota -Template
+                                        $Query=Get-NcQuota -Template -Controller $myController
                                         $Query.QuotaTarget = $QuotaTarget
                                         $Query.Volume = $Volume
                                         $Query.Qtree = $Qtree
@@ -12568,7 +12617,7 @@ Try {
                 } else {
                     # Run Quota Report to correct the Quota 
                     # Build the Quota Query
-                    $query=Get-NcQuotaReport -Template
+                    $query=Get-NcQuotaReport -Template -Controller $myController
                     $query.NcController=$myController.name
                     $query.Vserver=$Vserver
                     $query.Volume=$Volume

@@ -1048,7 +1048,7 @@ if ( $Restore ) {
 			}
 		}
 		$JsonPath=$($SVMTOOL_DB+"\"+$svm+"\"+$date+"\")
-		Write-Log "Create Restore Job for [$svm] from [$JsonPath]"
+		Write-Log "[$svm] Create Restore Job from [$JsonPath]"
 		#Write-Log "RW [$RW] DebugLevel [$DebugLevel]"
 		#Write-Log "JSON path [$JsonPath]"
 		$codeRestore=[scriptblock]::Create({
@@ -1095,19 +1095,19 @@ if ( $Restore ) {
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
             if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False )[-1] -ne $True ){
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
-                return $False
+                #return $False
 			}
-			Wait-Debugger
 			if($Global:VOLUME_TYPE -eq "RW"){
+				# in restore mode force update snapshot policy on all destinations volumes
+				$Global:ForceUpdateSnapPolicy=$True
 				if ( ( $ret=set_vol_options_from_voldb -myVserver $SourceVserver -myController $DestinationController -Restore) -ne $True ){
 					Write-LogDebug "ERROR in create_vserver_dr [$ret]"
-					return $False
+					#return $False
 				}
+				Wait-Debugger
 				if ( ($ret=restore_quota -myController $DestinationController -myVserver $SourceVserver) -ne $True){
 					Write-LogDebug "restore_quota return False [$ret]"
-					return $False
-				}else{
-					return $True
+					#return $False
 				}
 			}else{
 				Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
