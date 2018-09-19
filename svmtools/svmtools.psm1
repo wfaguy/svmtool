@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : September 13th, 2018
+    Release : September 19th, 2018
 #>
 
 #############################################################################################
@@ -4696,7 +4696,7 @@ Try {
                     }
                 } 
                 else {
-                    Write-Log "[$workOn] Volume [$PrimaryVol] already exist on  [$workOn]"
+                    Write-Log "[$workOn] Volume [$PrimaryVolName] already exist on  [$workOn]"
                     # ADD Volume Type
                     $SecondaryVolType=$SecondaryVol.VolumeIdAttributes.Type
                     if ( $SecondaryVolType -ne "DP" -and $Restore -eq $False -and $Backup -eq $False) {
@@ -11420,12 +11420,14 @@ Function save_vol_options_to_voldb (
     			$PrimaryVolSnapshotPolicy=$PrimaryVol.VolumeSnapshotAttributes.SnapshotPolicy
                 $PrimarySisSchedule=""
                 $PrimarySisPolicy=""
+                $PrimarySisState=""
                 if ($PrimaryVolIsSis -eq $True)
                 {
                     $PrimaryVol = Get-NcSis -Name $SourceVolume -Controller $myController -Vserver $myVserver  -ErrorVariable ErrorVar 
     			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
                     $PrimarySisSchedule=$PrimaryVol.Schedule
-                    $PrimarySisPolicy=$PrimaryVol.Policy   
+                    $PrimarySisPolicy=$PrimaryVol.Policy
+                    $PrimarySisState=$PrimaryVol.State   
                 }
     			Write-LogDebug "save_vol_options_to_voldb: file [$VOL_DB_SRC_FILE]"
                 <#if( (Test-Path $VOL_DB_SRC_FILE) -eq $True -and $count_delete_SRC -eq 0)
@@ -11433,14 +11435,14 @@ Function save_vol_options_to_voldb (
                     Remove-Item -path $VOL_DB_SRC_FILE | out-null
                     $count_delete_SRC++
                 }#>
-    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_SRC_FILE -Append -NoClobber
+    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}:${$PrimarySisState}" | Out-File -FilePath $VOL_DB_SRC_FILE -Append -NoClobber
                 <#if( (Test-Path $VOL_DB_DST_FILE) -eq $True -and $count_delete_DST -eq 0)
                 { 
                     Remove-Item -path $VOL_DB_DST_FILE | out-null
                     $count_delete_DST++
                 }#>
     			Write-LogDebug "save_vol_options_to_voldb: file [$VOL_DB_DST_FILE]"
-    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}" | Out-File -FilePath $VOL_DB_DST_FILE -Append -NoClobber
+    			write-Output "${PrimaryVolName}:${PrimaryVolSnapshotPolicy}:${PrimarySisPolicy}:${PrimarySisSchedule}:${$PrimarySisState}" | Out-File -FilePath $VOL_DB_DST_FILE -Append -NoClobber
     	 	}
       	}
     	Write-LogDebug "save_vol_options_to_voldb: end"
@@ -11464,7 +11466,7 @@ Function set_vol_options_from_voldb (
     {
     	$Return = $true
         Write-logDebug "set_vol_options_from_voldb: start"
-        if($Restore.IsPresent){
+        if($Restore.IsPresent -or $Restore -eq $True){
             if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
                 $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
             }else{
@@ -11491,7 +11493,12 @@ Function set_vol_options_from_voldb (
                 $VolSnapshotPolicy=$vol.VolumeSnapshotAttributes.SnapshotPolicy
                 $VolSisPolicy=($PrimarySis | Where-Object {$_.Path -eq $("/vol/"+$VolName)}).Policy
                 $VolSisSchedule=($PrimarySis | Where-Object {$_.Path -eq $("/vol/"+$VolName)}).Schedule
+                $VolSisState=($PrimarySis | Where-Object {$_.Path -eq $("/vol/"+$VolName)}).State
                 Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
+                if($VolSisPolicy.length -eq 0 -and $VolSisSchedule.length -eq 0){
+                    Write-LogDebug "Ignore volume [$VolName]"
+                    continue
+                }
                 $myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
                 if ( $myVol -ne $null ) 
@@ -11511,41 +11518,56 @@ Function set_vol_options_from_voldb (
                         $query.vserver=$myVserver
                         $query.NcController=$myController
                         Write-LogDebug "Update-NcVol -Controller $myController -Query `$query -Attributes `$attributes"
+                        Write-Log "[$myVserver] Update Snapshot Policy [$VolSnapshotPolicy] on volume [$VolName]"
                         $out=Update-NcVol -Controller $myController -Query $query -Attributes $attributes  -ErrorVariable ErrorVar 
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
                         $message=$out.FailureList.ErrorMessage
-                        if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
+                        if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol failed to update volume [$VolName] [$message]" }
+                    }
+                    if ($VolSisState -eq "enabled"){
+                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
+                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar 
+                        if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
+                    }
+                    if ($VolSisState -eq "disabled"){
+                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
+                        $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
                     }
                     if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
                     {
                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
                         $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-                        if($SisInfo -ne $Null)
-                        {	
+                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]" }
+                        if($SisInfo -eq $null){$myVolSisPolicy=""}else{
                             $myVolSisPolicy=$SisInfo.Policy
-                            if ($myVolSisPolicy -ne $VolSisPolicy)
-                            {
-                                Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
-                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
-                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }
-                            }
-                        }    
+                        }
+                        if ($myVolSisPolicy -ne $VolSisPolicy)
+                        {
+                            Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy], need [$VolSisPolicy]"
+                            Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
+                            Write-Log "[$myVserver] Set Efficiency Policy [$VolSisPolicy] on volume [$VolName]"
+                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Set-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                        }      
                     }
                     if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
                     {
                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
                         $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-                        if($SisInfo -ne $Null)
-                        {
+                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]" }
+                        if($SisInfo -eq $null){$myVolSisSchedule=""}else{
                             $myVolSisSchedule=$SisInfo.Schedule
-                            if($myVolSisSchedule -ne $VolSisSchedule)
-                            {
-                                Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
-                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
-                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
-                            }
+                        }
+                        if($myVolSisSchedule -ne $VolSisSchedule)
+                        {
+                            Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule], need [$VolSisSchedule]"
+                            Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
+                            Write-Log "[$myVserver] Set Efficiency Schedule [$VolSisSchedule] on volume [$VolName]"
+                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}       
                         }
                     }
                 }
@@ -11610,7 +11632,12 @@ Function set_vol_options_from_voldb (
                                 $VolSnapshotPolicy=$_.split(':')[1]
                                 $VolSisPolicy=$_.split(':')[2]
                                 $VolSisSchedule=$_.split(':')[3]
+                                $VolSisState=$_.split(':')[4]
                                 Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
+                                if($VolSisPolicy.length -eq 0 -and $VolSisSchedule.length -eq 0){
+                                    Write-LogDebug "Ignore volume [$VolName]"
+                                    continue
+                                }
                                 $myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
                                 if ( $myVol -ne $null ) 
@@ -11630,41 +11657,56 @@ Function set_vol_options_from_voldb (
                                         $query.vserver=$myVserver
                                         $query.NcController=$myController
                                         Write-LogDebug "Update-NcVol -Controller $myController -Query `$query -Attributes `$attributes"
+                                        Write-Log "[$myVserver] Update Snapshot Policy [$VolSnapshotPolicy] on volume [$VolName]"
                                         $out=Update-NcVol -Controller $myController -Query $query -Attributes $attributes  -ErrorVariable ErrorVar 
-                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
+                                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume  $VolName [$ErrorVar]" }
                                         $message=$out.FailureList.ErrorMessage
                                         if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
+                                    }
+                                    if ($VolSisState -eq "enabled"){
+                                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
+                                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar 
+                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
+                                    }
+                                    if ($VolSisState -eq "disabled"){
+                                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
+                                        $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar
+                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
                                     }
                                     if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
                                     {
                                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
                                         $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-                                        if($SisInfo -ne $Null)
-                                        {	
+                                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]"}
+                                        if($SisInfo -eq $null){$myVolSisPolicy=""}else{
                                             $myVolSisPolicy=$SisInfo.Policy
-                                            if ($myVolSisPolicy -ne $VolSisPolicy)
-                                            {
-                                                Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
-                                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
-                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }
-                                            }
-                                        }    
+                                        }
+                                        if ($myVolSisPolicy -ne $VolSisPolicy)
+                                        {
+                                            Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
+                                            Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
+                                            Write-Log "[$myVserver] Set Efficiency Policy [$VolSisPolicy] on volume [$VolName]"
+                                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
+                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}
+                                        }   
                                     }
                                     if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
                                     {
                                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
                                         $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-                                        if($SisInfo -ne $Null)
-                                        {
+                                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]"}
+                                        if($SisInfo -eq $null){$myVolSisSchedule=""}else{
                                             $myVolSisSchedule=$SisInfo.Schedule
-                                            if($myVolSisSchedule -ne $VolSisSchedule)
-                                            {
-                                                Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
-                                                Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
-                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
-                                            }
+                                        }
+                                        if($myVolSisSchedule -ne $VolSisSchedule)
+                                        {
+                                            Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
+                                            Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
+                                            Write-Log "[$myVserver] Set Efficiency Schedule [$VolSisSchedule] on volume [$VolName]"
+                                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
+                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
                                         }
                                     }
                                 }
@@ -12020,11 +12062,13 @@ Function restore_quota (
         $QuotaPolicySource=$SourceVserver.QuotaPolicy
         Write-LogDebug "Dest Vserver [$myVserver] use Quota Policy [$QuotaPolicyDest]"
         if($QuotaPolicyDest -ne $QuotaPolicySource){
-            Write-Log "[$myVserver] Modify Quota Policy"
-            #Write-LogDebug "Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $myPolicy"
-            $checkQuotaPolicy=$QuotaPolicyList | Where-Object {$_.PolicyName -eq $QuotaPolicySource}
+            Write-Log "[$myVserver] Modify Quota Policy from [$QuotaPolicyDest] to [$QuotaPolicySource]"
+            Write-LogDebug "Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $QuotaPolicySource -controller $myController"
+            $checkQuotaPolicy=Get-NcQuotaPolicy -VserverContext $myVserver -PolicyName $QuotaPolicySource -controller $myController -ErrorVariable ErrorVar
+            if($? -ne $True){ return $False; throw "ERROR: Get-NcQuotaPolicy failed [$ErrorVar]"}
+            #$checkQuotaPolicy=$QuotaPolicyList | Where-Object {$_.PolicyName -eq $QuotaPolicySource}
             if ($checkQuotaPolicy -eq $null){
-                Write-Log "[$myVserver] Need to create Quota Policy [$QuotaPolicySource] on Vserver"
+                Write-Log "[$myVserver] Create Quota Policy [$QuotaPolicySource] on Vserver"
                 Write-LogDebug "New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController"
                 $ret=New-NcQuotaPolicy -PolicyName $QuotaPolicySource -Vserver $myVserver -Controller $myController -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcQuotaPolicy failed [$ErrorVar]" ; $Return = $False }
@@ -12038,6 +12082,7 @@ Function restore_quota (
             $Vserver=$myVserver
             $Volume=$quota.Volume
             $Qtree=$quota.Qtree
+            $myPolicy=$quota.Policy
             $QuotaType=$quota.QuotaType
             $QuotaTarget=$quota.QuotaTarget
             $DiskLimit=$quota.DiskLimit
@@ -12045,7 +12090,7 @@ Function restore_quota (
             $SoftDiskLimit=$quota.SoftDiskLimit
             $SoftFileLimit=$quota.SoftFileLimit
             $Threshold=$quota.Threshold
-            Write-LogDebug "create_quota_rules_from_quotadb: ${ClusterName}:${Vserver}:${Volume}:${Qtree}:${QuotaType}:${QuotaTarget}:${DiskLimit}:${FileLimit}:${SoftDiskLimit}:${SoftFileLimit}:${Threshold}"
+            Write-LogDebug "create_quota_rules_from_quotadb: ${ClusterName}:${Vserver}:${Volume}:${Qtree}:${QuotaType}:${QuotaTarget}:${DiskLimit}:${FileLimit}:${SoftDiskLimit}:${SoftFileLimit}:${Threshold}:${myPolicy}"
             Write-LogDebug "create_quota_rules_from_quotadb: volume informations [${ClusterName}] [${Vserver}] [${Volume}]"
             $VOL=$VolumeList | where-Object {$_.Name -eq $Volume}
             if ( $VOL.VolumeMirrorAttributes.IsDataProtectionMirror -eq $True ) 
@@ -12100,26 +12145,32 @@ Function restore_quota (
                         $Query.Volume = $Volume
                         $Query.Vserver = $Vserver
                         $Query.QuotaType= 'tree'  
+                        $Query.Policy=$myPolicy
                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query
                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
                             if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
                             {
                                 if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
                                 Write-LogDebug "Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy"
-                                $Output=Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" } 
+                                try{
+                                    $Output=Remove-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget -Policy $myPolicy  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; write-logDebug "ERROR: Remove-NcQuota failed [$ErrorVar]" } 
+                                }catch{
+                                    $ErrorMessage = $object.Exception.Message
+                                    Write-LogDebug "Remove-NcQuota Failed reason [$ErrorMessage]"
+                                }
                             }
                         }
                         if ( $QuotaTarget -eq '*' ) { $QuotaTarget='/vol/' + $Volume }
                         try{
                             Write-LogDebug "Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget $Opts -Policy $myPolicy"
                             $Output=Add-NcQuota -Controller $myController -Vserver $Vserver -Path $QuotaTarget @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
-                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) { Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) { Write-LogDebug "Add-NcQuota failed on a duplicate entry [$ErrorVar]"; $Return = $False }
                             $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
                         }catch{
                             $ErrorMessage = $_.Exception.Message
-                            Write-Warning "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"
-                            Write-LogDebug "Failed to create quota tree rule [$opts] on target [$QuotaTarget] because [$ErrorMessage]"  
+                            Write-Warning "Failed to create quota tree rule [$Opts] on target [$QuotaTarget] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota tree rule [$Opts] on target [$QuotaTarget] because [$ErrorMessage]"  
                         }
                     }
                     'user' 
@@ -12130,25 +12181,31 @@ Function restore_quota (
                         $Query.Vserver = $Vserver
                         if ( $Qtree -ne "" ) { $Query.Qtree = $Qtree }
                         $Query.QuotaType= 'user'
+                        $Query.Policy=$myPolicy
                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
                             if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) -and ( $Query.Qtree -eq $Quota.Qtree ) ) 
                             {
                                 Write-LogDebug "Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
-                                $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                try{
+                                    $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
+                                    if ( $? -ne $True ) { $Return = $False ; write-logDebug "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                }catch{
+                                    $ErrorMessage = $object.Exception.Message
+                                    Write-LogDebug "Remove-NcQuota Failed reason [$ErrorMessage]"    
+                                }
                             }
                         }
                         try{
                             Write-LogDebug "Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                             $Output=Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
-                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry [$ErrorVar]"; $Return = $False }
                             $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
                         }catch{
                             $ErrorMessage = $_.Exception.Message
-                            Write-Warning "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
-                            Write-LogDebug "Failed to create quota user rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-Warning "Failed to create quota user rule [$Opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota user rule [$Opts] on target [$Qtree] because [$ErrorMessage]"
                         }
                     }
                     'group' 
@@ -12159,25 +12216,31 @@ Function restore_quota (
                         $Query.Qtree = $Qtree
                         $Query.Vserver = $Vserver
                         $Query.QuotaType= 'group'
+                        $Query.Policy=$myPolicy
                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
                             if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
                             {
                                 Write-LogDebug "Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
-                                $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                try{
+                                    $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Remove-NcQuota failed [$ErrorVar]" }
+                                }catch{
+                                    $ErrorMessage = $object.Exception.Message
+                                    Write-LogDebug "Remove-NcQuota Failed reason [$ErrorMessage]"     
+                                }
                             }
                         }
                         try{
                             Write-LogDebug "Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                             $Output=Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
-                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry"; $Return = $False ; throw "ERROR: Add-NcQuota failed [$ErrorVar]" }
+                            if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry [$ErrorVar]"; $Return = $False }
                             $VolumeListToRestartQuota+=$Vserver + ':' + $Volume
                         }catch{
                             $ErrorMessage = $_.Exception.Message
-                            Write-Warning "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
-                            Write-LogDebug "Failed to create quota group rule [$opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-Warning "Failed to create quota group rule [$Opts] on target [$Qtree] because [$ErrorMessage]"
+                            Write-LogDebug "Failed to create quota group rule [$Opts] on target [$Qtree] because [$ErrorMessage]"
                         }
                     }
                     default 
@@ -12188,7 +12251,7 @@ Function restore_quota (
                 }
             }
         }
-        restart_quota_vol_from_list  -myController $myController -myVserver $myVserver -myVolumeList $VolumeListToRestartQuota
+        restart_quota_vol_from_list -myController $myController -myVserver $myVserver -myVolumeList $VolumeListToRestartQuota
         Write-LogDebug "restore_quota: end"
         return $Return
     }
@@ -12359,6 +12422,7 @@ Function create_quota_rules_from_quotadb (
                                         $Query.Volume = $Volume
                                         $Query.Vserver = $Vserver
                                         $Query.QuotaType= 'tree'  
+                                        $Query.Policy=$myPolicy
                                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query
                                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
                                             if ( ( $Query.QuotaTarget -eq $Quota.QuotaTarget ) ) 
@@ -12389,6 +12453,7 @@ Function create_quota_rules_from_quotadb (
                                         $Query.Vserver = $Vserver
                                         if ( $Qtree -ne "" ) { $Query.Qtree = $Qtree }
                                         $Query.QuotaType= 'user'
+                                        $Query.Policy=$myPolicy
                                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
                                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
                                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
@@ -12418,6 +12483,7 @@ Function create_quota_rules_from_quotadb (
                                         $Query.Qtree = $Qtree
                                         $Query.Vserver = $Vserver
                                         $Query.QuotaType= 'group'
+                                        $Query.Policy=$myPolicy
                                         $QuotaList=Get-NcQuota -Controller $myController -Query $Query  -ErrorVariable ErrorVar
                                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuota failed [$ErrorVar]" }
                                         foreach ( $Quota in ( $QuotaList | Skip-Null ) ) {
@@ -12469,75 +12535,72 @@ Function restart_quota_vol_from_list (
 	[string]$myVserver, 
 	[array]$myVolumeList ) {
 Try {
-   $Return = $True
-   Write-logDebug "restart_quota_vol_from_list: start"
-   # Restart Quota on Corrected volumes	
-   if ( $myVolumeList -ne $null ) { 
-   	$myVolumeList | Select-Object -uniq | ForEach-Object {
-		$Vserver=$_.split(':')[0]
-		$Volume=$_.split(':')[1]
-		$status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume
-		if ( $status -eq $null ) {
-			Write-LogError "ERROR: Unable to get quota status for volume [$Vserver] [$Volume]"
-		} else {
-			$VolQuotaStatus=$status.Status
-			if ( $VolQuotaStatus -eq 'on' ) { 
-				Write-LogDebug "restart_quota_vol_from_list: Disable-NcQuota -Vserver $Vserver -Volume $Volume"
-				if ( $DebugLevel ) { Write-Host -NoNewLine "Disable quota on [$Vserver] Volume [$Volume]" }
-				$Output=Disable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
-				if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcQuota failed [$ErrorVar]" }
-			}
-
-			$isTimeOut = $false
-			$StartTime=Get-date
-			while ( ( $VolQuotaStatus -ne 'off' ) -and ( $isTimeOut -eq $false ) ) {
-				$status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
-				if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
-				$VolQuotaStatus=$status.Status
-				$CurrentTime=Get-date
-				$TimeoutTime = ($CurrentTime - $StartTime).TotalSeconds
-				Write-LogDebug "restart_quota_vol_from_list: Quota Status [$Vserver] [$Volume]: [$VolQuotaStatus] [$TimeoutTime]" 
-				if ( $TimeOutTime -gt $STOP_TIMEOUT ) {
-					$isTimeOut=$true
-					Write-LogError "WARNING: Stop quota volume [$Vserver] [$Volume] timeout"
-				}	
-				if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
-				Start-Sleep 2 
-			}
-			if ( $DebugLevel ) { Write-Host '.' }
-			if ( $DebugLevel ) { Write-Host -NoNewLine "Enable quota on [$Vserver] Volume [$Volume]" }
-
-			Write-LogDebug "restart_quota_vol_from_list: Enable-NcQuota -Vserver $Vserver -Volume $Volume"
-
-			Start-Sleep 5 
-			$isTimeOut = $false
-			$StartTime=Get-date
-			$Output=Enable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
-			if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Enable-NcQuota failed [$ErrorVar]" }
-			$status=Get-NcQuotaStatus -Controller $myController -Vserver $Vserver -Volume $Volume  -ErrorVariable ErrorVar
-			if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
-			$VolQuotaStatus=$status.Status
-			$StartTime=Get-date
-			while ( ( $VolQuotaStatus -ne 'on') -and ( $isTimeOut -eq $false ) ) {
-				$status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
-				if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
-				$VolQuotaStatus=$status.Status
-				$CurrentTime=Get-date
-				$TimeoutTime = ($CurrentTime - $StartTime).TotalSeconds
-				Write-LogDebug "restart_quota_vol_from_list: Quota Status [$Vserver] [$Volume]: [$VolQuotaStatus] [$TimeoutTime]" 
-				if ( $TimeOutTime -gt $START_TIMEOUT ) {
-					$isTimeOut=$true
-					Write-LogError "WARNING: Start quota volume [$Vserver] [$Volume] timeout"
-				}
-				if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
-				Start-Sleep 2 
-			}
-			if ( $DebugLevel ) { Write-Host '.' }
-		}
-   	}
-   }
-   Write-logDebug "restart_quota_vol_from_list: end"
-   return $Return
+    $Return = $True
+    Write-logDebug "restart_quota_vol_from_list: start"
+    # Restart Quota on Corrected volumes	
+    if ( $myVolumeList -ne $null ) { 
+        $myVolumeList | Select-Object -uniq | ForEach-Object {
+            $Vserver=$_.split(':')[0]
+            $Volume=$_.split(':')[1]
+            $status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume
+            if ( $status -eq $null ) {
+                Write-LogError "ERROR: Unable to get quota status for volume [$Vserver] [$Volume]"
+            } else {
+                $VolQuotaStatus=$status.Status
+                if ( $VolQuotaStatus -eq 'on' ) { 
+                    Write-LogDebug "restart_quota_vol_from_list: Disable-NcQuota -Vserver $Vserver -Volume $Volume"
+                    if ( $DebugLevel ) { Write-Host -NoNewLine "Disable quota on [$Vserver] Volume [$Volume]" }
+                    $Output=Disable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcQuota failed [$ErrorVar]" }
+                }
+                $isTimeOut = $false
+                $StartTime=Get-date
+                while ( ( $VolQuotaStatus -ne 'off' ) -and ( $isTimeOut -eq $false ) ) {
+                    $status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
+                    $VolQuotaStatus=$status.Status
+                    $CurrentTime=Get-date
+                    $TimeoutTime = ($CurrentTime - $StartTime).TotalSeconds
+                    Write-LogDebug "restart_quota_vol_from_list: Quota Status [$Vserver] [$Volume]: [$VolQuotaStatus] [$TimeoutTime]" 
+                    if ( $TimeOutTime -gt $Global:STOP_TIMEOUT ) {
+                        $isTimeOut=$true
+                        Write-LogError "WARNING: Stop quota volume [$Vserver] [$Volume] timeout"
+                    }	
+                    if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
+                    Start-Sleep 2 
+                }
+                if ( $DebugLevel ) { Write-Host '.' }
+                if ( $DebugLevel ) { Write-Host -NoNewLine "Enable quota on [$Vserver] Volume [$Volume]" }
+                Write-LogDebug "restart_quota_vol_from_list: Enable-NcQuota -Vserver $Vserver -Volume $Volume"
+                Start-Sleep 5 
+                $isTimeOut = $false
+                $StartTime=Get-date
+                $Output=Enable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Enable-NcQuota failed [$ErrorVar]" }
+                $status=Get-NcQuotaStatus -Controller $myController -Vserver $Vserver -Volume $Volume  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
+                $VolQuotaStatus=$status.Status
+                $StartTime=Get-date
+                while ( ( $VolQuotaStatus -ne 'on') -and ( $isTimeOut -eq $false ) ) {
+                    $status=Get-NcQuotaStatus -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQuotaStatus failed [$ErrorVar]" }
+                    $VolQuotaStatus=$status.Status
+                    $CurrentTime=Get-date
+                    $TimeoutTime = ($CurrentTime - $StartTime).TotalSeconds
+                    Write-LogDebug "restart_quota_vol_from_list: Quota Status [$Vserver] [$Volume]: [$VolQuotaStatus] [$TimeoutTime]" 
+                    if ( $TimeOutTime -gt $Global:START_TIMEOUT ) {
+                        $isTimeOut=$true
+                        Write-LogError "WARNING: Start quota volume [$Vserver] [$Volume] timeout"
+                    }
+                    if ( $DebugLevel ) { Write-Host -NoNewLine '.' }
+                    Start-Sleep 2 
+                }
+                if ( $DebugLevel ) { Write-Host '.' }
+            }
+        }
+    }
+    Write-logDebug "restart_quota_vol_from_list: end"
+    return $Return
 }
 Catch {
     handle_error $_ $myPrimaryVserver

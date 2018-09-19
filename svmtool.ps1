@@ -261,7 +261,8 @@
 		- 0.0.5 : Bugfixes, advancements and colorcoding
 		- 0.0.6 : Change behaviour when SVM has no LIF, nor data volume
 		- 0.0.7 : Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
-		    	  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ... 
+				  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ...
+				  Correct Backup & Restore quota 
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -832,6 +833,8 @@ if ( $Backup ) {
 					Write-Error "ERROR: Failed to load module SVMTOOLS"
 					exit 1
 			}
+			$Global:STOP_TIMEOUT=360
+			$Global:START_TIMEOUT=360
 			$Global:mutexconsole=$mutexconsole
 			$dir=split-path -Path $LOGFILE -Parent
 			$file=split-path -Path $LOGFILE -Leaf
@@ -1075,6 +1078,8 @@ if ( $Restore ) {
 					Write-Error "ERROR: Failed to load module SVMTOOLS"
 					exit 1
 			}
+			$Global:STOP_TIMEOUT=360
+			$Global:START_TIMEOUT=360
 			$Global:mutexconsole=$mutexconsole
 			$dir=split-path -Path $LOGFILE -Parent
 			$file=split-path -Path $LOGFILE -Leaf
@@ -1104,7 +1109,6 @@ if ( $Restore ) {
 					Write-LogDebug "ERROR in create_vserver_dr [$ret]"
 					#return $False
 				}
-				Wait-Debugger
 				if ( ($ret=restore_quota -myController $DestinationController -myVserver $SourceVserver) -ne $True){
 					Write-LogDebug "restore_quota return False [$ret]"
 					#return $False
