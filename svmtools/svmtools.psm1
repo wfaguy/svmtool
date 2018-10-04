@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : September 19th, 2018
+    Release : October 5th, 2018
 #>
 
 #############################################################################################
@@ -98,6 +98,27 @@ Function handle_error([object]$object,[string]$vserver){
 	Write-LogDebug  "Trap PipelineIterationInfo: [$PipelineIterationInfo]"
 	Write-LogDebug  "Trap ScriptStackTrace: [$ScriptStackTrace]"
 	Write-LogDebug  "Trap TargetObject: [$TargetObject]"
+}
+#############################################################################################
+function replace_regex_groupmatches($string,$regex,$replacewith){
+    $match =[Regex]::Matches($string, $regex)
+    if($match.groups.Count -gt 1){
+        $result = ""
+        $chars = $string.ToCharArray()
+        for($i=0;$i -lt $chars.Length;$i++){
+    
+            foreach($m in ($match.Groups|select -skip 1)){
+                if($m.Index -eq $i){
+                    $result+="(.*)"
+                    $i+=$m.Length
+                }
+            }
+            $result+=[regex]::Escape($chars[$i]);
+        }
+        return $result
+    }else{
+        return $string
+    }
 }
 #############################################################################################
 function Format-ColorBrackets {
@@ -244,7 +265,12 @@ function Read-HostDefault{
 
     do{
         Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $default -NoNewLine
-        $ans = Read-Host
+        if($Global:NonInteractive){
+            Write-Log ("`r`nAutoselecting default [{0}]" -f $default)
+            $ans = $default
+        }else{
+            $ans = Read-Host
+        }
         $return = if($ans -eq ""){$default}else{$ans}
     }until(([bool]$return) -or (-not $NotEmpty))
     return $return
@@ -263,7 +289,12 @@ function Read-HostOptions{
 
     Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $options -NoNewLine
     $optionlist = @($options -split "/")
-    $ans = Read-Host
+    if($Global:NonInteractive){
+        Write-Log ("`r`nAutoselecting default [{0}]" -f $default)
+        $ans = $default
+    }else{
+        $ans = Read-Host
+    }
     while(-not ($optionlist -match $ans) -or ($ans -eq "") -or ($ans -eq $null)){
         Format-Colors "Please choose from [{0:Yellow}] : " -Arguments $options -NoNewLine
         $ans = Read-Host
@@ -309,21 +340,21 @@ Function create_config_file_cli () {
 		$PRIMARY_CLUSTER=$read_conf.Get_Item("PRIMARY_CLUSTER")
 		$SECONDARY_CLUSTER=$read_conf.Get_Item("SECONDARY_CLUSTER")
 		$Global:SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
-		$ANS=Read-HostOptions "Configuration file already exists. Do you want to recreate it ?" "y/n"
+		$ANS=Read-HostOptions -question "Configuration file already exists. Do you want to recreate it ?" -options "y/n" -default "y"
 		if ( $ANS -ne 'y' ) { return }
 	}
 	$ANS='n'
 	while ( $ANS -ne 'y' ) {
 
-        $PRIMARY_CLUSTER = Read-HostDefault "Please Enter your default Primary Cluster Name" $PRIMARY_CLUSTER
-        $SECONDARY_CLUSTER = Read-HostDefault "Please Enter your default Secondary Cluster Name" $SECONDARY_CLUSTER
-		$Global:SVMTOOL_DB = Read-HostDefault "Please enter local DB directory where config files will be saved for this instance" $Global:SVMTOOL_DB
+        $PRIMARY_CLUSTER = Read-HostDefault -question "Please Enter your default Primary Cluster Name" -default $PRIMARY_CLUSTER
+        $SECONDARY_CLUSTER = Read-HostDefault -question "Please Enter your default Secondary Cluster Name" -default $SECONDARY_CLUSTER
+		$Global:SVMTOOL_DB = Read-HostDefault -question "Please enter local DB directory where config files will be saved for this instance" -default $Global:SVMTOOL_DB
 		Write-Log "Default Primary Cluster Name:        [$PRIMARY_CLUSTER]" 
 		Write-Log "Default Secondary Cluster Name:      [$SECONDARY_CLUSTER]" 
 		Write-Log "SVMTOOL Configuration DB directory:  [$Global:SVMTOOL_DB]" 
 		Write-Log ""
 
-        $ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
+        $ANS = Read-HostOptions -question "Apply new configuration ?" -options "y/n/q" -default "y"
 		if ( $ANS -eq 'q' ) { clean_and_exit 1 }
 
 		write-Output "#" | Out-File -FilePath $Global:CONFFILE 
@@ -358,8 +389,8 @@ Function create_vserver_config_file_cli (
 	    }
 	    $ANS='n'
 	    while ( $ANS -ne 'y' ) {
-        	$myVserverDR = Read-HostDefault "Please Enter a Valid Vserver DR name for" $myVserverDR
-        	$AnsQuotaDR = Read-HostOptions "Do you want to Backup Quota for $Vserver [$myVserverDR] ?" "y/n"
+        	$myVserverDR = Read-HostDefault -question "Please Enter a Valid Vserver DR name for" -default $myVserverDR
+        	$AnsQuotaDR = Read-HostOptions -question "Do you want to Backup Quota for $Vserver [$myVserverDR] ?" -options "y/n" -default "y"
 		    if ( $AnsQuotaDR -eq 'y' ) {
 			    $AllowQuotaDR="true"
 		    } else  {
@@ -371,7 +402,7 @@ Function create_vserver_config_file_cli (
 			    Write-Log "Vserver DR Name :      [$myVserverDR]"
 			    Write-Log "QuotaDR :              [$AllowQuotaDR]"
 			    Write-Log ""
-        		$ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
+        		$ANS = Read-HostOptions -question "Apply new configuration ?" -options "y/n/q" -default "y"
 			    if ( $ANS -eq 'q' ) { clean_and_exit 1 }
 		    }
 	    }
@@ -457,7 +488,7 @@ Function check_init_setup_dir() {
 #############################################################################################
 Function import_instance_svmdr() {
     $svmdrCONFBASE="c:\Scripts\SVMDR\etc"
-    $DirImport=Read-HostDefault "Please enter Directory from where to import SVMDR instances" $svmdrCONFBASE
+    $DirImport=Read-HostDefault -question "Please enter Directory from where to import SVMDR instances" -default $svmdrCONFBASE
     if ( ( Test-Path $DirImport -pathType container ) -eq $False ) 
     {
         Write-LogError "ERROR: Unable find new item $DirImport"
@@ -501,11 +532,13 @@ Function import_instance_svmdr() {
 
 #############################################################################################
 Function show_instance_list() {
+
     if ( ( Test-Path $Global:CONFBASEDIR -pathType container ) -eq $False ) 
     {
         Write-LogError "ERROR: Unable find new item $Global:CONFBASEDIR"
         return $False
     }
+
 
     Write-Log "CONFBASEDIR [$Global:CONFBASEDIR]`n"
     $InstanceItemList=Get-ChildItem $Global:CONFBASEDIR
@@ -578,7 +611,7 @@ Function show_instance_list() {
             $ANS='n'
             $otherCredName=$otherCred.Name
             $otherCredName=$otherCredName.Replace(".cred","")
-            $ANS=Read-HostOptions "Do you really want to reset Credentials for $otherCredName ?" "y/n"
+            $ANS=Read-HostOptions -question "Do you really want to reset Credentials for $otherCredName ?" -options "y/n" -default "y"
             if ( $ANS -eq 'y')
             {
                 Write-LogDebug "Reset Credential for $otherCredName"
@@ -596,7 +629,7 @@ Try {
 		Write-LogError "ERROR: [$Instance] No such configuration, unable to delete"  -firstValueIsSpecial
 		$Return = $false
 	} else {
-		$ANS = Read-HostOptions "Do you really want to remove this configuration instance [$Instance]" "y/n"
+		$ANS = Read-HostOptions -question "Do you really want to remove this configuration instance [$Instance]" -options "y/n" -default "y"
 		if ( $ANS -eq 'y' ) {
 			Write-LogDebug "Remove-Item -Recurse $myConfDir"
 			Remove-Item -Recurse $myConfDir  -ErrorVariable ErrorVar
@@ -637,24 +670,35 @@ Function get_local_cred ([string]$myCredential) {
 	Write-LogDebug "get_local_cred:  [$myCredential]"
 	$Global:CRED_CONF_FILE=$Global:CRED_CONFDIR + $myCredential + '.cred'
 
+
+
 	if ( $ResetPassword ) { 
+        if(-not $Global:NonInteractive){
         	$status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
-		if ( $status -eq $False ) {
-			Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
-        		clean_and_exit 1
-		}
+		    if ( $status -eq $False ) {
+			    Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
+        		    clean_and_exit 1
+		    }
+        }else{
+            Write-LogError "ERROR: Unable to reset your credentials for $myCredential in NonInteractive Mode SKIP" 
+        }
 	}
 
 	$cred=read_cred_from_file $Global:CRED_CONF_FILE
 	if ( $cred -eq $null ) 
     {
-        $status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
-		$cred=read_cred_from_file $Global:CRED_CONF_FILE
-		if ( $cred -eq $null ) 
-        {
-			Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
+        if(-not $Global:NonInteractive){
+            $status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
+		    $cred=read_cred_from_file $Global:CRED_CONF_FILE
+		    if ( $cred -eq $null ) 
+            {
+			    Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
+        	    clean_and_exit 1
+		    }
+        }else{
+			Write-LogError "ERROR: Unable to set your credentials for $myCredential in NonInteractive Mode | Exit" 
         	clean_and_exit 1
-		}
+        }
 	}
 	return $cred
 }
@@ -703,7 +747,7 @@ Catch {
 }
 #############################################################################################
 Function set_cDotcred_from_cli ([string]$filer, [string]$cred_file ) {
-Try {
+    Try {
         Write-Log "Login for cluster [$filer]"
         $login = Read-Host "Enter login"
         $password = Read-Host "password" -AsSecureString
@@ -712,17 +756,17 @@ Try {
         if ( ( $filer_connect=connect_cluster -myController $filer -myCred $cred -myTimeout $Timeout ) -eq $False ) {
                 return $False
         } else {
-                $save_password=$cred.Password | ConvertFrom-SecureString
-                Write "login=${login}" > $cred_file
-                Write "password=${save_password}" >> $cred_file
-                Write "protocol=${protocol}" >> $cred_file
-                return $true
-	}
-}
-Catch {
-	handle_error $_ $myPrimaryVserver
-	return $False
-}
+            $save_password=$cred.Password | ConvertFrom-SecureString
+            Write "login=${login}" > $cred_file
+            Write "password=${save_password}" >> $cred_file
+            Write "protocol=${protocol}" >> $cred_file
+            return $true
+	    }
+    }
+    Catch {
+	    handle_error $_ $myPrimaryVserver
+	    return $False
+    }
 }
 
 #############################################################################################
@@ -733,21 +777,30 @@ Function get_local_cDotcred ([string]$myCluster) {
 	$Global:CRED_CONF_FILE=$Global:CRED_CONFDIR + $myCluster + '.cred'
 
 	if ( $ResetPassword ) { 
+        if(-not $Global:NonInteractive){
         	$status = set_cDotcred_from_cli $myCluster $Global:CRED_CONF_FILE
-		if ( $status -eq $False ) {
-			Write-LogError "ERROR: Unable to set your credential for $myCluster Exit" 
-        		clean_and_exit 1
-		}
+		    if ( $status -eq $False ) {
+			    Write-LogError "ERROR: Unable to set your credential for $myCluster Exit" 
+        		    clean_and_exit 1
+		    }
+        }else{
+            Write-LogError "ERROR: Unable to reset your credentials for $myCluster in NonInteractive Mode SKIP" 
+        }
 	}
 
 	$cred=read_cred_from_file $Global:CRED_CONF_FILE
 	if ( $cred -eq $null ) {
+        if(-not $Global:NonInteractive){
         	$status = set_cDotcred_from_cli $myCluster $Global:CRED_CONF_FILE
-		$cred=read_cred_from_file $Global:CRED_CONF_FILE
-		if ( $cred -eq $null ) {
-			Write-LogError "ERROR: Unable to set your credential for $myCluster Exit" 
-        		clean_and_exit 1
-		}
+		    $cred=read_cred_from_file $Global:CRED_CONF_FILE
+		    if ( $cred -eq $null ) {
+			    Write-LogError "ERROR: Unable to set your credential for $myCluster Exit" 
+        		    clean_and_exit 1
+		    }
+        }else{
+			Write-LogError "ERROR: Unable to set your credentials for $myCluster in NonInteractive Mode | Exit" 
+        	clean_and_exit 1
+        }
 	}
 	return $cred
 }
@@ -784,6 +837,48 @@ Function read_cred_from_file ([string]$cred_file) {
 }
 
 #############################################################################################
+Function get_pwd_from_cli ([string]$workOn,[string]$for,[string]$name="",[switch]$asSecure) {
+    $for1 = "$for [$name]"
+    $for2 = "[$name]"
+    if(-not $name){
+        $for1 = "$for"
+        $for2 = "$for"
+    }
+    Write-Log "[$workOn] Please Enter password for $for1"
+    do{
+        $ReEnter=$false
+        if(-not $Global:NonInteractive){
+            $pass1=Read-Host "[$workOn] Enter Password for $for2" -AsSecureString
+            $pass2=Read-Host "[$workOn] Confirm Password for $for2" -AsSecureString
+        }else{
+            if($Global:DefaultLocalUserCredentials -ne $null){
+                Write-Log ("[$workOn] Password extracted from default credentials [{0}]" -f $Global:DefaultLocalUserCredentials.GetNetworkCredential().UserName)
+                $pass1=$Global:DefaultLocalUserCredentials.GetNetworkCredential().SecurePassword
+                $pass2=$Global:DefaultLocalUserCredentials.GetNetworkCredential().SecurePassword
+            }else{
+                Write-LogError "ERROR : cannot get credentials in NonInteractive mode and without default credentials"
+                clean_and_exit 1
+            }
+        }
+        $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
+        $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
+    
+        if ($pwd1_text -ceq $pwd2_text) {
+            Write-LogDebug "Passwords matched"
+        } 
+        else{
+            Write-Warning "[$workOn] Error passwords does not match. Please Re-Enter"
+            $ReEnter=$True
+        }
+    }while($ReEnter -eq $True)
+    if($asSecure){
+        return $pass1
+    }else{
+        return $pwd1_text
+    }
+}
+
+#############################################################################################
 Function validate_ip_format (
 	[string]$IpAddr, 
 	[switch]$AllowNullIP ) {
@@ -803,7 +898,7 @@ Function ask_IpAddr_from_cli ([string] $myIpAddr,[string] $workOn="") {
 	$loop = $True
 	While ( $loop -eq $True ) {
         #Wait-Debugger
-		$AskIPAddr = Read-HostDefault "[$workOn] Please Enter a valid IP Address" $myIPAddr
+		$AskIPAddr = Read-HostDefault -question "[$workOn] Please Enter a valid IP Address" -default $myIPAddr
 		if ( ( validate_ip_format $AskIPAddr ) -eq $True ) {
 				$loop = $False
 				return $AskIPAddr
@@ -818,7 +913,7 @@ Function ask_gateway_from_cli ([string]$myGateway,[string] $workOn="" ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
         #Wait-Debugger
-		$AskGateway = Read-HostDefault "[$workOn] Please Enter a valid Default Gateway Address" $myGateway
+		$AskGateway = Read-HostDefault -question "[$workOn] Please Enter a valid Default Gateway Address" -default $myGateway
 		if ( ( validate_ip_format -IpAddr $AskGateway -AllowNullIP ) -eq $True ) {
 				$loop = $False
 				return $AskGateway
@@ -833,7 +928,7 @@ Function ask_NetMask_from_cli ([string]$myNetMask,[string] $workOn="" ) {
 	$loop = $True
 	While ( $loop -eq $True ) {
         #Wait-Debugger
-		$AskNetMask = Read-HostDefault "[$workOn] Please Enter a valid IP NetMask" $myNetMask
+		$AskNetMask = Read-HostDefault -question "[$workOn] Please Enter a valid IP NetMask" -default $myNetMask
 		if ( ( validate_ip_format $AskNetMask ) -eq $True ) {
 				$loop = $False
 				return $AskNetMask
@@ -843,7 +938,7 @@ Function ask_NetMask_from_cli ([string]$myNetMask,[string] $workOn="" ) {
 }
 
 #############################################################################################
-Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myNode, [string]$myQuestion,[string]$myDefault ) {
+Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myNode, [string]$myQuestion,[string]$default,[string]$broadcastDomain ) {
 	$NodePortSelectedList = @()
  	$NodePortList=Get-NcNetPort -role data,node_mgmt -node $myNode  -Controller $myController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
@@ -851,61 +946,63 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
 		Write-LogError "ERROR: Unable to list Ports for node $myNode $myController" 
 		clean_and_exit 1
 	}
-
 	$i = 0 
+    $indexMatch = 0
+    $bestMatch = -3  # using this to find the best match, some are better than others 0=best
+    $defaultReason = ""
 	foreach ( $NodePort in ( $NodePortList | Skip-Null ) ) {
 		$i++ 
 		$tmpStr=$NodePort.Name
 		$Link=$NodePort.LinkStatus
         $Role=$NodePort.Role
-		$NodePortSelectedList += $tmpStr
-		Write-Log "`t[$i] : [$NodePort] role [$Role] status [$Link]" -firstValueIsSpecial
-	}
+        $BD = $NodePort.BroadcastDomain
+        if(($bestMatch -lt 0) -and ($BD -eq $broadcastDomain) -and ($tmpStr -eq $default)){
+            $indexMatch = $i
+            $bestMatch = 0
+            $defaultReason = "Default found based on exact match [$broadcastDomain][$default]"
+        }
+        if(($bestMatch -lt -1) -and ($BD -eq $broadcastDomain)){
+            $indexMatch = $i
+            $bestMatch = -1
+            $defaultReason = "Default found based on broadcastdomain [$broadcastDomain]"
+        }
+        if(($bestMatch -lt -2) -and ($tmpStr -eq $default)){
+            $indexMatch = $i
+            $bestMatch = -2
+            $defaultReason = "Default found based on name [$default]"
+        }
 
-    # lets find the best default match from the list
-    # lucky to have 1 on 1 ?
-    $mySelectedDefault = ""
-    if($NodePortSelectedList -match "$myDefault"){
-        $mySelectedDefault = $myDefault
-    }else{
-        # no exact match - is it a vlan ?
-        if($myDefault -match "[^-]+-([0-9]+)"){
+		$NodePortSelectedList += $tmpStr
+		Write-Log "`t[$i] : [$NodePort] role [$Role] status [$Link] broadcastdomain [$BD]" -firstValueIsSpecial
+	}
+    if($indexMatch -eq 0){
+        # still no match based on broadcast domain and name
+        if($default -match "[^-]+-([0-9]+)"){
             $myDefaultVlan=$Matches[1]
             # do we have a same vlan ?
             $similarVlans = ($NodePortSelectedList -match "[^-]+-$myDefaultVlan$")
             if($similarVlans){
                 $mySelectedDefault=@($similarVlan)[0]
+                $indexMatch = [array]::indexof($NodePortSelectedList,$mySelectedDefault)+1
+                $defaultReason = "Defaulting to similar vlan port"
             }
         }
     }
     # still no vlan ?  Then map to a non data vlan
-    if(-not $mySelectedDefault){
-        $NonVlanDataPortList = @($NodePortList | ?{$_.Role = "data" -and $_.Name -notmatch "[^-]+-[0-9]+"})
-        if($NonVlanDataPortList){
-            $mySelectedDefault = $NonVlanDataPortList[0].Name
-        }else{
-            # no non-vlan data ports, lets try just non-vlan ports
-            $NonVlanPortList = @($NodePortList | ?{$_.Name -notmatch "[^-]+-[0-9]+"})
-            if($NonVlanPortList){
-                $mySelectedDefault = $NonVlanPortList[0].Name
-            }
-        }
+    if($indexMatch -eq 0){
+        Write-LogError "ERROR: Could not find matching home port, defaulting to first port"
+        $defaultReason = "Defaulting to first port"
+        $indexMatch = 1
     }
 
-    # get default index
-    $myDefaultIndex = [array]::indexof($NodePortSelectedList,$mySelectedDefault)
-    $myDefaultIndex++
-    if($myDefaultIndex -eq 0){
-        # non found, just pick the last
-        $myDefaultIndex = $i
-    }
 	Write-Log "$myQuestion"
 	$ErrNodePort = $True 
 	while ( $ErrNodePort -eq $True ) {
 		$ErrAns = $True 
 		while ( $ErrAns -eq $True ) {
-			$ans = Read-HostDefault "Select Port 1-$i" $myDefaultIndex
-			if ($ans -eq "" ) { $ans = "$myDefaultIndex" }
+            Write-Log $defaultReason
+			$ans = Read-HostDefault -question "Select Port 1-$i" -default $indexMatch
+			if ($ans -eq "" ) { $ans = $indexMatch }
 			if ($ans -match  "^[0-9]" ) { 
 				$ErrAns = $False
 			}
@@ -919,8 +1016,10 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
 }
 
 #############################################################################################
-Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion ) {
+Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion,[string]$regExMatch ) {
 	$NodeSelectedList = @()
+    $indexMatch = 0
+    $defaultReason = ""
  	$NodeList=Get-NcNode -Controller $myController  -ErrorVariable ErrorVar
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNode failed [$ErrorVar]" }
 	if ( $NodeList -eq $null ) {
@@ -938,13 +1037,22 @@ Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController
 	Write-Log "$myQuestion"
 	foreach ( $Node in ( $NodeSelectedList | Skip-Null ) ) {
 		$i++ 
+        if($regMatch -and ($Node -match $regExMatch)){
+            $defaultReason = "Default found based on regex [$regExMatch]"
+            $indexMatch = $i
+        }
 		Write-Log "`t[$i] : [$Node]" -firstValueIsSpecial
 	}
+    if($indexMatch -eq 0){
+        $defaultReason = "Defaulting to first node"
+        $indexMatch = 1
+    }
 	$ErrNode = $True 
 	while ( $ErrNode -eq $True ) {
 		$ErrAns = $True 
 		while ( $ErrAns -eq $True ) {
-			$ans = Read-HostDefault "Select Node 1-$i" $i
+            Write-Log $defaultReason
+			$ans = Read-HostDefault -question "Select Node 1-$i" -default $indexMatch
 			if ($ans -match  "^[0-9]" ) { 
 				$ErrAns = $False
 			}
@@ -957,9 +1065,12 @@ Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController
 }
 
 #############################################################################################
-Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion ) {
+Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion,[string]$regExMatch,[string]$default) {
     $ans='n'
     $ctrlName=$myController.Name
+    $indexMatch=0
+    $bestMatch=-2
+    $defaultReason = ""
 	while ( $ans -ne 'y') {	
 		$AggrSelectedList = @()
  		$AggrList=Get-NcAggr -Controller $myController  -ErrorVariable ErrorVar
@@ -970,15 +1081,25 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			clean_and_exit 1
 		}
 		$i = 0 
-		Write-Log "$myQuestion"
-		foreach ( $Aggr in ( $AggrList | Skip-Null ) ) {
+		foreach ( $Aggr in ( $AggrList | Skip-Null | sort -Property Available -Descending ) ) {
 			if ( $Aggr.AggrRaidAttributes.HasLocalRoot -eq $False ) {
 				$i++ 
 				$tmpStr=$Aggr.Name
+                # if regex
+                if(($bestMatch -lt 0) -and ($regExMatch) -and ($tmpStr -cmatch $regExMatch)){
+                    $defaultReason = "Default found based on regex [$regExMatch]"
+                    $indexMatch=$i
+                    $bestMatch=0
+                }
+                if(($bestMatch -lt -1) -and ($default -ceq $tmpStr)){
+                    $defaultReason = "Default found [$default]"
+                    $indexMatch=$i
+                    $bestMatch=-1
+                }
 				$Nodes=$Aggr.Nodes
 				$Size= [math]::round($Aggr.Available/1GB)
 				$AggrSelectedList += $tmpStr
-				Write-Log "`t[$i] : [$Aggr]`t[$Nodes]`t[$Size GB]" -firstValueIsSpecial
+				Write-Log "`t[$i] : [$tmpStr]`t[$Nodes]`t[$Size GB]" -firstValueIsSpecial
 			}
 		}
 		if ( $i -eq 0 ) {
@@ -986,12 +1107,19 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
             [void]$global:mutexconsole.ReleaseMutex()
 			clean_and_exit 1
 		}
+        # fallback to first
+        if($indexMatch -eq 0){
+            $defaultReason = "Defaulting to aggregate with most space"
+            $indexMatch = 1
+        }
+
 		$ErrAggr = $True 
 		while ( $ErrAggr -eq $True ) {
 			$ErrAns = $True 
 			while ( $ErrAns -eq $True ) {
-				$ans = Read-HostDefault "[$ctrlName] Select Aggr 1-$i" $i
-				if ($ans -match  "^[0-9]" ) { 
+                Write-Log $defaultReason
+				$ans = Read-HostDefault -question "[$ctrlName] Select Aggr 1-$i" -default $indexMatch
+				if ($ans -match  "^[0-9]*" ) { 
 					$ErrAns = $False
 				}
 			}
@@ -999,7 +1127,8 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			$AggrSelected=$AggrSelectedList[$index]
 			if ( $AggrSelected -ne $null ) { $ErrAggr = $False }
 		}
-		$ans=Read-HostOptions "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" "y/n"
+		$ans=Read-HostOptions -question "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" -options "y/n" -default "y"
+
 	}
 	return $AggrSelected
 }
@@ -1102,8 +1231,12 @@ Function create_update_vscan_dr (
                             }
                             while($ANS -ne 'n')
                             {
-                                $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
-                                $ANS=Read-HostOptions "[$workOn] Do you want to add another Scan Server ?" "y/n"
+                                if(-not $Global:NonInteractive){
+                                    $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
+                                }else{
+                                    Write-LogWarn "SKIPPING Vscan Server Entry in NonInteractive Mode"
+                                }
+                                $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
                             }
                             Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1135,8 +1268,12 @@ Function create_update_vscan_dr (
                     $num=0
                     while($ANS -ne 'n')
                     {
-                        $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
-                        $ANS=Read-HostOptions "[$workOn] Do you want to add another Scan Server ?" "y/n"
+                        if(-not $Global:NonInteractive){
+                            $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
+                        }else{
+                            Write-LogWarn "SKIPPING Vscan Server Entry in NonInteractive Mode"
+                        }
+                        $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
                     }
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -1574,23 +1711,7 @@ Function create_update_localuser_dr(
                         if($Authmet -eq "password" -and $Username -notin $PasswordEntered){
                             $passwordIsGood=$False
                             do{ 
-                                Write-Log "[$workOn] Please Enter password for user [$Username]"
-                                do{
-                                    $ReEnter=$false
-                                    $pass1=Read-Host "[$workOn] Enter Password for [$Username]" -AsSecureString
-                                    $pass2=Read-Host "[$workOn] Confirm Password for [$Username]" -AsSecureString
-                                    $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                                    $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
-    
-                                    if ($pwd1_text -ceq $pwd2_text) {
-                                        Write-LogDebug "Passwords matched"
-                                    } 
-                                    else{
-                                        Write-Warning "[$workOn] Error passwords does not match. Please Re-Enter"
-                                        $ReEnter=$True
-                                    }
-                                }while($ReEnter -eq $True)
-                                $password=$pwd1_text
+                                $password=get_pwd_from_cli -workOn $workOn -for "user" -name $Username
                                 Write-LogDebug "New-NcUser -UserName $Username -Role $Rolename -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Password xxxxxxxx -Controller $mySecondaryController"
                                 $out=New-NcUser -UserName $Username -Role $Rolename -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Password $password -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { 
@@ -1634,23 +1755,7 @@ Function create_update_localuser_dr(
                     if($Authmet -eq "password" -and $Username -notin $PasswordEntered){ 
                         $passwordIsGood=$False
                         do{
-                            Write-Log "[$workOn] Please Enter password for user [$Username]"
-                            do{
-                                $ReEnter=$false
-                                $pass1=Read-Host "[$workOn] Password for [$Username]" -AsSecureString
-                                $pass2=Read-Host "[$workOn] Confirm Password for [$Username]" -AsSecureString
-                                $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                                $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
-
-                                if ($pwd1_text -ceq $pwd2_text) {
-                                    Write-LogDebug "Passwords matched"
-                                } 
-                                else{
-                                    Write-Warning "[$workOn] Error passwords do not match. Please Re-Enter"
-                                    $ReEnter=$True
-                                }
-                            }while($ReEnter -eq $True)
-                            $password=$pwd1_text
+                            $password=get_pwd_from_cli -workOn $workOn -for "user" -name $Username
                             Write-LogDebug "New-NcUser -UserName $Username -Role $Rolename -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Password xxxxxxxx -Controller $mySecondaryController"
                             $out=New-NcUser -UserName $Username -Role $Rolename -Vserver $mySecondaryVserver -Application $Application -AuthMethod $Authmet -Password $password -Controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { 
@@ -1695,23 +1800,7 @@ Function create_update_localuser_dr(
                     if($DebugLevel){Write-LogDebug "Need to unlock user [$userName] on [$mySecondaryVserver]"}
                     $passwordIsGood=$False
                     do{
-                        Write-Log "[$workOn] Please Enter password for user [$userName]"
-                        do{
-                            $ReEnter=$false
-                            $pass1=Read-Host "[$workOn] Password for [$userName]" -AsSecureString
-                            $pass2=Read-Host "[$workOn] Confirm Password for [$userName]" -AsSecureString
-                            $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                            $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
-                            if ($pwd1_text -ceq $pwd2_text) {
-                                Write-LogDebug "Passwords match for [$UserName]"
-                            } 
-                            else{
-                                Write-Warning "[$workOn] Error passwords do not match for [$UserName]. Please Re-Enter"
-                                Write-LogDebug "Error passwords do not match for user [$UserName]. Please Re-Enter"
-                                $ReEnter=$True
-                            }
-                        }while($ReEnter -eq $True)
-                        $password=$pwd1_text
+                        $password=get_pwd_from_cli -workOn $workOn -for "user" -name $UserName
                         if($DebugLevel){Write-LogDebug "Set-NcUserPassword -UserName $userName -VserverContext $mySecondaryVserver -Password xxxxxxx -Controller $mySecondaryController"}
                         $out=Set-NcUserPassword -UserName $userName -VserverContext $mySecondaryVserver -Password $password -Controller $mySecondaryController -ErrorVariable ErrorVar
                         if($? -ne $true){
@@ -2195,8 +2284,12 @@ Function create_update_fpolicy_dr(
                             }
                             while($ANS -ne 'n')
                             {
-                                $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                                $ANS=Read-HostOptions "[$workOn] Do you want to add more Primary External Server ?" "y/n"
+                                if(-not $Global:NonInteractive){
+                                    $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
+                                }else{
+                                    Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
+                                }
+                                $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Primary External Server ?" -options "y/n"
                             }
                             if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
                                 -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null)) )
@@ -2214,8 +2307,12 @@ Function create_update_fpolicy_dr(
                                 }
                                 while($ANS -ne 'n')
                                 {
-                                    $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                                    $ANS=Read-HostOptions "Do you want to add more Secondary External Server ?" "y/n"
+                                    if(-not $Global:NonInteractive){
+                                        $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
+                                    }else{
+                                        Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
+                                    }
+                                    $ANS=Read-HostOptions -question "Do you want to add more Secondary External Server ?" -options "y/n"
                                 }        
                             }
                             [void]$global:mutexconsole.ReleaseMutex()
@@ -2323,8 +2420,12 @@ Function create_update_fpolicy_dr(
                     $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
                     while($ANS -ne 'n')
                     {
-                        $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                        $ANS=Read-HostOptions "Do you want to add more Primary External Server ?" "y/n"
+                        if(-not $Global:NonInteractive){
+                            $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
+                        }else{
+                            Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
+                        }
+                        $ANS=Read-HostOptions -question "Do you want to add more Primary External Server ?" -options "y/n"
                     }
                     if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
                     {
@@ -2334,8 +2435,12 @@ Function create_update_fpolicy_dr(
                         $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
                         while($ANS -ne 'n')
                         {
-                            $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                            $ANS=Read-HostOptions "[$workOn] Do you want to add more Secondary External Server ?" "y/n"
+                            if(-not $Global:NonInteractive){
+                                $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
+                            }else{
+                                Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
+                            }
+                            $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Secondary External Server ?" -options "y/n"
                         }    
                     }
                     [void]$global:mutexconsole.ReleaseMutex()
@@ -3586,7 +3691,7 @@ Try {
             $Return=$False
         }
     }
-    if($Backup -eq $Fasle){
+    if($Backup -eq $False){
         if ( $PrimaryIgroupList -eq $null ) {
             Write-Log "[$workOn] No igroup found on cluster [$myPrimaryController]"
             Write-LogDebug "create_update_igroupdr[$myPrimaryVserver]: end"
@@ -4466,13 +4571,13 @@ Catch {
 Function create_volume_voldr(
 	[NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
-	[switch] $NoInteractive,
 	[string] $myPrimaryVserver,
 	[string] $mySecondaryVserver,
     [string] $myDataAggr,
     [string]$workOn=$mySecondaryVserver,
     [bool]$Backup,
-    [bool]$Restore) {
+    [bool]$Restore,
+    [string]$aggrMatchRegEx) {
 Try {
     Write-Log "[$workOn] Check SVM Volumes"
     $Return = $True
@@ -4495,7 +4600,7 @@ Try {
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
 
-	if($NoInteractive -eq $False){
+	if($Global:NonInteractive -eq $False){
         if($Global:SelectVolume -eq $True){
             if($Backup -eq $False -and $Restore -eq $False){
                 $PreviousSelectVolumes=Purge_SelectVolumedb $myPrimaryController $mySecondaryController $myPrimaryVserver $mySecondaryVserver
@@ -4562,6 +4667,7 @@ Try {
         if($Backup -eq $False){
             Write-LogDebug "create_volume_voldr: PrimaryVol [$PrimaryVol]"
             $PrimaryVolName=$PrimaryVol.Name
+            $PrimaryVolAggr=$PrimaryVol.Aggregate
             $PrimaryVolStyle=$PrimaryVol.VolumeSecurityAttributes.Style
             $PrimaryVolExportPolicy=$PrimaryVol.VolumeExportAttributes.Policy
             $PrimaryVolType=$PrimaryVol.VolumeIdAttributes.Type
@@ -4576,7 +4682,7 @@ Try {
             $PrimaryVolIsVserverRoot=$PrimaryVol.VolumeStateAttributes.IsVserverRoot
             if ( ( $PrimaryVolState -eq "online" ) -and ($PrimaryVolType -eq "rw" ) -and ($PrimaryVolIsVserverRoot -eq $False ) -and ( $PrimaryVolIsInfiniteVolume -eq $False ) ) {
                 if($Restore -eq $False -and $Backup -eq $False){
-                    if( $Global:SelectVolume -eq $True -and $NoInteractive -eq $False )
+                    if( $Global:SelectVolume -eq $True -and $Global:NonInteractive -eq $False )
                     {
                         $volsizeGB=[math]::round($PrimaryVolSize/1024/1024,2)
                         try {
@@ -4587,12 +4693,12 @@ Try {
                             Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                             [void]$global:mutexconsole.ReleaseMutex()
                         }
-                        $ANS=Read-HostOptions "Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ?" "y/n"
+                        $ANS=Read-HostOptions -question "Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ?" -options "y/n"
                         if ( $ANS -eq 'n' ) {
                             Write-LogDebug "SelectVolume volume [$PrimaryVolName] excluded"
                             if($PreviousSelectVolumes.contains($PrimaryVolName)){
                                 Write-Log "[$workOn] [$PrimaryVolName] was previously selected for replication"
-                                $ANS=Read-HostOptions "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]?" "y/n"
+                                $ANS=Read-HostOptions -question "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]?" -options "y/n"
                                 if($ANS -eq 'y'){
                                     if((delete_snapmirror_relationship $myPrimaryController $mySecondaryController $myPrimaryVserver $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: delete_snapmirror_relationship failed";return $false}
                                     if((umount_volume $mySecondaryController $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: umount_volume failed";return $false}
@@ -4612,34 +4718,37 @@ Try {
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
                 if ( $SecondaryVol -eq $null )  {
                     # Create the volume
-                    if ( ! $myDataAggr ) {
-                        if ( $NoInteractive ) {
-                            Write-LogError "ERROR: No Default Data Aggregate available for new volume on [$mySecondaryController], please use option DataAggr"
-                            $Return = $False
-                            return $Return 
-                        }
-                        else{
-                            if( $Global:AlwaysChooseDataAggr -eq $true )
-                            {
-                                Write-LogDebug "create_volume_voldr with `$Global:AlwaysChooseDataAggr enable, ask dataAggr for volume [$PrimaryVolName]"
-                                $Question = "[$mySecondaryVserver] Please Select a destination DATA aggregate for [$PrimaryVolName] on Cluster [$MySecondaryController]:"
-                            }
-                            else
-                            {
-                                $Question = "[$mySecondaryVserver] Please Select the default DATA aggregate on Cluster [$MySecondaryController]:"
-                            }
-                            try {
-                                $global:mutexconsole.WaitOne(200) | Out-Null
-                            }
-                            catch [System.Threading.AbandonedMutexException]{
-                                #AbandonedMutexException means another thread exit without releasing the mutex, and this thread has acquired the mutext, therefore, it can be ignored
-                                Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
-                                [void]$global:mutexconsole.ReleaseMutex()
-                            }
-                            $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question
-                            [void]$global:mutexconsole.ReleaseMutex()
+                #  THIS NOW WORKS DIFFERENTLY
+                #  WE ALWAYS TRY TO FIND A MATCH IN NON INTERACTIVE MODE
+
+                    if($Global:NonInteractive){
+                        Write-LogDebug "create_volume_voldr with `$Global:NonInteractive enabled, auto selecting aggregate for volume [$PrimaryVolName]"
+                    }else{
+                        if( $Global:AlwaysChooseDataAggr -eq $true) {
+                            Write-LogDebug "create_volume_voldr with `$Global:AlwaysChooseDataAggr enable, ask dataAggr for volume [$PrimaryVolName]"
+                            $Question = "[$mySecondaryVserver] Please Select a destination DATA aggregate for [$PrimaryVolName] on Cluster [$MySecondaryController]:"
+                        }else {
+                            $Question = "[$mySecondaryVserver] Please Select the default DATA aggregate on Cluster [$MySecondaryController]:"
                         }
                     }
+
+                    try {
+                        $global:mutexconsole.WaitOne(200) | Out-Null
+                    }
+                    catch [System.Threading.AbandonedMutexException]{
+                        #AbandonedMutexException means another thread exit without releasing the mutex, and this thread has acquired the mutext, therefore, it can be ignored
+                        Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
+                        [void]$global:mutexconsole.ReleaseMutex()
+                    }
+                    if($aggrMatchRegEx -ne ""){
+                        $dataAggrMatchRegex = replace_regex_groupmatches -string $PrimaryVolAggr -regex $aggrMatchRegEx -replacewith "(.*)"
+                    }else{
+                        $dataAggrMatchRegex = ""
+                    }
+                    $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr
+                    [void]$global:mutexconsole.ReleaseMutex()
+
+
                     $Aggr = Get-NcAggr -Controller $mySecondaryController -Name $myDataAggr  -ErrorVariable ErrorVar 
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" } 
                     if ( $Aggr -eq $null ) {
@@ -4647,12 +4756,15 @@ Try {
                         clean_and_exit 1 
                     }
                     $Available=$Aggr.Available
+
+                    # if in non-interactive mode and matching aggr does not have enought space, break
+                    # we already defaulted to the largest aggr anyways
+                    if($Global:NonInteractive -and ($Available -lt $PrimaryVolSize) ){
+                        Write-LogError "ERROR: No space left on [$myDataAggr] [$mySecondaryController] for create [$PrimaryVolName]"
+                        $Return = $False
+                        return $Return 
+                    }
                     while ( $Available -lt $PrimaryVolSize ) {
-                        if ( $NoInteractive ) {
-                            Write-LogError "ERROR: No space left on [$myDataAggr] [$mySecondaryController] for create [$PrimaryVolName]"
-                            $Return = $False
-                            return $Return 
-                        }
                         Write-LogWarn "Unable to create volume [$PrimaryVolName] [$PrimaryVolSize]"
                         Write-LogWarn "Not enough size available in aggr [$myDataAggr] [$Available]"
                         $Question ="[$workOn] WARNING: Please select another Aggregate:"
@@ -4664,7 +4776,8 @@ Try {
                             Write-Host -f Red "catch abandoned mutex for [$myPrimaryVserver]"
                             [void]$global:mutexconsole.ReleaseMutex()
                         }
-                        $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question
+                        # we keep asking, no autoselect, but we do want to keep suggesting our best match, even if it's a bad one
+                        $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr
                         [void]$global:mutexconsole.ReleaseMutex()
                         $Aggr = Get-NcAggr -Controller $mySecondaryController -Name $myDataAggr  -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" } 
@@ -5766,7 +5879,7 @@ Try {
                             if($MirrorState -eq 'snapmirrored')
                             {
                                 Write-LogError "ERROR: The relation [$SourceLocation] [$DestinationLocation] status is [$RelationshipStatus] [$MirrorState] " 
-                                $ANS=Read-HostOptions "Do you want to break this relation ?" "y/n"
+                                $ANS=Read-HostOptions -question "Do you want to break this relation ?" -options "y/n" -default "y"
                                 if ( $ANS -eq 'y' ) 
                                 {
                                     Write-Log "[$workOn] Break relation [$SourceLocation] -> [$DestinationLocation]"
@@ -5928,7 +6041,8 @@ Function create_lif_dr(
     [string]$workOn=$mySecondaryVserver,
     [switch] $UpdateLif,
     [bool]$Backup,
-    [bool]$Restore)
+    [bool]$Restore,
+    [string]$nodeMatchRegEx)
  {
 Try {
 
@@ -5972,6 +6086,9 @@ Try {
         $PrimaryRole=$PrimaryInterface.Role
         $PrimaryCurrentNode=$PrimaryInterface.CurrentNode
         $PrimaryCurrentPort=$PrimaryInterface.CurrentPort
+        $PrimaryCurrentPortObj=Get-NcNetPort -Name $PrimaryCurrentPort -Node $PrimaryCurrentNode -Controller $myPrimaryController -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
+        $PrimaryBroadcastDomain = $PrimaryCurrentPortObj.BroadcastDomain
         $PrimaryRoutingGroupName=$PrimaryInterface.RoutingGroupName
         $PrimaryFirewallPolicy=$PrimaryInterface.FirewallPolicy
         $PrimaryIsAutoRevert=$PrimaryInterface.IsAutoRevert
@@ -6034,16 +6151,21 @@ Try {
                 while ( ( $ANS1 -eq 'y' ) -and ( $ANS2 -eq 'n' ) ) 
                 {
                     $LIF = '[' + $PrimaryInterfaceName + '] [' + $PrimaryAddress + '] [' + $PrimaryNetMask + '] [' + $PrimaryGateway + '] [' + $PrimaryCurrentNode + '] [' + $PrimaryCurrentPort + ']'  
-                    $ANS1 = Read-HostOptions "[$mySecondaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ?" "y/n"
+                    $ANS1 = Read-HostOptions -question "[$mySecondaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ?" -options "y/n" -default "y"
                     if ( $ANS1 -eq 'y' ) 
                     {
                         $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress -workOn $workOn
                         $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask -workOn $workOn
                         $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway -workOn $workOn
-                        $myNode=select_node_from_cli -myController $mySecondaryController -myQuestion "Please select secondary node for LIF [$PrimaryInterfaceName] :" 
-                        $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] " -myDefault $PrimaryCurrentPort
+                        if($nodeMatchRegEx -ne ""){
+                            $nodeRegEx=replace_regex_groupmatches -string $PrimaryCurrentNode -regex $nodeMatchRegEx -replacewith "(.*)"
+                        }else{
+                            $nodeRegEx=""
+                        }
+                        $myNode=select_node_from_cli -myController $mySecondaryController -myQuestion "Please select secondary node for LIF [$PrimaryInterfaceName] :" -regExMatch $nodeRegEx
+                        $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] " -default $PrimaryCurrentPort -broadcastDomain $PrimaryBroadcastDomain
                         $LIF = '[' + $PrimaryInterfaceName + '] [' + $myIpAddr + '] [' + $myNetMask +  '] [' + $myGateway + '] [' +$myNode + '] [' + $myPort + ']'					
-                            $ANS2 = Read-HostOptions "[$mySecondaryVserver] Ready to create the LIF $LIF ?" "y/n"
+                            $ANS2 = Read-HostOptions -question "[$mySecondaryVserver] Ready to create the LIF $LIF ?" -options "y/n" -default "y"
                         if ( $ANS2 -eq 'y' ) 
                         {
                             Write-Log "[$workOn] Create the LIF $LIF"
@@ -6074,9 +6196,11 @@ Try {
                                     $out=Remove-NcNetRoute -Destination '0.0.0.0/0' -Gateway $Gateway -Vserver $mySecondaryVserver -Confirm:$False -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcNetRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
                                 }
-                                Write-LogDebug "New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                $out=New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
+                                if( ( $myGateway -eq $null ) -or ( $myGateway -eq "" ) ){
+                                    Write-LogDebug "New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                    $out=New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
+                                }
                             }
                             else{
                                 Write-LogDebug "[$mySecondaryController] run ONTAP 8.X"
@@ -6089,7 +6213,7 @@ Try {
                                 {
                                     Write-Log "[$workOn] No default Gateway for lif [$PrimaryInterfaceName]"
                                     if ( $SecondaryGateway -ne $null  ) {
-                                        $ANS3 = Read-HostOptions "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ?" "y/n"
+                                        $ANS3 = Read-HostOptions -question "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ?" -options "y/n" -default "y"
                                         if ( $ANS3 -eq 'y' ) 
                                         {
                                             $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -6115,9 +6239,11 @@ Try {
                                                 $Return = $False
                                             }
                                         }
-                                        Write-LogDebug "New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                        $out=New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoutingGroupRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
+                                        if ( ( $myGateway -eq $null ) -or ( $myGateway -eq "" )  ) {
+                                            Write-LogDebug "New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                            $out=New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoutingGroupRoute failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
+                                        }
                                     }													
                                 }
                             }						
@@ -6228,7 +6354,7 @@ Try {
                             }
                             Write-Log "[$workOn] All DNS nameserver are not available on DR"
                             Write-LogDebug "Do you want to force creation of DNS without verify config on destination?"
-                            $ans=Read-HostOptions "[$myPrimaryVserver]Do you want to force creation of DNS without verify config on destination?" "y/n"
+                            $ans=Read-HostOptions -question "[$myPrimaryVserver]Do you want to force creation of DNS without verify config on destination?" -options "y/n" -default "y"
                             [void]$global:mutexconsole.ReleaseMutex()
                             if($ans -eq "y"){
                                 Write-LogDebug "New-NcNetDns -Domains $PrimaryDomains -NameServers $PrimaryNameServers -State $PrimaryDnsState -SkipConfigValidation -TimeoutSeconds $PrimaryTimeout -Attempts $PrimaryAttempts -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
@@ -6279,6 +6405,101 @@ Try {
 Catch {
     handle_error $_ $myPrimaryVserver
 	return $Return
+}
+}
+
+#############################################################################################
+Function create_update_cifs_symlink_dr (
+    [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
+    [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
+    [string] $myPrimaryVserver,
+    [string] $mySecondaryVserver,
+    [bool]$Backup,
+    [bool]$Restore) {
+Try {
+    $Return=$True
+    Write-Log "[$mySecondaryVserver] Check Cifs Symlinks"
+    Write-LogDebug "create_update_cifs_symlink_dr[$myPrimaryVserver]: start"
+    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
+    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
+
+    if($Restore -eq $False){
+        $PrimaryCifsSymlinks=Get-NcCifsSymlink -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsSymlink failed [$ErrorVar]" }
+    }else{
+        if(Test-Path $($Global:JsonPath+"Get-NcCifsSymlink.json")){
+            $PrimaryCifsSymlinks=Get-Content $($Global:JsonPath+"Get-NcCifsSymlink.json") | ConvertFrom-Json
+        }else{
+            $Return=$False
+            $filepath=$($Global:JsonPath+"Get-NcCifsSymlink.json")
+            Throw "ERROR: failed to read $filepath"
+        }
+    }
+    if($Backup -eq $True){
+        $PrimaryCifsSymlinks | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcCifsSymlink.json") -Encoding ASCII -Width 65535
+        if( ($ret=get-item $($Global:JsonPath+"Get-NcCifsSymlink.json") -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$($Global:JsonPath+"Get-NcCifsSymlink.json") saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsSymlink.json")"
+            $Return=$False
+        }
+    }
+    if($Backup -eq $False){
+        $PrimaryCifs=Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
+        if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Cifs server on [$myPrimaryVserver] reason [$ErrorVar]"}
+        $PrimaryCifs = $PrimaryCifs.CifsServer
+
+        $SecondaryCifs=Get-NcCifsServer -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
+        if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Cifs server on [$mySecondaryVserver] reason [$ErrorVar]"}
+        $SecondaryCifs = $SecondaryCifs.CifsServer
+
+        foreach($PrimarySymlink in ($PrimaryCifsSymlinks | Skip-Null)){
+            $PrimaryCifsPath                 =$PrimarySymlink.CifsPath 
+            $PrimaryCifsServer               =$PrimarySymlink.CifsServer
+            $PrimaryHomeDirectory            =$PrimarySymlink.HomeDirectory
+            $PrimaryLocality                 =$PrimarySymlink.Locality
+            $PrimaryShareName                =$PrimarySymlink.ShareName
+            $PrimaryUnixPath                 =$PrimarySymlink.UnixPath
+
+            if($PrimaryCifs -eq $PrimaryCifsServer){
+                $PrimaryCifsServer = $SecondaryCifs
+            }
+
+            Write-LogDebug "Get-NcCifsSymlink -VserverContext $mySecondaryVserver -Controller $mySecondaryController -UnixPath $PrimaryUnixPath"
+            $SecondarySymlink=Get-NcCifsSymlink -VserverContext $mySecondaryVserver -Controller $mySecondaryController -UnixPath $PrimaryUnixPath -ErrorVariable ErrorVar
+            if($? -ne $True){$Return=$False;Throw "ERROR: Failed to get Cifs Symlink [$PrimaryUnixPath] on [$mySecondaryVserver] reason [$ErrorVar]"}
+            if($SecondarySymlink -eq $null){
+                Write-LogDebug "Add-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory:$PrimaryHomeDirectory -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                $out=Add-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory:$PrimaryHomeDirectory -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
+                if($? -ne $True){$Return=$False;Throw "ERROR: Failed to create Cifs Symlink [$PrimaryUnixPath] on CifsSymlinks [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+
+            }else{
+                $SecondaryCifsPath                 =$SecondarySymlink.CifsPath 
+                $SecondaryCifsServer               =$SecondarySymlink.CifsServer
+                $SecondaryHomeDirectory            =$SecondarySymlink.HomeDirectory
+                $SecondaryLocality                 =$SecondarySymlink.Locality
+                $SecondaryShareName                =$SecondarySymlink.ShareName
+                if(
+                    ($SecondaryCifsPath                -ne  $PrimaryCifsPath               ) `
+                    -or ($SecondaryCifsServer              -ne  $PrimaryCifsServer         ) `
+                    -or ($SecondaryHomeDirectory           -ne  $PrimaryHomeDirectory          ) `
+                    -or ($SecondaryLocality                -ne  $PrimaryLocality               ) `
+                    -or ($SecondaryShareName               -ne  $PrimaryShareName              ) 
+
+                ){
+                    Write-LogDebug "Set-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory:$PrimaryHomeDirectory  -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                    $out=Set-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory $PrimaryHomeDirectory -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
+                    if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Set Cifs Symlink [$PrimaryUnixPath] on CifsSymlinks [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+                }
+            }
+        }
+    }
+    Write-LogDebug "create_update_cifs_symlink_dr[$myPrimaryVserver]: end"
+    return $True 
+}
+Catch {
+    handle_error $_ $myPrimaryVserver
+    return $Return
 }
 }
 
@@ -6861,23 +7082,23 @@ Try {
             if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Work on Qtree [$QName]"}
             if($DebugLevel){Write-LogDebug "Get-NcQtree -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Volume $Volume -Qtree $QName"}
             $SecQtree=Get-NcQtree -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Volume $Volume -Qtree $QName -ErrorVariable ErrorVar
-            if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to get Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+            if($? -ne $True){$Return=$False;Throw "ERROR: Failed to get Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
             if($SecQtree -eq $null){
                 Write-Log "[$workOn] Create Qtree [$QName] on Volume [$Volume]"
                 Write-LogDebug "New-NcQtree -Volume /vol/ $Volume / $QName -Mode $Mode -SecurityStyle $SecStyle -Oplocks $Oplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                 $ret=New-NcQtree -Volume $("/vol/"+$Volume+"/"+$QName) -Mode $Mode -SecurityStyle $SecStyle -Oplocks $Oplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar 
-                if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to create Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+                if($? -ne $True){$Return=$False;Throw "ERROR: Failed to create Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
             }
             else{
                 Write-Log "[$workOn] Modify Qtree [$QName] on Volume [$Volume]"
                 if($Oplocks -eq "enabled"){
                     Write-LogDebug "Set-NcQtree -Volume /vol/ $Volume / $QName -Mode $Mode -SecurityStyle $SecStyle -EnableOplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcQtree -Volume $("/vol/"+$Volume+"/"+$QName) -Mode $Mode -SecurityStyle $SecStyle -EnableOplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                    if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to Set Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+                    if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Set Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
                 }else{
                     Write-LogDebug "Set-NcQtree -Volume /vol/ $Volume / $QName -Mode $Mode -SecurityStyle $SecStyle -DisableOplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcQtree -Volume $("/vol/"+$Volume+"/"+$QName) -Mode $Mode -SecurityStyle $SecStyle -DisableOplocks -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                    if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to Set Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}    
+                    if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Set Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}    
                 }
             }
         }   
@@ -6938,7 +7159,7 @@ Try {
             if($DebugLevel){Write-LogDebug "Work on Qtree [$QName]"}
             if($DebugLevel){Write-LogDebug "Get-NcQtree -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Volume $Volume -Qtree $QName"}
             $SecQtree=Get-NcQtree -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Volume $Volume -Qtree $QName -ErrorVariable ErrorVar
-            if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to get Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+            if($? -ne $True){$Return=$False;Throw "ERROR: Failed to get Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
             if($SecQtree -eq $null){Write-Warning "Qtree [$QName] does not exist on [$mySecondaryVserver]. Please Resync relationship"}
             else{
                 $SecExportPolicy=$SecQtree.ExportPolicy
@@ -6946,7 +7167,7 @@ Try {
                     Write-Log "Modify Export Policy on Qtree [$QName] to [$ExportPolicy] on [$mySecondaryVserver]"
                     Write-LogDebug "Set-NcQtree -Volume $volume -Qtree $QName -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcQtree -Volume $volume -Qtree $QName -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                    if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to Set export policy [$ExportPolicy] on Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
+                    if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Set export policy [$ExportPolicy] on Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
                 }
             }
         }
@@ -6959,6 +7180,7 @@ Catch {
     return $Return
 }
 }
+
 
 #############################################################################################
 Function create_update_LDAP_dr (
@@ -7244,7 +7466,7 @@ Try {
                 [void]$global:mutexconsole.ReleaseMutex()
             }
             if($LDAPclientAdDomain.length -gt 0){
-                $LDAPclientAdDomain=Read-HostDefault "[$mySecondaryVserver] Enter Active Directory Domain" $LDAPclientAdDomain
+                $LDAPclientAdDomain=Read-HostDefault -question "[$mySecondaryVserver] Enter Active Directory Domain" -default $LDAPclientAdDomain
                 $ldapserverslist=@()
                 $existingPreferedADServers=$LDAPclientPreferredAdServers
                 $index=0
@@ -7256,30 +7478,17 @@ Try {
                         $previousPreferedServer=$existingPreferedADServers    
                     }
                     do{
-                        $ldapserver=Read-HostDefault "[$mySecondaryVserver] Enter AD Prefered LDAP server IP []" $previousPreferedServer
+                        $ldapserver=Read-HostDefault -question "[$mySecondaryVserver] Enter AD Prefered LDAP server IP []" -default $previousPreferedServer
                     }
                     while(validate_ip_format $ldapserver)
                     $ldapserverslist+=$ldapserver
-                    $ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to add another AD Prefered LDAP server ?" "y/n"
+                    $ANS=Read-HostOptions -question "[$mySecondaryVserver] Do you want to add another AD Prefered LDAP server ?" -options "y/n" -default "n"
                 }
                 while($ANS -eq "y")
                 $LDAPclientADServers=$ldapserverslist
-                do{
-                    $ReEnter=$false
-                    $pass1=Read-Host "[$mySecondaryVserver] Please Enter LDAP server Bind Password" -AsSecureString
-                    $pass2=Read-Host "[$mySecondaryVserver] Please Re-Enter LDAP server Bind Password" -AsSecureString
-                    $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                    $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
 
-                    if ($pwd1_text -ceq $pwd2_text) {
-                        Write-LogDebug "Passwords matched"
-                    } 
-                    else{
-                        Write-Warning "[$mySecondaryVserver] Error passwords does not match. Please Re-Enter"
-                        $ReEnter=$True
-                    }
-                }while($ReEnter -eq $True)
-                $LDAPclientBindPassword=$pwd1_text
+                $LDAPclientBindPassword=get_pwd_from_cli -workOn $mySecondaryVserver -for "LDAP server Bind Password"
+
                 Write-LogDebug "New-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver `
                 -Schema $LDAPclientSchema `
                 -AdDomain $LDAPclientAdDomain `
@@ -7337,29 +7546,15 @@ Try {
                         }
                     }else{$previsousServer=""}
                     do{
-                        $server=Read-HostDefault "[$mySecondaryVserver] Enter LDAP server IP" $previousServer
+                        $server=Read-HostDefault -question "[$mySecondaryVserver] Enter LDAP server IP" -default $previousServer
                     }
                     while((validate_ip_format $server) -eq $False)
                     $serverslist+=$server
-                    $ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to add another LDAP server" "y/n"
+                    $ANS=Read-HostOptions -question "[$mySecondaryVserver] Do you want to add another LDAP server" -options "y/n" -default "n"
                 }
                 while($ANS -eq "y")
-                do{
-                    $ReEnter=$false
-                    $pass1=Read-Host "[$mySecondaryVserver] Please Enter LDAP server Bind Password" -AsSecureString
-                    $pass2=Read-Host "[$mySecondaryVserver] Please Re-Enter LDAP server Bind Password" -AsSecureString
-                    $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                    $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
+                $LDAPclientBindPassword=get_pwd_from_cli -workOn $mySecondaryVserver -for "LDAP server Bind Password" 
 
-                    if ($pwd1_text -ceq $pwd2_text) {
-                        Write-LogDebug "Passwords matched"
-                    } 
-                    else{
-                        Write-Warning "[$mySecondaryVserver] Error passwords does not match. Please Re-Enter"
-                        $ReEnter=$True
-                    }
-                }while($ReEnter -eq $True)
-                $LDAPclientBindPassword=$pwd1_text 
                 $LDAPclientServers=$serverslist
                 Write-LogDebug "New-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver `
                 -Schema $LDAPclientSchema `
@@ -7522,13 +7717,13 @@ Try {
             $ADCred = get_local_cred ($SecondaryDomain)
             $ANS = 'n'
             while ( $ANS -ne 'y' ) {
-                $SecondaryCifsServer = Read-HostDefault "[$mySecondaryVserver] Please Enter your default Secondary CIFS server Name" $SecondaryCifsServer
+                $SecondaryCifsServer = Read-HostDefault -question "[$mySecondaryVserver] Please Enter your default Secondary CIFS server Name" -default $SecondaryCifsServer
                 if ( ( $SecondaryDomain -eq $PrimaryCifsServerInfos.Domain ) -and ( $SecondaryCifsServer -eq $PrimaryCifsServerInfos.CifsServer ) ) { 
                     Write-LogError "ERROR: Secondary CIFS server cannot use the same name has primary CIFS server in the same domain"
                 } else {
                         Write-Log "[$workOn] Default Secondary CIFS Name:      [$SecondaryCifsServer]"
                     Write-Log ""
-                        $ANS = Read-HostOptions "[$workOn] Apply new configuration ?" "y/n"
+                        $ANS = Read-HostOptions -question "[$workOn] Apply new configuration ?" -options "y/n" -default "y"
                 }
             }
             $myInterfaceName=""
@@ -7579,7 +7774,7 @@ Try {
                         Write-LogWarn "[$workOn] Impossible to switch DR LIF to up because of duplicate IP address with Source Vserver"
                         Write-LogWarn "[$workOn] Impossible to register CIFS server on DR Vserver"
                         Write-LogWarn "[$workOn] Configure a temporary IP address on DR Vserver to be able to register your CIFS server"
-                        $ans = Read-HostOptions -question "I will wait here, so you can create that temp lif.  Is it done ?" "y/n"
+                        $ans = Read-HostOptions -question "I will wait here, so you can create that temp lif.  Is it done ?" -options "y/n" -default "n"
                         if($ans -eq "y"){$oneDRLifupReady=$true}
                     }
                 }
@@ -8044,7 +8239,7 @@ $request=@"
                                         $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
                                         if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
                                     }else{
-                                        if($DebugLevel){Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$Fasle"}
+                                        if($DebugLevel){Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"}
                                         $out=Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
                                         if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Add-NcCifsShareAcl failed [$ErrorVar]" }
                                     }
@@ -8074,7 +8269,7 @@ $request=@"
                                             }else{
                                                 $aclUserOrGroup=$domain    
                                             }
-                                            if($DebugLevel){Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUserOrGroup -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$Fasle"}
+                                            if($DebugLevel){Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUserOrGroup -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"}
                                             $out=Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUserOrGroup -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
                                             if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Add-NcCifsShareAcl failed [$ErrorVar]" }
                                         }
@@ -8706,7 +8901,10 @@ Function create_vserver_dr (
     [string] $workOn=$mySecondaryVserver,
     [bool] $DDR,
     [switch] $Backup,
-    [switch] $Restore){
+    [switch] $Restore,
+    [string] $aggrMatchRegEx,
+    [string] $nodeMatchRegEx,
+    [string] $myDataAggr){
 Try {
 	$Return = $True
     $runBackup=$False
@@ -8746,6 +8944,7 @@ Try {
 
     if($Backup -eq $False){
         $PrimaryRootVolume = $PrimaryVserver.RootVolume
+        $PrimaryRootVolumeAggr = $PrimaryRootVolume.Aggregate
         $PrimaryRootVolumeSecurityStyle = $PrimaryVserver.RootVolumeSecurityStyle
         $PrimaryLanguage = $PrimaryVserver.Language
         $PrimaryAllowedProtocols=$PrimaryVserver.AllowedProtocols
@@ -8775,11 +8974,16 @@ Try {
                 [void]$global:mutexconsole.ReleaseMutex()
             }
             Write-Log "[$workOn] Create new vserver"
-            if ( ($RootAggr) -eq $null -or ($RootAggr -eq "" ) ) {
-                $mySecondaryVserver
-                $Question = "[$mySecondaryVserver] Please Select root aggregate on Cluster [$MySecondaryController]:"
-                $RootAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question
-            } 
+            $Question = "[$mySecondaryVserver] Please Select root aggregate on Cluster [$MySecondaryController]:"
+
+            # this now works differently, we try to pick the best matching aggr and fall back to default
+            if($aggrMatchRegEx -ne ""){
+                $dataAggrMatchRegex = replace_regex_groupmatches -string $PrimaryRootVolumeAggr -regex $aggrMatchRegEx -replacewith "(.*)"
+            }else{
+                $dataAggrMatchRegex = ""
+            }
+            # we find a regex match first, but fall back to default.  If default is provided, we also assume autoselect (it's just for the rootvol)
+            $RootAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $RootAggr -autoSelect ($Global:NonInteractive -or ($RootAggr -ne ""))
             Write-LogDebug "Get-NcAggr -Controller $mySecondaryController -Name $RootAggr"
             $out = Get-NcAggr -Controller $mySecondaryController -Name $RootAggr  -ErrorVariable ErrorVar
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" ;[void]$global:mutexconsole.ReleaseMutex()}
@@ -8830,12 +9034,24 @@ Try {
     if ( ( $ret=create_update_efficiency_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Efficiency policy" ; $Return = $False }
     if ( ( $ret=create_update_firewallpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Firewall policy" ; $Return = $False }
     if ( ( $ret=create_update_role_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Role"}
-    if ( ( $ret=create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all LIF" ; $Return = $True }
-    if ( ( $ret=create_update_localuser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all local user"}
+    if ( ( $ret=create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -nodeMatchRegEx $nodeMatchRegEx) -ne $True ) { Write-LogError "ERROR: Failed to create all LIF" ; $Return = $True }
+    
+    if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){
+        if ( ( $ret=create_update_localuser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all local user"}
+    }else{
+        Write-LogWarn "SKIPPING local user create/update in NonInteractive Mode with no default credentials"
+    }
     if ( ( $ret=create_update_localunixgroupanduser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Local Unix User and Group"}
     if ( ( $ret=create_update_usermapping_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create User Mapping"}
     if ( ( $ret=create_update_DNS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create DNS service" ; $Return = $False }
-    if ( ( $ret=create_update_LDAP_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create LDAP config" ; $Return = $False }
+    
+    if(-not $Global:NonInteractive){
+
+        if ( ( $ret=create_update_LDAP_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create LDAP config" ; $Return = $False }
+
+    }else{
+        Write-LogWarn "SKIPPING LDAP config create/update in NonInteractive Mode"
+    }
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
@@ -8844,10 +9060,12 @@ Try {
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$myPrimaryVserver]"    
     }
+    
+    if ( ( $ret=create_update_cifs_symlink_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all cifs symlinks" ; $Return = $False }
     if ( ( $ret=create_update_igroupdr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all igroups" ; $Return = $False }
     if ( ( $ret=create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Vscan config" ; $Return = $False }
     if ( ( $ret=create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Fpolicy config" ; $Return = $False }
-	$ret=create_volume_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn  -Backup $runBackup -Restore $runRestore
+	$ret=create_volume_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn  -Backup $runBackup -Restore $runRestore -aggrMatchRegEx $aggrMatchRegEx -myDataAggr $myDataAggr 
     if ( $ret.count -gt 0 ) {
         if ($ret[0] -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; $Return = $False }
     }else{
@@ -8858,7 +9076,7 @@ Try {
 	if ( ( $ret=create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn -DDR $DDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; $Return = $False }
 	if ( ( $ret=create_update_snap_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {Write-LogError "ERROR: create_update_snap_policy_dr"}
 	if($Backup -eq $False -and $Restore -eq $False){
-        $ASK_WAIT=Read-HostOptions "[$mySecondaryVserver] Do you want to wait the end of snapmirror transfers and mount all volumes and map LUNs $mySecondaryVserver now ?" "y/n"
+        $ASK_WAIT=Read-HostOptions -question "[$mySecondaryVserver] Do you want to wait the end of snapmirror transfers and mount all volumes and map LUNs $mySecondaryVserver now ?" -options "y/n" -default "n"
     }else{
         $ASK_WAIT='y'
     }
@@ -8876,10 +9094,14 @@ Try {
             }
         }
         #Wait-Debugger
-        if ( ( $ret=update_cifs_usergroup -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {
-			Write-LogError "ERROR: update_cifs_usergroup failed" 
-			$Return=$False			
-		}
+        if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){ # skip on interactive or no default creds
+            if ( ( $ret=update_cifs_usergroup -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {
+			    Write-LogError "ERROR: update_cifs_usergroup failed" 
+			    $Return=$False			
+		    }
+        }else{
+            Write-LogWarn "SKIPPING cifs user create/update in NonInteractive Mode with no default credentials"
+        }
 		if($Backup -eq $False -and $Restore -eq $False){
             if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -workOn $workOn  -state down -Backup $runBackup -Restore $runRestore) -ne $True ) {
                 Write-LogError "ERROR: Failed to set all lif down on [$mySecondaryVserver]"
@@ -9240,7 +9462,7 @@ Try {
 		return $true
 	}
 
-	$ANS=Read-HostOptions "Do you really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ?" "y/n"
+	$ANS=Read-HostOptions -question "Do you really want to delete SVM_DR [$mySecondaryVserver] from secondary cluster  [$mySecondaryController] ?" -options "y/n" -default "y"
 	if ( $ANS -ne 'y' ) {
 		return $true
 	}
@@ -9458,7 +9680,7 @@ Try {
 			if ( $NoInteractive ) { $Return = $False } 
             else 
             {
-				$ANS=Read-HostOptions "[$mySecondaryVserver] Do you want to break this relation ?" "y/n"
+				$ANS=Read-HostOptions -question "[$mySecondaryVserver] Do you want to break this relation ?" -options "y/n" -default "y"
 				if ( $ANS -eq 'y' ) 
                 {
 					Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"
@@ -9591,7 +9813,7 @@ try{
     if($serverExist -eq $null){Write-LogDebug "No CIFS server, skip"; return $Return}
     else{
         if($NotInteractive -eq $False){
-            $ANS=Read-HostOptions "Set CIFS server down on [$myPrimaryVserver]. Do you want to continue ?" "y/n"
+            $ANS=Read-HostOptions -question "Set CIFS server down on [$myPrimaryVserver]. Do you want to continue ?" -options "y/n" -default "y"
             if($ANS -ne 'y'){Write-LogDebug "Exit Migrate CIFS server: Not ready";return $False}
         }
         Write-LogDebug "Get-NcCifsServer -VserverContext $myPrimaryVserver -Controller $myPrimaryController"
@@ -9657,7 +9879,7 @@ try{
         $SecondaryUserList=Get-NcCifsLocalUser -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalUser failed [$ErrorVar]" }
     }
-    $UserKeeped=@()
+    $UserKept=@()
     $PrimaryCifsServer=$PrimaryCifs.CifsServer
     if($Backup -eq $False){
         Write-LogDebug "Get-NcCifsServer -VserverContext $mySecondaryVserver -controller $mySecondaryController"
@@ -9677,11 +9899,11 @@ try{
             try{
                 $ans='n'
                 if($NoInteractive -eq $False){
-                    $ans=Read-HostOptions "[$mySecondaryVserver] Do you want to reset Password for User [$SecondaryUserName] on [$mySecondaryVserver]?" "y/n"
+                    $ans=Read-HostOptions -question "[$mySecondaryVserver] Do you want to reset Password for User [$SecondaryUserName] on [$mySecondaryVserver]?" -options "y/n" -default "n"
                 }
                 if($ans -eq 'n'){
                     if($PrimaryCifsServer -ne $SecondaryCifsServer){$SecondaryUserName=$SecondaryUserName -replace $SecondaryCifsServer,$PrimaryCifsServer}
-                    $UserKeeped+=$SecondaryUserName
+                    $UserKept+=$SecondaryUserName
                 }else{
                     Write-LogDebug "Remove-NcCifsLocalUser -UserName $SecondaryUserName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
                     try{
@@ -9722,7 +9944,7 @@ try{
         }
     }
     if($Backup -eq $False){
-        foreach($User in $PrimaryUserList | Where-Object {$_.UserName -notin $UserKeeped} | Skip-Null){
+        foreach($User in $PrimaryUserList | Where-Object {$_.UserName -notin $UserKept} | Skip-Null){
             $UserName=$User.UserName
 
             $UserDisabled=$User.Disabled
@@ -9744,23 +9966,7 @@ try{
                 }
                 do{
                     $modok=$True
-                    Write-Log "[$workOn] Please Enter password for CIFS Local User [$UserName]"
-                    do{
-                        $ReEnter=$False
-                        $pass1=Read-Host "[$myPrimaryVserver] Password for CIFS Local User [$UserName]" -AsSecureString
-                        $pass2=Read-Host "[$myPrimaryVserver] Confirm Password for CIFS Local User [$UserName]" -AsSecureString
-                        $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                        $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
-    
-                        if ($pwd1_text -ceq $pwd2_text) {
-                            Write-LogDebug "Passwords matched"
-                        } 
-                        else{
-                            Write-Warning "[$myPrimaryVserver] Error passwords does not match. Please Re-Enter"
-                            $ReEnter=$True
-                        }
-                    }while($ReEnter -eq $True)
-                    $password=$pass1
+                    $password=get_pwd_from_cli -workOn $workOn -for "CIFS Local User" -name $Username -asSecure
                     try{
                         Write-LogDebug "Set-NcCifsLocalUser -UserName $UserName -Password XXXXXXXXXX -VserverContext $mySecondaryVserver -controller $mySecondaryController"
                         $out=Set-NcCifsLocalUser -UserName $UserName -Password $password -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -9785,23 +9991,7 @@ try{
                 }
                 do{
                     $addok=$true
-                    Write-Log "[$workOn] Please Enter password for CIFS Local User [$UserName]"
-                    do{
-                        $ReEnter=$false
-                        $pass1=Read-Host "[$myPrimaryVserver] Password for CIFS Local User [$UserName]" -AsSecureString
-                        $pass2=Read-Host "[$myPrimaryVserver] Confirm Password for CIFS Local User [$UserName]" -AsSecureString
-                        $pwd1_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass1))
-                        $pwd2_text = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass2))
-    
-                        if ($pwd1_text -ceq $pwd2_text) {
-                            Write-LogDebug "Passwords matched"
-                        } 
-                        else{
-                            Write-Warning "[$myPrimaryVserver] Error passwords does not match. Please Re-Enter"
-                            $ReEnter=$True
-                        }
-                    }while($ReEnter -eq $True)
-                    $password=$pass1
+                    $password=get_pwd_from_cli -workOn $workOn -for "CIFS Local User" -name $Username -asSecure
                     if($UserDisabled -eq $True){
                         try{
                             Write-LogDebug "New-NcCifsLocalUser -UserName $UserName -Password XXXXXXXXXX -FullName $UserFullname -Description $UserDescription -Disable -VserverContext $mySecondaryVserver -controller $mySecondaryController"
@@ -9902,22 +10092,31 @@ try{
         foreach($PrimaryGroup in $PrimaryGroupList | Skip-Null){
             $PrimaryGroupName=$PrimaryGroup.GroupName
             $PrimaryGroupDescription=$PrimaryGroup.Description
-            Write-LogDebug "Get-NcCifsLocalGroup -Name $PrimaryGroupName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
-            $SecondaryGroup=Get-NcCifsLocalGroup -Name $PrimaryGroupName -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
-            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalGroup failed [$ErrorVar]" }
-            if($SecondaryGroup -eq $null){
-                try{
-                    Write-LogDebug "New-NcCifsLocalGroup -Name $PrimaryGroupName -Descritption $PrimaryGroupDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController" 
-                    $out=New-NcCifsLocalGroup -Name $PrimaryGroupName -Descritption $PrimaryGroupDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
-                    if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcCifsLocalGroup failed [$ErrorVar]" }
-                }catch{
-                    Write-LogDebug "Cannot create Group [$PrimaryGroupName] on [$mySecondaryVserver], reason [$ErrorVar]"
+            if($PrimaryGroupName -notmatch "^BUILTIN\\"){
+                $PrimaryGroupNameWithoutDomain = ($PrimaryGroupName -replace "[^\\]*\\","")
+                $SecondaryGroupName = "$SecondaryCifsServer\$PrimaryGroupNameWithoutDomain"
+                Write-LogDebug "Get-NcCifsLocalGroup -Name $SecondaryGroupName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
+                $SecondaryGroup=Get-NcCifsLocalGroup -Name $SecondaryGroupName -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalGroup failed [$ErrorVar]" }
+                if($SecondaryGroup -eq $null){
+                            
+                    try{
+                        Write-LogDebug "New-NcCifsLocalGroup -Name $PrimaryGroupNameWithoutDomain -Description $PrimaryGroupDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController" 
+                        $out=New-NcCifsLocalGroup -Name $PrimaryGroupNameWithoutDomain -Description $PrimaryGroupDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcCifsLocalGroup failed [$ErrorVar]" }
+                    }catch{
+                        Write-LogDebug "Cannot create Group [$PrimaryGroupName] on [$mySecondaryVserver], reason [$ErrorVar]"
+                    }
                 }
+            }else{
+                $SecondaryGroupName = $PrimaryGroupName
+                $PrimaryGroupNameWithoutDomain = $PrimaryGroupName
             }
+
             if($Restore -eq $False){
                 Write-LogDebug "Get-NcCifsLocalGroupMember -Name $PrimaryGroupName -VserverContext $myPrimaryVserver -controller $myPrimaryController"
                 $PrimaryMemberList=Get-NcCifsLocalGroupMember -Name $PrimaryGroupName -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalGroupMermber failed [$ErrorVar]" }
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalGroupMember failed [$ErrorVar]" }
             }else{
                 $PrimaryGroupName_string=$PrimaryGroupName -replace "\\","_"
                 if(Test-Path $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json")){
@@ -9930,10 +10129,17 @@ try{
             }
             foreach($PrimaryMember in $PrimaryMemberList | Skip-Null){
                 $PrimaryMemberName=$PrimaryMember.Member
-                if($PrimaryCifsServer -ne $SecondaryCifsServer){$PrimaryMemberName=$PrimaryMemberName -replace $PrimaryCifsServer,$SecondaryCifsServer}
+                if($PrimaryMemberName -notmatch "^BUILTIN\\"){
+                    $PrimaryMemberNameWithoutDomain = ($PrimaryMemberName -replace "[^\\]*\\","")
+                    $SecondaryMemberName = "$SecondaryCifsServer\$PrimaryMemberNameWithoutDomain"
+                }else{
+                    $PrimaryMemberNameWithoutDomain = $PrimaryMemberName
+                    $SecondaryMemberName = $PrimaryMemberName
+                }
+                
                 try{
-                    Write-LogDebug "Add-NcCifsLocalGroupMember -Name $PrimaryGroupName -Member $PrimaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
-                    $out=Add-NcCifsLocalGroupMember -Name $PrimaryGroupName -Member $PrimaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController -ErrorAction SilentlyContinue -ErrorVariable ErrorVar
+                    Write-LogDebug "Add-NcCifsLocalGroupMember -Name $SecondaryGroupName -Member $SecondaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController"
+                    $out=Add-NcCifsLocalGroupMember -Name $SecondaryGroupName -Member $SecondaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController -ErrorAction SilentlyContinue -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { Write-LogDebug "ERROR: Add-NcCifsLocalGroupMember failed [$ErrorVar]" }
                 }catch{
                     Write-LogDebug "Member [$PrimaryMemberName] already exist in [$PrimaryGroupName] on [$mySecondaryVserver]"
@@ -9959,13 +10165,15 @@ Function update_vserver_dr (
 	[string] $mySecondaryVserver,
     [string] $myDataAggr,
     [bool] $DDR,
-    [boolean] $UseLastSnapshot ) {
+    [boolean] $UseLastSnapshot,
+    [string]$aggrMatchRegEx,
+    [string]$nodeMatchRegEx ) {
 	$Return = $True
 	Write-LogDebug "update_vserver_dr: start"
 	if ( ( check_update_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed check update vserver" ; return $False }
 	if ( $myDataAggr ) {
 		Write-LogDebug "update_vserver_dr: Create required new volumes $mySecondaryController Vserver $Vserver"
-		if ( ( create_volume_voldr -NoInteractive -myDataAggr $myDataAggr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; return $False }
+		if ( ( create_volume_voldr -myDataAggr $myDataAggr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -aggrMatchRegEx $aggrMatchRegEx ) -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; return $False }
 
 		Write-LogDebug "update_vserver_dr: Create required new snapmirror relations $mySecondaryController Vserver $Vserver"
 		if ( ( create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -DDR $DDR ) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; return $False }
@@ -9977,6 +10185,11 @@ Function update_vserver_dr (
 	if ( ( update_snapmirror_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -UseLastSnapshot $UseLastSnapshot ) -ne $True ) {
 		Write-LogError "ERROR: update_snapmirror_vserver failed" 
 		return  $False
+	}
+	Write-LogDebug "update_vserver_dr: Update cifs symlink"
+	if ( ( create_update_cifs_symlink_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
+		Write-LogError "ERROR: create_update_cifs_symlink_dr failed" 
+		$Return = $False
 	}
 	Write-LogDebug "update_vserver_dr: Update igroup"
 	if ( ( create_update_igroupdr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
@@ -9998,16 +10211,36 @@ Function update_vserver_dr (
         Write-LogError "ERROR: Failed to create all Firewall policy" 
         $Return = $False 
     }
-    #Write-LogDebug "update_vserver_dr: Update lif dr"
-	#if ( ( create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
-    #    Write-LogError "ERROR: create_lif_dr failed" 
-	#	$Return = $True
-    #}
-    #Write-LogDebug "update_vserver_dr: Update local user dr"
-    #if ( ( create_update_localuser_dr  -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-    #    Write-LogError "ERROR: Failed to create all LIF"
-    #    $Return = $True 
-    #}
+    Write-LogDebug "update_vserver_dr: Update lif dr"
+	if ( ( create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -nodeMatchRegEx $nodeMatchRegEx) -ne $True ) {
+        Write-LogError "ERROR: create_lif_dr failed" 
+		$Return = $True
+    }
+
+    if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){
+
+        Write-LogDebug "update_vserver_dr: Update local user dr"
+        if ( ( create_update_localuser_dr  -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+            Write-LogError "ERROR: Failed to create all Local Users"
+            $Return = $True 
+        }
+       
+    }else{
+        Write-LogWarn "SKIPPING local user create/update in NonInteractive Mode with no default credentials"
+    }
+
+    if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){
+
+        Write-LogDebug "update_vserver_dr: Update local cifs user dr"
+        if ( ( update_cifs_usergroup  -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+            Write-LogError "ERROR: Failed to create all Local Cifs Users"
+            $Return = $True 
+        }
+       
+    }else{
+        Write-LogWarn "SKIPPING local cifs user create/update in NonInteractive Mode with no default credentials"
+    }
+
     Write-LogDebug "update_vserver_dr: Update local Unix User & Group"
     if ( ( create_update_localunixgroupanduser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
         Write-LogError "ERROR: Failed to create all Local Unix User and Group"
@@ -10087,7 +10320,7 @@ Try {
 
 	Write-LogDebug "disable_network_protocol_vserver_dr: start"
 
-	$ANS=Read-HostOptions "Ready to disable all Network Services in SVM [$myVserver] from  cluster [$myController] ?" "y/n"
+	$ANS=Read-HostOptions -question "Ready to disable all Network Services in SVM [$myVserver] from  cluster [$myController] ?" -options "y/n" -default "y"
 	if ( $ANS -ne 'y' ) {
 		return $Return
 	}
@@ -10254,7 +10487,7 @@ Function activate_vserver_dr (
 	$Return = $True
 	Write-LogDebug "activate_vserver_dr: start"
 	
-	$ANS=Read-HostOptions "Do You really want to activate SVM [$mySecondaryVserver] from cluster [$myController] ?" "y/n"
+	$ANS=Read-HostOptions -question "Do You really want to activate SVM [$mySecondaryVserver] from cluster [$myController] ?" -options "y/n" -default "y"
 	if ( $ANS -ne 'y' ) {
         Write-LogDebug "activate_vserver_dr: end"
 		clean_and_exit 1

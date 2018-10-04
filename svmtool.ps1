@@ -328,6 +328,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
     [string]$MirrorScheduleReverse,
 
+    [Parameter(Mandatory = $true, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
     [switch]$DeleteSource,
 
@@ -401,10 +402,25 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [string]$XDPPolicy="MirrorAllSnapshots",
 
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
 	[string]$DataAggr,
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
 	[switch]$LastSnapshot,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[string]$AggrMatchRegex,    
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[string]$NodeMatchRegex,    
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
@@ -443,7 +459,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
 	[switch]$ForceRecreate,
-	
+
 	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
@@ -565,7 +581,30 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
-	[Int32]$Timeout = 60
+	[Int32]$Timeout = 60,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [switch]$NonInteractive,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [pscredential]$DefaultLocalUserCredentials=$null
+
 	#[Int32]$ErrorAction = 0
 )
 
@@ -577,7 +616,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.7"
+$Global:RELEASE="0.0.9"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -729,7 +768,7 @@ if ( $Backup ) {
         }
         $SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
         if($RecreateConf -eq $True){
-            $ANS=Read-HostOptions "Configuration file already exist. Do you want to recreate it ?" "y/n"
+            $ANS=Read-HostOptions -question "Configuration file already exist. Do you want to recreate it ?" -options "y/n" -default "y"
             if ( $ANS -ne 'y' ) { $RecreateConf=$False }
         }
     }
@@ -737,10 +776,10 @@ if ( $Backup ) {
 		Write-Log "Create new Config File"
         $ANS='n'
         while ( $ANS -ne 'y' ) {
-            $SVMTOOL_DB = Read-HostDefault "Please enter Backup directory where configuration will be backup" $SVMTOOL_DB
+            $SVMTOOL_DB = Read-HostDefault -question  "Please enter Backup directory where configuration will be backup" -default $SVMTOOL_DB
             Write-Log "SVMTOOL Backup directory:  [$SVMTOOL_DB]"
             Write-Log ""
-                $ANS = Read-HostOptions "Apply new configuration ?" "y/n/q"
+                $ANS = Read-HostOptions -question "Apply new configuration ?" -options "y/n/q" -default "y"
             if ( $ANS -eq 'q' ) { clean_and_exit 1 }
             write-Output "#" | Out-File -FilePath $CONFFILE  
 			write-Output "SVMTOOL_DB=$SVMTOOL_DB\$Backup" | Out-File -FilePath $CONFFILE -Append 
@@ -847,7 +886,7 @@ if ( $Backup ) {
 			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]" -firstValueIsSpecial}
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
 			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]" -firstValueIsSpecial}
-            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False)[-1] -ne $True ){
+            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
 				return $False
 			}
@@ -1036,7 +1075,7 @@ if ( $Restore ) {
 						$i++
 					}
 					$Query="Please select Backup from (1.."+$listBackupAvailable.count+")"
-					$ans=Read-HostDefault $Query $listBackupAvailable.count
+					$ans=Read-HostDefault -question $Query -default $listBackupAvailable.count
 					$ans=[int]$ans/1
 					if(($ans -notmatch "[0-9]") -or ($ans -lt 1 -or $ans -gt $listBackupAvailable.count)){Write-Warning "Bad input";$ans=$null}
 				}
@@ -1098,7 +1137,7 @@ if ( $Restore ) {
 			Write-LogDebug "SourceVserver [$SourceVserver]"
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
-            if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False )[-1] -ne $True ){
+            if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
                 #return $False
 			}
@@ -1299,6 +1338,8 @@ $Global:ForceActivate=$ForceActivate
 $Global:ForceRecreate=$ForceRecreate
 $Global:ForceUpdateSnapPolicy=$ForceUpdateSnapPolicy
 $Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
+$Global:NonInteractive=$NonInteractive
+$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
 $Global:AllowQuotaDr=$AllowQuotaDr
@@ -1385,11 +1426,11 @@ if ( $ConfigureDR ) {
 		}
 	}
     if($DRfromDR.IsPresent){
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ) {
 			clean_and_exit 1
 		}
 	}else{
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ) {
 			clean_and_exit 1
 		}
 	}
@@ -1484,7 +1525,7 @@ if($Migrate){
     Write-Warning "SVMTOOL script does not manage FCP configuration and SYMLINK"
     Write-Warning "You will have to backup and recreate all these configurations manually after the Migrate step"
     Write-Warning "Files Locks are not migrated during the Migration process"
-    $ASK_WAIT=Read-HostOptions "[$Vserver] Have all clients saved their work ?" "y/n"
+    $ASK_WAIT=Read-HostOptions -question "[$Vserver] Have all clients saved their work ?" -options "y/n" -default "y"
     if($ASK_WAIT -eq 'y'){
         Write-LogDebug "Clients ready to migrate. User choose to continue migration procedure"
 		Write-Log "[$VserverDR] Run last UpdateDR" -firstValueIsSpecial
@@ -1509,12 +1550,12 @@ if($Migrate){
 			    Write-LogError "ERROR: update_cifs_usergroup failed"   
 		}
 		if($DRfromDR.IsPresent){
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
 				Write-LogError "ERROR: update_vserver_dr failed" 
 				clean_and_exit 1
 			}
 		}else{
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
 				Write-LogError "ERROR: update_vserver_dr failed" 
 				clean_and_exit 1
 			}
@@ -1547,7 +1588,7 @@ if($Migrate){
 			Write-LogError "ERROR: restamp_msid failed"
 			clean_and_exit 1
 		}
-        $ASK_MIGRATE=Read-HostOptions "IP and Services will switch now for [$Vserver]. Ready to go ?" "y/n"
+        $ASK_MIGRATE=Read-HostOptions -question "IP and Services will switch now for [$Vserver]. Ready to go ?" -options "y/n" -default "y"
         if($ASK_MIGRATE -eq 'y'){
 		    if ( ( $ret=migrate_lif -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 			    Write-LogError "ERROR: migrate_lif failed"
@@ -1620,7 +1661,8 @@ if($Migrate){
                     Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
                 }
             }
-		    $ASK_WAIT2=Read-HostOptions "Do you want to delete Vserver [$Vserver] on source cluster [$PrimaryClusterName] ?" "y/n"       
+            $defaultanswer = if($DeleteSource){"y"}else{"n"}
+		    $ASK_WAIT2=Read-HostOptions -question "Do you want to delete Vserver [$Vserver] on source cluster [$PrimaryClusterName] ?" -options "y/n" -default $defaultanswer
             if($ASK_WAIT2 -eq 'y'){
 
                 if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
@@ -1645,10 +1687,10 @@ if($Migrate){
                 Write-Log "[$Vserver] completely removed on [$PrimaryClusterName]"
                 clean_and_exit 0
             }else{
-                Write-Log "User choose not to delete source Vserver [$Vserver] on Source Cluster [$PrimaryClusterName]"
+                Write-Log "User chose not to delete source Vserver [$Vserver] on Source Cluster [$PrimaryClusterName]"
 			    Write-Log "Vserver [$Vserver] will only be stopped on [$PrimaryClusterName]"
                 Write-Log "In this case the SVM object name on Destination Cluster [$SecondaryClusterName] is still [$VserverDR]"
-                Write-Log "But CIFS identity is correclty migrated to [$Vserver]"
+                Write-Log "But CIFS identity is correctly migrated to [$Vserver]"
                 Write-Log "Final rename will be done when [-DeleteSource] step will be executed, once you are ready to completely delete [$Vserver] on Source Cluster [$PrimaryClusterName]"
 			    Write-LogDebug "Stop-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl -Confirm:$False"
 			    $ret=Stop-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl -Confirm:$False -ErrorVariable ErrorVar
@@ -1703,7 +1745,7 @@ if( $DeleteSource ) {
         clean_and_exit 1
     }else{
         Write-Warning "[$Vserver] Delete Source SVM could not be interrupted or rollback"
-        $ASK_WAIT=Read-HostOptions "Do you want to completely delete [$Vserver] on [$PrimaryClusterName] ?" "y/n"
+        $ASK_WAIT=Read-HostOptions -question "Do you want to completely delete [$Vserver] on [$PrimaryClusterName] ?" -options "y/n" -default "y"
         if($ASK_WAIT -eq 'y'){
             if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 			    Write-LogError "ERROR: remove_snapmirror_dr failed" 
@@ -1734,6 +1776,7 @@ if( $DeleteSource ) {
 }
 
 if ( $UpdateDR ) {
+    $Global:NonInteractive=$true
     $Run_Mode="UpdateDR"
 	Write-LogOnly "SVMDR UpdateDR"
 	# Connect to the Cluster
@@ -1772,12 +1815,12 @@ if ( $UpdateDR ) {
     		$UseLastSnapshot = $False
 	}
 	if($DRfromDR.IsPresent){
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
 			Write-LogError "ERROR: update_vserver_dr failed" 
 			 clean_and_exit 1
 		}
 	}else{
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
 			Write-LogError "ERROR: update_vserver_dr failed" 
 			 clean_and_exit 1
 		}
@@ -1816,7 +1859,7 @@ if ( $ActivateDR ) {
 	} 
     else 
     {
-		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ? ?" "y/n"
+		$ANS=Read-HostOptions -question "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ?" -options "y/n" -default "y"
 		if ( $ANS -eq 'y' ) {
 			$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 			$tmp_str=$MyCred.UserName
@@ -1993,7 +2036,7 @@ if ( $Resync ) {
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
-	$ANS = Read-HostOptions "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] ?" "y/n"
+	$ANS = Read-HostOptions -question "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] ?" -options "y/n" -default "y"
 	if ( $ANS -ne 'y' ) {
 		clean_and_exit 0
 	}
@@ -2023,7 +2066,7 @@ if ( $ResyncReverse ) {
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
 
-	$ANS = Read-HostOptions "Do you want to erase data on vserver [$Vserver] [$PRIMARY_CLUSTER] ?" "y/n"
+	$ANS = Read-HostOptions -question "Do you want to erase data on vserver [$Vserver] [$PRIMARY_CLUSTER] ?" -options "y/n" -default "y"
 	if ( $ANS -ne 'y' ) {
 		clean_and_exit 0
 	}
@@ -2048,6 +2091,7 @@ if ( $ResyncReverse ) {
 }
 
 if ( $UpdateReverse ) {
+    $Global:NonInteractive=$true
     $Run_Mode="UpdateReverse"
 	Write-LogOnly "SVMDR UpdateReverse"
 	# Connect to the Cluster
@@ -2079,12 +2123,12 @@ if ( $UpdateReverse ) {
     		$UseLastSnapshot = $False
 	}
 	if($DRfromDR.IsPresent){
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True) -ne  $True ) { 
+		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
 			Write-LogError "ERROR: update_vserver_dr" 
 			clean_and_exit 1 
 		}
 	}else{
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False) -ne  $True ) { 
+		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
 			Write-LogError "ERROR: update_vserver_dr" 
 			clean_and_exit 1 
 		}
