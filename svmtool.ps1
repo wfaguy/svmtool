@@ -4,8 +4,8 @@
 	It also help to Backup & Restore SVM configuration
 .DESCRIPTION
 	This script deploy tools to:
-		creates and manages Disaster Recovery SVM for ONTAP cluster
-		Backup & Restore full configuration settings of an SVM
+	creates and manages Disaster Recovery SVM for ONTAP cluster
+	Backup & Restore full configuration settings of an SVM
 .PARAMETER Vserver
     Vserver Name of the source Vserver
 .PARAMETER Instance
@@ -13,10 +13,10 @@
     An instance could manage one or several SVM DR relationships inside the corresponding cluster
 .PARAMETER RootAggr
     Allows to set a default aggregate for SVM root volume creation
-    Used only with ConfigureDR option
+    Used only with ConfigureDR or CloneDR options
 .PARAMETER DataAggr
     Allows to set a default aggregate for all SVM data volume creation
-    Used only with ConfigureDR, UpdateDR, UpdateReverse arguments
+    Used only with ConfigureDR, UpdateDR, UpdateReverse, CloneDR options
 .PARAMETER MirrorSchedule
     Allows to set a SnapMirror automatic update schedule for Source to DR relationship 
 .PARAMETER MirrorScheduleReverse
@@ -41,7 +41,7 @@
     Allow to connect controller with HTTP instead of HTTPS
 .PARAMETER ConfigureDR
     Allow to Create (or update) a SVM DR relationship
-    -Instance <instance name> -Vserver <vserver source name> -ConfigureDR
+    -Instance <instance name> -Vserver <vserver source name> -ConfigureDR [-SelectVolume]
 .PARAMETER ShowDR
     Allow to display all informations for a particular SVM DR relationship
     -Instance <instance name> -Vserver <vserver source name> -ShowDR [-Lag] [-schedule] [-MSID]
@@ -120,7 +120,25 @@
     -Instance <instance name> -Vserver <vserver source name> -Resync
 .PARAMETER ActivateDR
     Allow to activate a DR SVM for test or after a real crash on the source
-    -Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate] [-ForceUpdateSnapPolicy]
+	-Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate] [-ForceUpdateSnapPolicy]
+.PARAMETER CloneDR
+	Clone a Vserver on destination Cluster
+	A new temporary Vserver will be created on destination Cluster (named <destination-vserver>_clone)
+	All destination volumes will be cloned as RW volumes and hosted into this new temporary Vserver
+	This allows testing the DR without interrupting SnapMirror relationship between Source Vserver and Destination Vserver
+	-Instance <instance name> -Vserver <vserver source name> -CloneDR [-DataAggr <default data aggregate name>] [-DefaultPass] [-RootAggr <default svm rootvol aggregate name>]
+.PARAMETER SplitCloneDR
+	Split a Cloned Vserver
+.PARAMETER DeleteCloneDR
+	Delete a Cloned Vserver
+	-Instance <instance name> -Vserver <vserver source name> -DeleteCloneDR [-CloneName <Vserver Clone DR name>]
+	If [-CloneName] is not specified, script will search for all Clones associated with DR Vserver for this instance
+	Only delete Cloned Vserver where all Flexclone are not splitted
+.PARAMETER CloneName
+	Name of the Cloned Vserver to work with
+	Use with [-DeleteCloneDR]
+.PARAMETER DefaultPass
+	Force a Default Password for all users inside an SVM DR or Clone SVM
 .PARAMETER ForceActivate
     Mandatory argument in case of disaster in Source site
     Used only with ActivateDR when source site is unjoinable
@@ -141,8 +159,8 @@
     Optional argument used to always ask to choose a Data Aggregate to store each Data volume
     Used with ConfigureDR only
 .PARAMETER SelectVolume
-    Optional argument used to choose for each source volume if it needs to be replicated on SVM DR or not
-    Used with ConfigureDR only
+    Optional argument used to choose for each source volume if it needs to be replicated/cloned on SVM DR or not
+    Used with ConfigureDR and CloneDR only
 .PARAMETER ResyncReverse
     Force a manual update of all data only for a particular DR relationship in reverse order, DR SVM to Source SVM 
     -Instance <instance name> -Vserver <vserver source name> -ResyncReverse
@@ -251,6 +269,20 @@
 	If you don't have a SnapMirror/SnapVault backup or will restore data back with another method,
 	or because you only need to recreate the "envelop" fo the SVM (to clone an environment by example), just add -RW to the command line
 	In that case, all volumes will be restored as Read/Write (RW) volume.
+.EXAMPLE
+	svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> -CloneDR [-DataAggr <default data aggregate name>] [-RootAggr] [-DefaultPass]
+
+	Create a temporary Clone Vserver on destination cluster
+	Clone all destinations volumes (DP) into this cloned vserver as Read/Write volume (RW)
+	In order, to perform/test the DR without interrupting Snapmirror relationship during the timeframe of the DR test
+	It could also be used to provision an cloned environment of production SVM on destination cluster for test/dev
+	Once cloned environment successfully done, all volumes are Flexclone volumes attached to destinations volumes through lastest snapshot available
+	If needed, this cloned environment and all its volumes could be split from destination vserver : see SplitCloneDR option
+	With the optional arugment -SelectVolume, you could choose which volume will be cloned in the temporay Cloned SVM
+.EXAMPLE
+	svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> -DeleteCloneDR -CloneName PSLAB_DR_clone.2
+
+	Completely delete Vserver Clone named PSLAB_DR_clone.2 from secondary cluster
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
@@ -259,10 +291,12 @@
         - 0.0.3 : Initial version 
         - 0.0.4 : Bugfix, typos and added ParameterSets
 		- 0.0.5 : Bugfixes, advancements and colorcoding
-		- 0.0.6 : Change behaviour when SVM has no LIF, nor data volume
+		- 0.0.6 : Change behaviour when SVM has no LIF, nor Data volume
 		- 0.0.7 : Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
 				  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ...
-				  Correct Backup & Restore quota 
+				  Correct Backup & Restore quota
+		- 0.0.8 : Add CloneDR option to create Cloned SVM from Destination Vserver
+				  Add DeleteCloneDR option to remove a previously Cloned Vserver
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -282,6 +316,15 @@ Param (
 
     [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
 	[switch]$ActivateDR,
+
+	[Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
+	[switch]$CloneDR,
+
+	[Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
+	[switch]$SplitCloneDR,
+
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
+	[switch]$DeleteCloneDR,
 
     [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
 	[switch]$DeleteDR,
@@ -350,7 +393,10 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
     [Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
     [Parameter(Mandatory = $true, ParameterSetName='MirrorSchedule')]
@@ -374,6 +420,9 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
     [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
     [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
@@ -390,19 +439,23 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
 	[string]$Instance,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-	[string]$RootAggr,
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[string]$RootAggr="",
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [switch]$AlwaysChooseDataAggr,
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
 	[switch]$SelectVolume,
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [switch]$DRfromDR,
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [string]$XDPPolicy="MirrorAllSnapshots",
+	[string]$XDPPolicy="MirrorAllSnapshots",
 
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-	[string]$DataAggr,
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[string]$DataAggr="",
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
 	[switch]$LastSnapshot,
 
@@ -426,6 +479,11 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
 	[switch]$ForceActivate,
 
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[switch]$DefaultPass,
+
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
     [switch]$MSID,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -446,11 +504,15 @@ Param (
 	
 	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
     [switch]$ForceUpdateSnapPolicy,
 
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
-    [switch]$Recreateconf,
+	[switch]$Recreateconf,
+	
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
+    [string]$CloneName="",
 
     [Parameter(Mandatory = $true, ParameterSetName='Restore')]
 	[string]$Destination="",
@@ -527,7 +589,10 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='SplitCloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='DeleteCloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
@@ -577,7 +642,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.7"
+$Global:RELEASE="0.0.8"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -592,6 +657,10 @@ $Global:BACKUPALLSVM=$False
 $Global:NumberOfLogicalProcessor = (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
 $Global:maxJobs=100
 $Global:XDPPolicy=$XDPPolicy
+$Global:RootAggr=$RootAggr
+$Global:DataAggr=$DataAggr
+$Global:DefaultPass=$DefaultPass
+$Global:Schedule=$Schedule
 
 if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
     if ($Backup.Length -eq 0 -and $Restore.Length -eq 0){
@@ -797,29 +866,21 @@ if ( $Backup ) {
         $codeBackup=[scriptblock]::Create({
             param(
                 [Parameter(Mandatory=$True)]
-                [string]
-                $script_path,
+                [string]$script_path,
                 [Parameter(Mandatory=$True)]
-                [NetApp.Ontapi.Filer.C.NcController]
-                $myPrimaryController,
+                [NetApp.Ontapi.Filer.C.NcController]$myPrimaryController,
                 [Parameter(Mandatory=$True)]
-                [string]
-                $myPrimaryVserver,
+                [string]$myPrimaryVserver,
                 [Parameter(Mandatory=$True)]
-				[string]
-				$SVMTOOL_DB,
+				[string]$SVMTOOL_DB,
                 [Parameter(Mandatory=$True)]
-                [System.Threading.WaitHandle]
-				$mutexconsole,
+                [System.Threading.WaitHandle]$mutexconsole,
                 [Parameter(Mandatory=$True)]
-                [String]
-				$BackupDate,
+                [String]$BackupDate,
 				[Parameter(Mandatory=$True)]
-				[String]
-				$LOGFILE,
+				[String]$LOGFILE,
 				[Parameter(Mandatory=$False)]
-				[boolean]
-				$DebugLevel
+				[boolean]$DebugLevel
 			)
 			$scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
@@ -1064,7 +1125,10 @@ if ( $Restore ) {
 				[Parameter(Mandatory=$True)][String]$LOGFILE,
 				[Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$DestinationController,
 				[Parameter(Mandatory=$True)][string]$VOLTYPE,
-				[Parameter(Mandatory=$False)][boolean]$DebugLevel
+				[Parameter(Mandatory=$False)][boolean]$DebugLevel,
+				[Parameter(Mandatory=$False)][boolean]$DefaultPass,
+				[Parameter(Mandatory=$False)][string]$RootAggr,
+				[Parameter(Mandatory=$False)][string]$DataAggr
             )
             $scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
@@ -1088,6 +1152,9 @@ if ( $Restore ) {
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$JsonPath
 			$Global:VOLUME_TYPE=$VOLTYPE
+			$Global:RootAggr=$RootAggr
+			$Global:DataAggr=$DataAggr
+			$Global:DefaultPass=$DefaultPass
 			check_create_dir -FullPath $Global:JsonPath -Vserver $SourceVserver
 			$DestinationCluster=$DestinationController.Name
 			Write-LogDebug ""
@@ -1098,6 +1165,9 @@ if ( $Restore ) {
 			Write-LogDebug "SourceVserver [$SourceVserver]"
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
+			Write-LogDebug "RootAggr [$Global:RootAggr]"
+			Write-LogDebug "DataAggr [$Global:DataAggr]"
+			Write-LogDebug "DefaultPass [$Global:DefaultPass]"
             if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False )[-1] -ne $True ){
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
                 #return $False
@@ -1129,6 +1199,9 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("JsonPath",$JsonPath)
 		[void]$RestoreJob.AddParameter("LOGFILE",$Global:LOGFILE)
 		[void]$RestoreJob.AddParameter("DestinationController",$NcSecondaryCtrl)
+		[void]$RestoreJob.AddParameter("DefaultPass",$Global:DefaultPass)
+		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)
+		[void]$RestoreJob.AddParameter("DataAggr",$Global:DataAggr)
 		if($RW -eq $True){
 			[void]$RestoreJob.AddParameter("VOLTYPE","RW")
 		}else{
@@ -1239,7 +1312,7 @@ if ($PRIMARY_CLUSTER -eq $SECONDARY_CLUSTER)
 $VCONFFILE=$CONFDIR + $Vserver + '.conf'
 if ($RemoveDRconf) {
     $Run_Mode="RemoveDRconf"
-	Write-LogOnly "SVMDR RemoveDRconf"
+	Write-LogOnly "SVMTOOL RemoveDRconf"
 	if ((Test-Path $VCONFFILE ) -eq $True ) {
 		Remove-Item $VCONFFILE
         Write-Log "$VCONFFILE removed successfully..." -color green
@@ -1303,6 +1376,7 @@ $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
 $Global:AllowQuotaDr=$AllowQuotaDr
 $Global:IgnoreQuotaOff=$IgnoreQuotaOff
+$Global:DataAggr=$DataAggr
 
 Write-LogDebug "PRIMARY_CLUSTER:            		 [$PRIMARY_CLUSTER]" 
 Write-LogDebug "SECONDARY_CLUSTER:          		 [$SECONDARY_CLUSTER]" 
@@ -1322,7 +1396,7 @@ Write-LogDebug "OPTION IgnoreQtreeExportPolicy       [$Global:IgnoreQtreeExportP
 
 if ( $ShowDR ) {
     $Run_Mode="ShowDR"
-	Write-LogOnly "SVMDR ShowDR"
+	Write-LogOnly "SVMTOOL ShowDR"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1349,7 +1423,7 @@ if ( $ShowDR ) {
 
 if ( $ConfigureDR ) {
     $Run_Mode="ConfigureDR"
-	Write-LogOnly "SVMDR ConfigureDR"
+	Write-LogOnly "SVMTOOL ConfigureDR"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1385,11 +1459,11 @@ if ( $ConfigureDR ) {
 		}
 	}
     if($DRfromDR.IsPresent){
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True)[-1] -ne $True ) {
 			clean_and_exit 1
 		}
 	}else{
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy)[-1] -ne $True ) {
+		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False)[-1] -ne $True ) {
 			clean_and_exit 1
 		}
 	}
@@ -1430,7 +1504,7 @@ if ( $ConfigureDR ) {
 
 if ( $DeleteDR ) {
     $Run_Mode="DeleteDR"
-	Write-LogOnly "SVMDR DeleteDR"
+	Write-LogOnly "SVMTOOL DeleteDR"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1459,7 +1533,7 @@ if ( $DeleteDR ) {
 
 if($Migrate){
     $Run_Mode="Migrate"
-    Write-LogOnly "SVMDR Migrate"
+    Write-LogOnly "SVMTOOL Migrate"
     # Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1509,12 +1583,12 @@ if($Migrate){
 			    Write-LogError "ERROR: update_cifs_usergroup failed"   
 		}
 		if($DRfromDR.IsPresent){
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+			if ( ($ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
 				Write-LogError "ERROR: update_vserver_dr failed" 
 				clean_and_exit 1
 			}
 		}else{
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+			if ( ($ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
 				Write-LogError "ERROR: update_vserver_dr failed" 
 				clean_and_exit 1
 			}
@@ -1673,7 +1747,7 @@ if($Migrate){
 
 if( $DeleteSource ) {
     $Run_Mode="DeleteSrouce"
-    Write-LogOnly "SVMDR DeleteSource"
+    Write-LogOnly "SVMTOOL DeleteSource"
     # Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1735,7 +1809,7 @@ if( $DeleteSource ) {
 
 if ( $UpdateDR ) {
     $Run_Mode="UpdateDR"
-	Write-LogOnly "SVMDR UpdateDR"
+	Write-LogOnly "SVMTOOL UpdateDR"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1772,12 +1846,12 @@ if ( $UpdateDR ) {
     		$UseLastSnapshot = $False
 	}
 	if($DRfromDR.IsPresent){
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
+		if ( ($ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True) -ne $True ) {
 			Write-LogError "ERROR: update_vserver_dr failed" 
 			 clean_and_exit 1
 		}
 	}else{
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
+		if ( ($ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False) -ne $True ) {
 			Write-LogError "ERROR: update_vserver_dr failed" 
 			 clean_and_exit 1
 		}
@@ -1807,16 +1881,101 @@ if ( $UpdateDR ) {
 	clean_and_exit 0
 }
 
+if ( $CloneDR ) {
+	$Run_Mode="CloneDR"
+	Write-LogOnly "SVMTOOL CloneDR"
+	# Connect to the Cluster
+	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
+	$tmp_str=$MyCred.UserName
+	Write-LogDebug "Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
+	Write-LogDebug "connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
+	if ( ( $NcPrimaryCtrl =  connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+		Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
+        	clean_and_exit 1
+	}
+	$myCred=get_local_cDotcred ($SECONDARY_CLUSTER) 
+	Write-LogDebug "connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
+	if ( ( $NcSecondaryCtrl =  connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
+        	clean_and_exit 1
+	}
+	$CloneVserverDR=$($VserverDR+"_clone")
+	$ListCloneVserver=Get-NcVserver -Query @{VserverName=$($CloneVserverDR+"*")} -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
+    if($ListCloneVserver -eq $null){
+		$CloneVserverDR+=".0"	
+	}else{
+		$ListCloneVserver=$ListCloneVserver | Sort-Object
+		$newNumber=([Int]($ListCloneVserver[-1].Vserver.split(".")[-1]))+1
+		$CloneVserverDR+=$("."+$newNumber)	
+	}
+	Write-Log "Create Clone SVM [$CloneVserverDR]"
+	if ( ( $ret=create_clonevserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $CloneVserverDR)[-1] -ne $True ) {
+		Write-LogDebug "ERROR: create_vserver_dr failed"
+		clean_and_exit 1
+	}
+	if ( ( enable_network_protocol_vserver_dr -myController $NcSecondaryCtrl -myVserver $CloneVserverDR ) -ne $True ) {
+		Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver $mySecondaryVserver $myController"
+		$Return = $False
+	}
+	# if ( ($ret=restore_quota -myController $NcSecondaryCtrl -myVserver $SourceVserver) -ne $True){
+	# 	Write-LogDebug "restore_quota return False [$ret]"
+	# 	#return $False
+	# }
+    if ( ( $ret=set_vol_options_from_voldb -myController $NcSecondaryCtrl -myVserver $VserverDR -CloneDR $CloneVserverDR) -ne $True ) {
+		Write-LogError "ERROR: set_vol_options_from_voldb failed"
+	}
+	if ( $AllowQuotaDR -eq "True" ) {
+		if ( ( $ret=create_quota_rules_from_quotadb -myController $NcSecondaryCtrl -myVserver $VserverDR -CloneDR $CloneVserverDR) -ne $True ) {
+			Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
+		}
+	}
+	clean_and_exit 0
+}
+
+if ( $SplitCloneDR ){
+	$Run_Mode="SplitCloneDR"
+	Write-LogOnly "SVMTOOL SplitCloneDR"
+	# Connect to the Cluster
+}
+
+if ( $DeleteCloneDR ){
+	$Run_Mode="DeleteCloneDR"
+	Write-LogOnly "SVMTOOL DeleteCloneDR"
+	$myCred=get_local_cDotcred ($SECONDARY_CLUSTER) 
+	Write-LogDebug "connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
+	if ( ( $NcSecondaryCtrl =  connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
+        clean_and_exit 1
+	}
+	if($CloneName.length -gt 1){
+		$CloneVserverList=$CloneName	
+	}elseif ( ( $CloneVserverList=get_vserver_clone -DestinationVserver $VserverDR -mySecondaryController $NcSecondaryCtrl) -eq $null ){
+		Write-Log "No Vserver Clone from [$VserverDR] found on Cluster [$SECONDARY_CLUSTER]" 
+        clean_and_exit 0
+	}
+	foreach ($CloneVserver in $CloneVserverList){
+		$ANS=Read-HostOptions "Are you sure you want to delete Vserver Clone [$CloneVserver] from [$SECONDARY_CLUSTER] ?" "y/n"
+		if ( $ANS -eq 'y' ) {
+			if ( ( $ret=remove_vserver_clone_dr -mySecondaryController $NcSecondaryCtrl -mySecondaryVserver $CloneVserver ) -eq $False ) {
+				Write-LogError "ERROR: remove_vserver_dr: Unable to remove Vserver [$VserverDR]" 
+				clean_and_exit 1
+			}	
+		}
+	}
+	clean_and_exit 0
+}
+
 if ( $ActivateDR ) {
     $Run_Mode="ActivateDR"
-	Write-LogOnly "SVMDR ActivateDR"
+	Write-LogOnly "SVMTOOL ActivateDR"
 	# Connect to the Cluster
 	if ( $ForceActivate -eq $True ) {
 		Write-Log "Force Activate vserver $VserverDR"
 	} 
     else 
     {
-		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ? ?" "y/n"
+		$ANS=Read-HostOptions "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ?" "y/n"
 		if ( $ANS -eq 'y' ) {
 			$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 			$tmp_str=$MyCred.UserName
@@ -1902,7 +2061,7 @@ if ( $ReCreateQuota ) {
 
 if ( $ReActivate ) {
     $Run_Mode="ReActivate"
-	Write-LogOnly "SVMDR ReActivate"
+	Write-LogOnly "SVMTOOL ReActivate"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1960,7 +2119,7 @@ if ( $ReActivate ) {
 
 if ( $CleanReverse ) {
     $Run_Mode="CleanReverse"
-	Write-LogOnly "SVMDR CleanReverse"
+	Write-LogOnly "SVMTOOL CleanReverse"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -1989,7 +2148,7 @@ if ( $CleanReverse ) {
 
 if ( $Resync ) {
     $Run_Mode="Resync"
-	Write-LogOnly "SVMDR Resync"
+	Write-LogOnly "SVMTOOL Resync"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -2018,7 +2177,7 @@ if ( $Resync ) {
 
 if ( $ResyncReverse ) {
     $Run_Mode="ResyncReverse"
-	Write-LogOnly "SVMDR ResyncReverse"
+	Write-LogOnly "SVMTOOL ResyncReverse"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -2049,7 +2208,7 @@ if ( $ResyncReverse ) {
 
 if ( $UpdateReverse ) {
     $Run_Mode="UpdateReverse"
-	Write-LogOnly "SVMDR UpdateReverse"
+	Write-LogOnly "SVMTOOL UpdateReverse"
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
@@ -2079,12 +2238,12 @@ if ( $UpdateReverse ) {
     		$UseLastSnapshot = $False
 	}
 	if($DRfromDR.IsPresent){
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True) -ne  $True ) { 
+		if ( ( $ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True) -ne  $True ) { 
 			Write-LogError "ERROR: update_vserver_dr" 
 			clean_and_exit 1 
 		}
 	}else{
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False) -ne  $True ) { 
+		if ( ( $ret=update_vserver_dr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False) -ne  $True ) { 
 			Write-LogError "ERROR: update_vserver_dr" 
 			clean_and_exit 1 
 		}
@@ -2128,7 +2287,7 @@ if ( $UpdateReverse ) {
 
 if ( $MirrorSchedule ) {
     $Run_Mode="MirrorSchedule"
-    Write-LogOnly "SVMDR MirrorSchedule"
+    Write-LogOnly "SVMTOOL MirrorSchedule"
     # Connect to the Cluster
     $myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
     $tmp_str=$MyCred.UserName
@@ -2153,7 +2312,7 @@ if ( $MirrorSchedule ) {
 
 if ( $MirrorScheduleReverse ) {
     $Run_Mode="MirrorScheduleReverse"
-    Write-LogOnly "SVMDR MirrorScheduleReverse"
+    Write-LogOnly "SVMTOOL MirrorScheduleReverse"
     # Connect to the Cluster
     $myCred=get_local_cDotcred ($SECONDARY_CLUSTER) 
     $tmp_str=$MyCred.UserName
