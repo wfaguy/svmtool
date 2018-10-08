@@ -160,7 +160,28 @@
     By defaut, it use MirrorAllSnapshots policy
 	The specified Policy must already exists in ONTAP and be correctly configured
 .PARAMETER DebugLevel
-	Increase verbosity level
+	Deprecated - use the LogLevelConsole & LogLevelLogFile parameters and the level "Debug"
+.PARAMETER NoLog
+    Deprecated - use the LogLevelLogFile parameter and the level "Off"
+.PARAMETER Silent
+    Deprecated - use the LogLevelConsole parameter and the level "Off"
+.PARAMETER LogLevelConsole
+    Optional argument to set the level of logging for the console
+    Values are Debug,Info,Warn,Error,Fatal,Off
+.PARAMETER LogLevelLogFile
+    Optional argument to set the level of logging for logging to file
+    Values are Debug,Info,Warn,Error,Fatal,Off
+.PARAMETER DefaultLocalUserCredentials
+    Optional argument to pass the credentials for local user create/update
+    In NonInteractive Mode, we cannot prompt for user password.  If you want users to be created, the password from these credentials is used.
+.PARAMETER NonInteractive
+    Runs the script in Non Interactive Mode.  
+    No confirmations and resource selection is automated
+    If no smart resource selection is possible, the RootAggr and DataAggr parameters are used as a fallback
+.PARAMETER WfaIntegration
+    Will convert all logging to WFA Logging
+    Will use WFA Cluster connection, using WFA storage credentials
+    Will automatically run in NonInteractive Mode
 .PARAMETER RW
 	Only in Restore mode, this option will allow to create RW volume instead of default DP volume
 	This cas be used when you want to restore/clone an SVM conf, but don't need to or can't restore data back through SnapMirror
@@ -254,7 +275,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : September 9th, 2018
+    Version : October 5th, 2018
     Version History : 
         - 0.0.3 : Initial version 
         - 0.0.4 : Bugfix, typos and added ParameterSets
@@ -263,6 +284,13 @@
 		- 0.0.7 : Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
 				  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ...
 				  Correct Backup & Restore quota 
+        - 0.0.8 : Merge with OLIVIER !!!!!!!!!!!!!!
+        - 0.0.9 : Added symlinks and noninteractive mode
+                  Bugfixes (cifs groups & users)
+                  Added default usercredentials for noninteractive mode
+                  Added smart resource selections (with regex and defaults) for noninteractive mode
+                  Minor typos
+        - 0.1.0 : Adding log4net logging and WFA logging integration
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -560,7 +588,33 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='Backup')]
 	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
 	[Parameter(Mandatory = $false, ParameterSetName='ImportInstance')]
-	[switch]$DebugLevel,
+	[ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+    [string]$LogLevelConsole="Info",
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+	[Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+	[Parameter(Mandatory = $false, ParameterSetName='Backup')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[Parameter(Mandatory = $false, ParameterSetName='ImportInstance')]
+	[ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+    [string]$LogLevelLogFile="Info",
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
@@ -600,6 +654,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
     [switch]$NonInteractive,
 
+    [switch]$WfaIntegration,
+
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
@@ -622,8 +678,6 @@ $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
 $Global:START_TIMEOUT=360
 $Global:SINGLE_CLUSTER = $False
-$Global:LOG_DAY2KEEP=30        # keep log file for maxium 30 days
-$Global:LOG_MAXSIZE=104857600  # set log file maximum size to 100MB
 $DebugPreference="SilentlyContinue"
 $VerbosePreference="SilentlyContinue"
 $ErrorActionPreference="SilentlyContinue"
@@ -668,7 +722,7 @@ if($Vserver -ne "" -and ($Backup -eq "" -and $Restore -eq "")) {
 	$Global:LOGDIR = $Global:ROOTLOGDIR
 }
 
-$Global:LOGFILE=$LOGDIR + "svmtool.log"
+$LOGFILE=$LOGDIR + "svmtool.log"
 $Global:CRED_CONFDIR=$BASEDIR  + "\cred\"
 $Global:MOUNT_RETRY_COUNT = 100
 
@@ -697,14 +751,37 @@ if ( $module -eq $null ) {
         clean_and_exit 1
 }
 
-rotate_log
+# initialize log4net, only needed once.
+init_log4net
+
+# appenders (logfile, eventviewer & console)
+$masterLogFileAppender = create_rolling_log_appender -name "svmtool.log" -file $LOGFILE -threshold $LogLevelLogFile
+$masterEventViewerAppender = create_eventviewer_appender -name "eventviewer" -applicationname "svmtool"
+$consoleAppender = create_console_appender -name "console"
+
+# initialize logonly
+add_appender -loggerinstance "logonly" $masterLogFileAppender -threshold $LogLevelLogFile
+set_log_level -loggerinstance "logonly" -level "Info"
+$Global:MasterLog = get_logger -name "logonly" 
+
+# initialize console
+add_appender -loggerinstance "console" $masterLogFileAppender -threshold $LogLevelLogFile
+add_appender -loggerinstance "console" $masterEventViewerAppender
+add_appender -loggerinstance "console" $consoleAppender -threshold $LogLevelConsole
+set_log_level -loggerinstance "console" -level "Info"
+$Global:ConsoleLog = get_logger -name "console"
+
 check_ToolkitVersion 
+
+if($Silent){Write-Warn "The switch -Silent is deprecated, please use parameter -LogLevelConsole"}
+if($NoLog){Write-Warn "The switch -NoLog is deprecated, please use parameter -LogLevelLogFile"}
+if($DebugLevel){Write-Warn "The switch -DebugLevel is deprecated, please use parameters -LogLevelLogFile Debug or -LogLevelConsole Debug"}
 
 if ( ( check_init_setup_dir ) -eq $False ) {
         Write-LogError "ERROR: Failed to create new folder item: exit" 
         clean_and_exit 1
 }
-$Global:mutexconsole = New-Object System.Threading.Mutex($false, "Global\BackupMutex")
+
 Write-LogOnly ""
 Write-LogOnly "SVMTOOL START"
 if ( $Help ) { Write-Help }
@@ -715,17 +792,17 @@ if ( $Version ) {
 	Write-Log "Module Version [$ModuleVersion]"
 	Clean_and_exit 0 
 }
-#set_debug_level $DebugLevel
-Write-LogDebug "BASEDIR      [$BASEDIR]"
-Write-LogDebug "CONFDIR      [$CONFDIR]"
-Write-LogDebug "LOGDIR       [$LOGDIR]"
-Write-LogDebug "LOGFILE      [$LOGFILE]"
-Write-LogDebug "CRED_CONFDIR [$CRED_CONFDIR]"
-Write-LogDebug "CONFFILE     [$CONFFILE]"
-Write-LogDebug "VERSION      [$RELEASE]"
-Write-LogDebug "Vserver      [$Vserver]"
-Write-LogDebug "DebugLevel   [$DebugLevel]"
-Write-LogDebug "RW           [$RW]"
+Write-LogDebug "BASEDIR           [$BASEDIR]"
+Write-LogDebug "CONFDIR           [$CONFDIR]"
+Write-LogDebug "LOGDIR            [$LOGDIR]"
+Write-LogDebug "LOGFILE           [$LOGFILE]"
+Write-LogDebug "CRED_CONFDIR      [$CRED_CONFDIR]"
+Write-LogDebug "CONFFILE          [$CONFFILE]"
+Write-LogDebug "VERSION           [$RELEASE]"
+Write-LogDebug "Vserver           [$Vserver]"
+Write-LogDebug "LogLevelConsole   [$LogLevelConsole]"
+Write-LogDebug "LogLevelLogFile   [$LogLevelLogFile]"
+Write-LogDebug "RW                [$RW]"
 
 if ( $ListInstance ) {
 	show_instance_list
@@ -832,34 +909,19 @@ if ( $Backup ) {
 			Write-LogWarn "[$svm] can't be saved because it is in `"stopped`" state"
 			continue
 		}
-		Write-Log "Create Backup Job for [$svm]" "Blue"
+		Write-Log "Create Backup Job for [$svm]" "Blue" -multithreaded
         $codeBackup=[scriptblock]::Create({
             param(
-                [Parameter(Mandatory=$True)]
-                [string]
-                $script_path,
-                [Parameter(Mandatory=$True)]
-                [NetApp.Ontapi.Filer.C.NcController]
-                $myPrimaryController,
-                [Parameter(Mandatory=$True)]
-                [string]
-                $myPrimaryVserver,
-                [Parameter(Mandatory=$True)]
-				[string]
-				$SVMTOOL_DB,
-                [Parameter(Mandatory=$True)]
-                [System.Threading.WaitHandle]
-				$mutexconsole,
-                [Parameter(Mandatory=$True)]
-                [String]
-				$BackupDate,
-				[Parameter(Mandatory=$True)]
-				[String]
-				$LOGFILE,
-				[Parameter(Mandatory=$False)]
-				[boolean]
-				$DebugLevel
+                [Parameter(Mandatory=$True)][string]$script_path,
+                [Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$myPrimaryController,
+                [Parameter(Mandatory=$True)][string]$myPrimaryVserver,
+                [Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
+                [Parameter(Mandatory=$True)][String]$BackupDate,
+				[Parameter(Mandatory=$True)][String]$LOGFILE,
+				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
+                [Parameter(Mandatory=$True)][string]$LogLevelLogFile
 			)
+            $ConsoleThreadingRequired=$true
 			$scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
 			if($Path -notcontains $scriptDir){
@@ -874,40 +936,58 @@ if ( $Backup ) {
 			}
 			$Global:STOP_TIMEOUT=360
 			$Global:START_TIMEOUT=360
-			$Global:mutexconsole=$mutexconsole
+
 			$dir=split-path -Path $LOGFILE -Parent
 			$file=split-path -Path $LOGFILE -Leaf
-			$Global:LOGFILE=($dir+'\'+$myPrimaryVserver+'\'+$file)
-			check_create_dir -FullPath $global:LOGFILE -Vserver $myPrimaryVserver
-			Write-Log "[$myPrimaryVserver] Log File is [$global:LOGFILE]" -firstValueIsSpecial
-			rotate_log
+			$LOGFILE=($dir+'\'+$myPrimaryVserver+'\'+$file)
+
+
+            # appenders (logfile, eventviewer & console)
+
+            $guid = ([guid]::NewGuid()).Guid
+            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE
+            $consoleAppender = create_console_appender -name "console_$guid"
+
+            # initialize console
+            add_appender -loggerinstance "console_$guid" $masterLogFileAppender -threshold $LogLevelLogFile
+            add_appender -loggerinstance "console_$guid" $consoleAppender -threshold $LogLevelConsole
+            set_log_level -loggerinstance "console_$guid" -level "Debug"
+            $Global:ConsoleLog = get_logger -name "console_$guid"
+
+			check_create_dir -FullPath $LOGFILE -Vserver $myPrimaryVserver
+			Write-Log "[$myPrimaryVserver] Log File is [$LOGFILE]"
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$($SVMTOOL_DB+"\"+$myPrimaryVserver+"\"+$BackupDate+"\")
-			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]" -firstValueIsSpecial}
+			Write-LogDebug "[$myPrimaryVserver] Backup Folder is [$Global:JsonPath]"
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
-			if($DebugLevel){Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]" -firstValueIsSpecial}
+
+			Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]"
             if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
+                flush_log4net -loggerinstance "console_$guid"
 				return $False
 			}
 			Write-LogDebug "create_vserver_dr correctly finished [$ret]"
 			Write-Log "[$myPrimaryVserver] Check Quota"
 			$AllQuotaRulesList=Get-NcQuota -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
     		if ( $? -ne $True ) { 
-				Write-LogDebug "ERROR: Get-NcQuota Failed"
-				return $False
+        		Write-LogDebug "ERROR: Get-NcQuota Failed"
+                flush_log4net -loggerinstance "console_$guid"	
+        		return $False
 			}
 			$AllQuotaRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuota.json") -Encoding ASCII -Width 65535
 			if( ($ret=get-item $($Global:JsonPath+"Get-NcQuota.json") -ErrorAction SilentlyContinue) -ne $null ){
 				Write-LogDebug "$($Global:JsonPath+"Get-NcQuota.json") saved successfully"
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuota.json")"
+                flush_log4net -loggerinstance "console_$guid"
 				return $False
 			}
 			Write-Log "[$myPrimaryVserver] Check Quota Policy"
 			$AllQuotaPolicyList=Get-NcQuotaPolicy -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
     		if ( $? -ne $True ) { 
 				Write-LogDebug "ERROR: Get-NcQuotaPolicy Failed"
+                flush_log4net -loggerinstance "console_$guid"
 				return $False
 			}
 			$AllQuotaPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuotaPolicy.json") -Encoding ASCII -Width 65535
@@ -915,9 +995,12 @@ if ( $Backup ) {
 				Write-LogDebug "$($Global:JsonPath+"Get-NcQuotaPolicy.json") saved successfully"
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuotaPolicy.json")"
+                flush_log4net -loggerinstance "console_$guid"
 				return $False
 			}
+            flush_log4net -loggerinstance "console_$guid"
             return $True
+
         })
         $BackupJob=[System.Management.Automation.PowerShell]::Create()
         ## $createVserverBackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
@@ -927,10 +1010,10 @@ if ( $Backup ) {
         [void]$BackupJob.AddParameter("myPrimaryController",$NcPrimaryCtrl)
         [void]$BackupJob.AddParameter("myPrimaryVserver",$svm)
 		[void]$BackupJob.AddParameter("SVMTOOL_DB",$SVMTOOL_DB)
-		[void]$BackupJob.AddParameter("mutexconsole",$Global:mutexconsole)
 		[void]$BackupJob.AddParameter("BackupDate",$BackupDate)
-		[void]$BackupJob.AddParameter("LOGFILE",$Global:LOGFILE)
-		[void]$BackupJob.AddParameter("DebugLevel",$DebugLevel)
+		[void]$BackupJob.AddParameter("LOGFILE",$LOGFILE)
+		[void]$BackupJob.AddParameter("LogLevelLogFile",$LogLevelLogFile)
+        [void]$BackupJob.AddParameter("LogLevelConsole",$LogLevelConsole)
 		$BackupJob.RunspacePool=$RunspacePool_Backup
 		#wait-debugger
 		#$Object = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
@@ -972,7 +1055,7 @@ if ( $Backup ) {
 	}
 	ForEach ($JobBackup in $($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $True})){
         $jobname=$JobBackup.Name
-        if($DebugLevel){Write-log "$jobname finished" "Blue"}
+        Write-log "$jobname finished" -color magenta
         $result_Backup=$JobBackup.Thread.EndInvoke($JobBackup.Handle)
 		if($result_Backup.count -gt 0){
 			$ret=$result_Backup[-1]
@@ -1091,20 +1174,19 @@ if ( $Restore ) {
 		}
 		$JsonPath=$($SVMTOOL_DB+"\"+$svm+"\"+$date+"\")
 		Write-Log "[$svm] Create Restore Job from [$JsonPath]"
-		#Write-Log "RW [$RW] DebugLevel [$DebugLevel]"
-		#Write-Log "JSON path [$JsonPath]"
 		$codeRestore=[scriptblock]::Create({
             param(
                 [Parameter(Mandatory=$True)][string]$script_path,
                 [Parameter(Mandatory=$True)][string]$SourceVserver,
 				[Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
-                [Parameter(Mandatory=$True)][System.Threading.WaitHandle]$mutexconsole,
                 [Parameter(Mandatory=$True)][String]$JsonPath,
 				[Parameter(Mandatory=$True)][String]$LOGFILE,
 				[Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$DestinationController,
 				[Parameter(Mandatory=$True)][string]$VOLTYPE,
-				[Parameter(Mandatory=$False)][boolean]$DebugLevel
+				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
+                [Parameter(Mandatory=$True)][string]$LogLevelLogFile
             )
+            $Global:ConsoleThreadingRequired=$true
             $scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
 			if($Path -notcontains $scriptDir){
@@ -1119,11 +1201,24 @@ if ( $Restore ) {
 			}
 			$Global:STOP_TIMEOUT=360
 			$Global:START_TIMEOUT=360
-			$Global:mutexconsole=$mutexconsole
 			$dir=split-path -Path $LOGFILE -Parent
 			$file=split-path -Path $LOGFILE -Leaf
-			$Global:LOGFILE=($dir+'\'+$SourceVserver+'\'+$file)
-			check_create_dir -FullPath $global:LOGFILE -Vserver $SourceVserver
+			$LOGFILE=($dir+'\'+$SourceVserver+'\'+$file)
+
+            # appenders (logfile, eventviewer & console)
+
+            $guid = ([guid]::NewGuid()).Guid
+            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE
+            $consoleAppender = create_console_appender -name "console_$guid"
+
+            # initialize console
+            add_appender -loggerinstance "console_$guid" $masterLogFileAppender -threshold $LogLevelLogFile
+            add_appender -loggerinstance "console_$guid" $consoleAppender -threshold $LogLevelConsole
+            set_log_level -loggerinstance "console_$guid" -level "Debug"
+            $Global:ConsoleLog = get_logger -name "console_$guid"
+
+			check_create_dir -FullPath $LOGFILE -Vserver $SourceVserver
+
 			$Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$JsonPath
 			$Global:VOLUME_TYPE=$VOLTYPE
@@ -1131,7 +1226,7 @@ if ( $Restore ) {
 			$DestinationCluster=$DestinationController.Name
 			Write-LogDebug ""
 			Write-LogDebug "Restore [$SourceVserver] on Cluster [$DestinationCluster]"
-			Write-LogDebug "LOGFILE [$Global:LOGFILE]"
+			Write-LogDebug "LOGFILE [$LOGFILE]"
 			Write-LogDebug "SVMTOOL_DB [$Global:SVMTOOL_DB]"
 			Write-LogDebug "JsonPath [$Global:JsonPath]"
 			Write-LogDebug "SourceVserver [$SourceVserver]"
@@ -1155,6 +1250,7 @@ if ( $Restore ) {
 			}else{
 				Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
 			}
+            flush_log4net -loggerinstance "console_$guid"
             return $True
         })
         $RestoreJob=[System.Management.Automation.PowerShell]::Create()
@@ -1164,24 +1260,24 @@ if ( $Restore ) {
         [void]$RestoreJob.AddParameter("script_path",$scriptDir)
         [void]$RestoreJob.AddParameter("SourceVserver",$svm)
 		[void]$RestoreJob.AddParameter("SVMTOOL_DB",$SVMTOOL_DB)
-		[void]$RestoreJob.AddParameter("mutexconsole",$Global:mutexconsole)
 		[void]$RestoreJob.AddParameter("JsonPath",$JsonPath)
-		[void]$RestoreJob.AddParameter("LOGFILE",$Global:LOGFILE)
+		[void]$RestoreJob.AddParameter("LOGFILE",$LOGFILE)
 		[void]$RestoreJob.AddParameter("DestinationController",$NcSecondaryCtrl)
 		if($RW -eq $True){
 			[void]$RestoreJob.AddParameter("VOLTYPE","RW")
 		}else{
 			[void]$RestoreJob.AddParameter("VOLTYPE","DP")
 		}
-		[void]$RestoreJob.AddParameter("DebugLevel",$DebugLevel)
+		[void]$RestoreJob.AddParameter("LogLevelLogFile",$LogLevelLogFile)
+        [void]$RestoreJob.AddParameter("LogLevelConsole",$LogLevelConsole)
 		$RestoreJob.RunspacePool=$RunspacePool_Restore
         $Handle=$RestoreJob.BeginInvoke()
         $JobRestore = "" | Select-Object Handle, Thread, Name, Log
         $JobRestore.Handle=$Handle
         $JobRestore.Thread=$RestoreJob
 		$JobRestore.Name=$svm
-		$dir=split-path -Path $Global:LOGFILE -Parent
-		$file=split-path -Path $Global:LOGFILE -Leaf
+		$dir=split-path -Path $LOGFILE -Parent
+		$file=split-path -Path $LOGFILE -Leaf
 		$LOGJOB=($dir+'\'+$svm+'\'+$file)
 		$JobRestore.Log=$LOGJOB
 		if($JobRestore.Thread.InvocationStateInfo.State -eq "Failed"){
@@ -1339,6 +1435,10 @@ $Global:ForceRecreate=$ForceRecreate
 $Global:ForceUpdateSnapPolicy=$ForceUpdateSnapPolicy
 $Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
 $Global:NonInteractive=$NonInteractive
+$Global:WfaIntegration=$WfaIntegration
+if($WfaIntegration){
+    $Global:NonInteractive=$true
+}
 $Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
@@ -1409,7 +1509,7 @@ if ( $ConfigureDR ) {
     $DestVserver=Get-NcVserver -Vserver $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
     if($DestVserver.IsConfigLockedForChanges -eq $True){
-        if ($DebugLevel) {Write-logDebug "Unlock-NcVserver -Vserver $VserverDR -Force -Confirm:$False -Controller $NcSecondaryCtrl"}
+        Write-logDebug "Unlock-NcVserver -Vserver $VserverDR -Force -Confirm:$False -Controller $NcSecondaryCtrl"
         $ret=Unlock-NcVserver -Vserver $VserverDR -Force -Confirm:$False -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Dest Vserver [$VserverDR] has its config locked. Unlock-NcVserver failed [$ErrorVar]" }
     }
