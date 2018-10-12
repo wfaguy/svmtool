@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Author  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : September 19th, 2018
+    Release : October 12th, 2018
 #>
 
 #############################################################################################
@@ -22,7 +22,8 @@ function free_mutexconsole{
     try{ 
         [void]$Global:mutexconsole.ReleaseMutex()
     }catch{
-        Write-LogDebug "Failed to release mutexconsole"
+        $ErrorVar = $_.Exception.Message
+        Write-LogDebug "Failed to release mutexconsole [$ErrorVar]"
     }    
 }
 
@@ -4294,15 +4295,16 @@ Catch {
 }
 
 #############################################################################################
-Function set_all_lif(
+ Function set_all_lif(
     [string] $myPrimaryVserver, 
 	[string] $mySecondaryVserver, 
     [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
     [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
-    [string]$workOn=$mySecondaryVserver,
+    [string] $workOn=$mySecondaryVserver,
     [string] $state,
-    [bool]$Backup,
-    [bool]$Restore) {
+    [bool] $Backup,
+    [bool] $Restore,
+    [switch] $AfterMigrate) {
 
     $Return=$True
     Write-LogDebug "Set all lif [$state] on [$workOn]"
@@ -4336,29 +4338,32 @@ Function set_all_lif(
     }
 	$IPsource=$lifssource  | ForEach-Object {$_.Address}
 	$set=$false
-	foreach($lif in $lifsDest){
+	foreach($lif in $lifsdest){
         $lif_name=$lif.InterfaceName
 		$lif_ip=$lif.Address
 		if($lif_ip -notin $IPsource){
 			if($debuglevel){Write-LogDebug "Set LIF [$lif_name] into state [$state]"}
 			$ret=Set-NcNetInterface -Name $lif_name -Vserver $mySecondaryVserver -Controller $mySecondaryController -AdministrativeStatus $state -ErrorVariable ErrorVar
 			if($? -ne $true){
-				$Return=$False
 				Write-LogDebug "ERROR: failed to set lif [$lif_name] into state [$sate] reason [$ErrorVar]"
 			}
 			$set=$true
 		}
     }
-	if($set -eq $false){
-        if($Restore -eq $False){
-            Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
-            return $False
+    if($AfterMigrate.IsPresent){
+        return $True
+    }else{
+        if($set -eq $false){
+            if($Restore -eq $False){
+                Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
+                return $False
+            }else{
+                return $True
+            }
         }else{
             return $True
         }
-	}else{
-		return $True
-	}
+    }
 }
 
 #############################################################################################
@@ -6143,7 +6148,7 @@ Try {
 			$SourceLocation=$relation.SourceLocation
 			$DestinationLocation=$relation.DestinationLocation
 			$MirrorState=$relation.MirrorState	
-			Write-Log "remove snapmirror relation for volume [$SourceLocation] [$DestinationLocation]"
+			Write-Log "[$mySecondaryVserver] remove snapmirror relation for volume [$SourceLocation] [$DestinationLocation]"
 			if ( $MirrorState -eq 'snapmirrored' ) {
 				Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
 				$out= Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -6173,7 +6178,7 @@ Try {
 			    $DestinationLocation=$relation.DestinationLocation
 			    $RelationshipId=$relation.RelationshipId
 			
-			    Write-Log "Release Relation [$SourceLocation] [$DestinationLocation]"
+			    Write-Log "[$mySecondaryVserver] Release Relation [$SourceLocation] [$DestinationLocation]"
 			    if($DebugLevel) {Write-LogDebug "Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController -Confirm:$False"}
 			    $out = Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController  -ErrorVariable ErrorVar -Confirm:$False
 			    if ( $? -ne $True ) {
@@ -6992,11 +6997,17 @@ Try {
         $SecondaryVersion=(Get-NcSystemVersionInfo -Controller $mySecondaryController).VersionTupleV
         if($PrimaryVersion.Major -ne $SecondaryVersion.Major){$ONTAPVersionDiff=$True}
         foreach($Property in $Properties | Where-Object {$_ -notmatch "Vserver|NcController|Specified"}){
+            #write-log "$Property"
             $Differences=Compare-Object -ReferenceObject $primaryOptions -DifferenceObject $secondaryOptions -Property "$Property"
             #write-host $Differences
             $Differences_string=$Differences | Out-String
             foreach($Diff in $Differences){
                 if($Diff.SideIndicator -eq "<="){
+                    if($Property -eq "IsFsctlFileLevelTrimEnabled" -and ( $SecondaryVersion.Major -eq 9 -and $SecondaryVersion.Minor -lt 3)){
+                        Write-LogDebug "Property [$Property] is only compatible with ONTAP >= 9.3"
+                        #Write-Log "Ignore Property [$Property]"
+                        continue
+                    }
                     $option=$Property
                     $value=$Diff.${Property}
                     $isPrimarySpecified=$primaryOptions.$($Property+"Specified")
@@ -7017,6 +7028,7 @@ Try {
                                 Write-LogDebug "Set-NcCifsOption -$($option) $value -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                 $out=Set-NcCifsOption @newvar -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                             }catch{
+                                $ErrorVar = $_.Exception.Message
                                 Write-Warning "[$myPrimaryVserver] ERROR : Failed to set CIFS option [$option] : [$ErrorVar]" 
                             }
                         }
@@ -7038,6 +7050,7 @@ Try {
                             $out=Set-NcCifsOption @newvar -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                             if($? -ne $True){throw "Failed to set CIFS option [$option]"}
                         }catch{
+                            $ErrorVar = $_.Exception.Message
                             Write-Warning "[$myPrimaryVserver] Failed to set CIFS options reason : [$ErrorVar]" 
                         }
                     }
@@ -7219,7 +7232,7 @@ Try {
             else{
                 $SecExportPolicy=$SecQtree.ExportPolicy
                 if($SecExportPolicy -ne $ExportPolicy){
-                    Write-Log "Modify Export Policy on Qtree [$QName] to [$ExportPolicy] on [$mySecondaryVserver]"
+                    Write-Log "[$mySecondaryVserver] Modify Export Policy on Qtree [$QName] to [$ExportPolicy]"
                     Write-LogDebug "Set-NcQtree -Volume $volume -Qtree $QName -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcQtree -Volume $volume -Qtree $QName -ExportPolicy $ExportPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
                     if($? -ne $True){$Return=$Fasle;Throw "ERROR: Failed to Set export policy [$ExportPolicy] on Qtree [$QName] on [$mySecondaryVserver] reason [$ErrorVar]"}
@@ -9397,10 +9410,10 @@ Try {
     #if($Backup -eq $False -and $Restore -eq $False){
     #    if ( ( $ret=update_qtree_export_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -Backup $runBackup -Restore $runRestore) -ne $True ) {Write-Log "ERROR Failed to modify all Qtree Export Policy" ; $Return = $False}
     #}
-    if($Backup -eq $False -and $Restore -eq $False){
-        if ( ( $ret=update_msid_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) { Write-LogError "ERROR: Failed to update MSID for all volumes " ; $Return = $False }
-        Write-Warning "Do not forget to run UpdateDR (with -DataAggr option) frequently to update SVM DR and mount all new volumes"
-    }
+    # if($Backup -eq $False -and $Restore -eq $False){
+    #     if ( ( $ret=update_msid_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) { Write-LogError "ERROR: Failed to update MSID for all volumes " ; $Return = $False }
+    #     Write-Warning "Do not forget to run UpdateDR (with -DataAggr option) frequently to update SVM DR and mount all new volumes"
+    # }
     Write-LogDebug "create_vserver_dr [$myPrimaryVserver]: end"
     return $Return 
 } Catch {
@@ -9519,7 +9532,7 @@ Try {
     $NcCluster = Get-NcCluster -Controller $mySecondaryController
     $DestinationCluster = $NcCluster.ClusterName
     $isMCC=Test-NcMetrocluster -Controller $mySecondaryController -ErrorVariable ErrorVar
-    if($isMCC = $True){
+    if($isMCC -eq $True){
         Write-LogDebug "MSID Preserve is not compatible with MCC as destination"
         return $True
     }
@@ -10162,11 +10175,11 @@ try{
         $PrimaryCIFSidentity=$PrimaryCIFSserver.CIFSServer
         $PrimaryCIFSdomain=$PrimaryCIFSserver.Domain
         $ADCred=get_local_cred($PrimaryCIFSdomain)
-        Write-Log "Set CIFS server down on [$myPrimaryVserver]"
+        Write-Log "[$myPrimaryVserver] Set CIFS server down"
         Write-LogDebug "Set-NcCifsServer -AdministrativeStatus down -Domain $PrimaryCIFSdomain -AdminCredential $ADCred -VserverContext $myPrimaryVserver -controller $myPrimaryController"
         $out=Set-NcCifsServer -AdministrativeStatus down -Domain $PrimaryCIFSdomain -AdminCredential $ADCred -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcCifsServer failed [$ErrorVar]" }
-        Write-Log "Set CIFS server up on [$mySecondaryVserver] with identity of [$myPrimaryVserver] : [$PrimaryCIFSidentity]"
+        Write-Log "[$mySecondaryVserver] Set CIFS server up with identity of [$myPrimaryVserver] : [$PrimaryCIFSidentity]"
         Write-LogDebug "Set-NcCifsServer -AdministrativeStatus up -ForceAccountOverwrite -CifsServer $PrimaryCIFSidentity -Domain $PrimaryCIFSdomain -AdminCredential $ADCred -VserverContext $mySecondaryVserver -controller $mySecondaryController"
         $out=Set-NcCifsServer -AdministrativeStatus up -ForceAccountOverwrite -CifsServer $PrimaryCIFSidentity -Domain $PrimaryCIFSdomain -AdminCredential $ADCred -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar  -Confirm:$False
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcCifsServer failed [$ErrorVar]" }
@@ -10382,6 +10395,7 @@ try{
                             $out=New-NcCifsLocalUser -UserName $UserName -Password $password -FullName $UserFullname -Description $UserDescription -Disable -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; free_mutexconsole;throw "ERROR: New-NcCifsLocalUser failed [$ErrorVar]" }
                         }catch{
+                            $ErrorVar = $_.Exception.Message
                             Write-Warning "[$workOn] Impossible to create new CIFS local user [$UserName] on [$mySecondaryVserver] reason [$ErrorVar]"
                             $addok=$false
                         }
@@ -10391,6 +10405,7 @@ try{
                             $out=New-NcCifsLocalUser -UserName $UserName -Password $password -FullName $UserFullname -Description $UserDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
                             if ( $? -ne $True ) { $Return = $False ; free_mutexconsole;throw "ERROR: New-NcCifsLocalUser failed [$ErrorVar]" }
                         }catch{
+                            $ErrorVar = $_.Exception.Message
                             Write-Warning "[$workOn] Impossible to create new CIFS local user [$UserName] on [$mySecondaryVserver] reason [$ErrorVar]"
                             $addok=$false
                         }
@@ -10416,6 +10431,7 @@ try{
                     if(($ErrorVar | Out-String) -match "Cannot delete the BUILTIN group"){$notremoved=$True}
                 }
             }catch{
+                $ErrorVar = $_.Exception.Message
                 Write-LogDebug "Group [$SecondaryGroupName] not remove from [$mySecondaryVserver], reason [$ErrorVar]"
                 $notremoved=$True
             }
@@ -10430,7 +10446,8 @@ try{
                         $out=Remove-NcCifsLocalGroupMember -Name $SecondaryGroupName -Member $SecondaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController -ErrorAction SilentlyContinue -ErrorVariable ErrorVar -Confirm:$False
                         if ( $? -ne $True ) { Write-LogDebug "ERROR: Remove-NcCifsLocalGroupMember failed [$ErrorVar]" }
                     }catch{
-                        Write-LogDebug "unable to remove Member [$SecondaryMemberName] from [$SecondaryGroupName] on [$mySecondaryVserver]"
+                        $ErrorVar = $_.Exception.Message
+                        Write-LogDebug "unable to remove Member [$SecondaryMemberName] from [$SecondaryGroupName] on [$mySecondaryVserver] reason [$ErrorVar]"
                     }
                 }        
             }
@@ -10485,6 +10502,7 @@ try{
                     $out=New-NcCifsLocalGroup -Name $PrimaryGroupName -Descritption $PrimaryGroupDescription -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { Write-LogDebug "ERROR: New-NcCifsLocalGroup failed [$ErrorVar]" }
                 }catch{
+                    $ErrorVar = $_.Exception.Message
                     Write-LogDebug "Cannot create Group [$PrimaryGroupName] on [$mySecondaryVserver], reason [$ErrorVar]"
                 }
             }
@@ -10510,7 +10528,8 @@ try{
                     $out=Add-NcCifsLocalGroupMember -Name $PrimaryGroupName -Member $PrimaryMemberName -VserverContext $mySecondaryVserver -controller $mySecondaryController -ErrorAction SilentlyContinue -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { Write-LogDebug "ERROR: Add-NcCifsLocalGroupMember failed [$ErrorVar]" }
                 }catch{
-                    Write-LogDebug "Member [$PrimaryMemberName] already exist in [$PrimaryGroupName] on [$mySecondaryVserver]"
+                    $ErrorVar = $_.Exception.Message
+                    Write-LogDebug "Member [$PrimaryMemberName] already exist in [$PrimaryGroupName] on [$mySecondaryVserver] reason [$ErrorVar]"
                 }
             }   
     
@@ -10818,12 +10837,47 @@ Catch {
 	return $Return
 }
 }
+
+#############################################################################################
+Function restart_vserver_dr (
+    [NetApp.Ontapi.Filer.C.NcController] $myController,
+	[string] $myVserver ) {
+
+Try { 
+	$Return = $True
+    Write-LogDebug "restart_vserver_dr: start"
+    $Vserver=Get-NcVserver -Name $myVserver -Controller $myController -ErrorVariable ErrorVar
+    if ( $? -ne $True ) {
+        Write-LogError "ERROR: Get-NcVserver Failed for [$myVserver] reason [$ErrorVar]" 
+        $Return = $False
+    }
+    $State=$Vserver.State
+    if($State -ne "running"){
+        if($Global:ForceRestart){
+            Write-LogDebug "ForceRestart is Present"
+            $ret=Start-NcVserver -Name $myVserver -Controller $myController -ErrorVariable ErrorVar -Confirm:$False
+            if ( $? -ne $True ) {
+				Write-LogError "ERROR: Failed to restart Vserver [$myVserver]" 
+				$Return = $False
+			}
+        }else{
+            Write-Log "[$myVserver] not started. Use -ForceRestart option to restart a stopped Vserver"
+            $Return=$False
+        }
+    }
+    Write-LogDebug "restart_vserver_dr: end"
+    Return $Return
+}catch{
+    handle_error $_ $myVserver
+	return $Return
+}
+}
 #############################################################################################
 Function activate_vserver_dr (
 	[NetApp.Ontapi.Filer.C.NcController] $myController,
 	[string] $myPrimaryVserver , 
 	[string] $mySecondaryVserver ) {
-	
+
 	$Return = $True
 	Write-LogDebug "activate_vserver_dr: start"
 	
@@ -11033,7 +11087,7 @@ Function resync_vserver_dr (
     		
     		if ( ( $MirrorState -eq 'broken-off' ) -and ($RelationshipStatus -eq 'idle' ) ) 
             {
-    			Write-Log "Resync relationship [$SourceLocation] [$DestinationLocation] "
+    			Write-Log "[$mySecondaryVserver] Resync relationship [$SourceLocation] [$DestinationLocation] "
     			Write-LogDebug "Invoke-NcSnapmirrorResync -Source $SourceLocation -Destination $DestinationLocation  -Controller $mySecondaryController"
     			$out=Invoke-NcSnapmirrorResync -Source $SourceLocation -Destination $DestinationLocation  -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
     			if ( $? -ne $True ) 
@@ -11455,7 +11509,7 @@ Try {
             $SourceLocation=$relation.SourceLocation
             $DestinationLocation=$relation.DestinationLocation
             $MirrorState=$relation.MirrorState  
-            Write-Log "Remove snapmirror relation for volume [$SourceLocation] [$DestinationLocation]"
+            Write-Log "[$mySecondaryVserver] Remove snapmirror relation for volume [$SourceLocation] [$DestinationLocation]"
             if ( $MirrorState -eq 'snapmirrored' ) {
                 Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
                 $out= Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -11483,7 +11537,7 @@ Try {
             $DestinationLocation=$relation.DestinationLocation
             $RelationshipId=$relation.RelationshipId
             
-            Write-Log "Release [$SourceLocation] [$DestinationLocation] Relationship"
+            Write-Log "[$mySecondaryVserver] Release Relationship [$SourceLocation] [$DestinationLocation]"
             Write-LogDebug "Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController -Confirm:$False"
             $out = Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController  -ErrorVariable ErrorVar -Confirm:$False
             if ( $? -ne $True ) {
@@ -11967,12 +12021,14 @@ Function save_vol_options_to_voldb (
                 try{
                     $out=New-Item -ItemType Directory -Path $SVMTOOL_DB_SRC_VSERVER -Force  -ErrorVariable ErrorVar
                 }catch{
-                    Write-LogDebug "cannot create [$SVMTOOL_DB_SRC_VSERVER], reason [$ErrorVar]"    
+                    $ErrorMessage = $_.Exception.Message
+                    Write-LogDebug "cannot create [$SVMTOOL_DB_SRC_VSERVER], reason [$ErrorMessage]"    
                 }
                 try{
                     $out=New-Item -ItemType Directory -Path $SVMTOOL_DB_DST_VSERVER -Force  -ErrorVariable ErrorVar
                 }catch{
-                    Write-LogDebug "cannot create [$SVMTOOL_DB_DST_VSERVER], reason [$ErrorVar]"    
+                    $ErrorMessage = $_.Exception.Message
+                    Write-LogDebug "cannot create [$SVMTOOL_DB_DST_VSERVER], reason [$ErrorMessage]"    
                 }
     			$VOL_DB_SRC_FILE=$SVMTOOL_DB_SRC_VSERVER + '\volume.options'
     			$VOL_DB_DST_FILE=$SVMTOOL_DB_DST_VSERVER + '\volume.options'
@@ -12099,23 +12155,18 @@ Function set_vol_options_from_voldb (
                         $message=$out.FailureList.ErrorMessage
                         if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol failed to update volume [$VolName] [$message]" }
                     }
-                    if ($VolSisState -eq "enabled"){
-                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
-                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
-                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar 
-                        if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
-                    }
-                    if ($VolSisState -eq "disabled"){
-                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
-                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
-                        $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                    try{
+                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                        if ( $? -ne $True ) { write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                    }catch{
+                        $ErrorVar = $_.Exception.Message
+                        Write-LogDebug "Failed to enable SIS reason [$ErrorVar]"
                     }
                     if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
                     {
                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar"
                         $SisInfo=Get-NcSis -Name $VolName -Vserver $myVserver -Controller $myController  -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]" }
+                        if ( $? -ne $True ) { Write-LogError "ERROR: Get-NcSis Failed for volume  $VolName [$ErrorVar]" }
                         if($SisInfo -eq $null){$myVolSisPolicy=""}else{
                             $myVolSisPolicy=$SisInfo.Policy
                         }
@@ -12124,8 +12175,13 @@ Function set_vol_options_from_voldb (
                             Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy], need [$VolSisPolicy]"
                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
                             Write-Log "[$myVserver] Set Efficiency Policy [$VolSisPolicy] on volume [$VolName]"
-                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                            if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: Set-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                            try{
+                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                if ( $? -ne $True ) { Write-LogError "ERROR: Set-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                            }catch{
+                                $ErrorVar = $_.Exception.Message
+                                Write-LogDebug "Failed to Set-NcSIS reason [$ErrorVar]"
+                            }
                         }      
                     }
                     if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
@@ -12141,8 +12197,35 @@ Function set_vol_options_from_voldb (
                             Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule], need [$VolSisSchedule]"
                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
                             Write-Log "[$myVserver] Set Efficiency Schedule [$VolSisSchedule] on volume [$VolName]"
-                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                            if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}       
+                            try{
+                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                if ( $? -ne $True ) { Write-LogDebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"} 
+                            }catch{
+                                $ErrorVar = $_.Exception.Message
+                                Write-LogDebug "Failed to Set-NcSIS reason [$ErrorVar]"
+                            }      
+                        }
+                    }
+                    if ($VolSisState -eq "enabled"){
+                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
+                        try{
+                            $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                            if ( $? -ne $True ) { Write-LogDebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
+                        }catch{
+                            $ErrorVar = $_.Exception.Message
+                            Write-LogDebug "Failed to enable SIS reason [$ErrorVar]"
+                        }
+                    }
+                    if ($VolSisState -eq "disabled"){
+                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
+                        try{
+                            $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                            if ( $? -ne $True ) { Write-LogDebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                        }catch{
+                            $ErrorVar = $_.Exception.Message
+                            Write-LogDebug "Failed to disable SIS reason [$ErrorVar]"
                         }
                     }
                 }
@@ -12204,7 +12287,7 @@ Function set_vol_options_from_voldb (
                                 Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
                                 if($VolSisPolicy.length -eq 0 -and $VolSisSchedule.length -eq 0){
                                     Write-LogDebug "Ignore volume [$VolName]"
-                                    continue
+                                    return
                                 }
                                 $myVol = Get-NcVol -Controller $myController -Vserver $CloneDR -Volume $VolName  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
@@ -12233,8 +12316,13 @@ Function set_vol_options_from_voldb (
                                     }
                                     Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController"
                                     #Write-Log "[$CloneDR] Enable Efficiency on volume [$VolName]"
-                                    $ret=Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar 
-                                    if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                    try{
+                                        $ret=Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                        if ( $? -ne $True ) { write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                    }catch{
+                                        $ErrorVar = $_.Exception.Message
+                                        Write-LogDebug "Failed to enable SIS reason [$ErrorVar]"
+                                    } 
                                     if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
                                     {
                                         Write-LogDebug "Get-NcSis -Name $VolName -Vserver $CloneDR -Controller $myController  -ErrorVariable ErrorVar"
@@ -12248,8 +12336,13 @@ Function set_vol_options_from_voldb (
                                             Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
                                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
                                             Write-Log "[$CloneDR] Set Efficiency Policy [$VolSisPolicy] on volume [$VolName]"
-                                            $out=Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}
+                                            try{
+                                                $out=Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                                if ( $? -ne $True ) { write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}
+                                            }catch{
+                                                $ErrorVar = $_.Exception.Message
+                                                Write-LogDebug "Failed to Set-NcSis reason [$ErrorVar]"
+                                            } 
                                         }   
                                     }
                                     if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
@@ -12265,21 +12358,31 @@ Function set_vol_options_from_voldb (
                                             Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
                                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
                                             Write-Log "[$CloneDR] Set Efficiency Schedule [$VolSisSchedule] on volume [$VolName]"
-                                            $out=Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
+                                            try{
+                                                $out=Set-NcSis -name $VolName -VserverContext $CloneDR -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                                if ( $? -ne $True ) { write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }  
+                                            }catch{
+                                                $ErrorVar = $_.Exception.Message
+                                                Write-LogDebug "Failed to Set-NcSis reason [$ErrorVar]"
+                                            }     
                                         }
                                     }
                                     if ($VolSisState -eq "enabled"){
                                         Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController"
                                         Write-Log "[$CloneDR] Enable Efficiency on volume [$VolName]"
-                                        $ret=Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar 
-                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
+                                        $ret=Enable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue 
+                                        if ( $? -ne $True ) {write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
                                     }
                                     if ($VolSisState -eq "disabled"){
                                         Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController"
                                         Write-Log "[$CloneDR] Disable Efficiency on volume [$VolName]"
-                                        $ret=Disable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar
-                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                        try{
+                                            $ret=Disable-NcSis -Name $VolName -VserverContext $CloneDR -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                            if ( $? -ne $True ) { write-logdebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                        }catch{
+                                            $ErrorVar = $_.Exception.Message
+                                            Write-LogDebug "Failed to disable SIS reason [$ErrorVar]"
+                                        }
                                     }
                                 }
                             }   
@@ -12351,7 +12454,7 @@ Function set_vol_options_from_voldb (
                                 Write-LogDebug "Volume Options [$VolName] SnapshotPolicy [$VolSnapshotPolicy] SisPolicy [$VolSisPolicy] SisSchedule [$VolSisSchedule]"
                                 if($VolSisPolicy.length -eq 0 -and $VolSisSchedule.length -eq 0){
                                     Write-LogDebug "Ignore volume [$VolName]"
-                                    continue
+                                    return
                                 }
                                 $myVol = Get-NcVol -Controller $myController -Vserver $myVserver -Volume $VolName  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
@@ -12378,17 +12481,12 @@ Function set_vol_options_from_voldb (
                                         $message=$out.FailureList.ErrorMessage
                                         if ( $out.FailureCount -ne 0 ) { $Return = $False ; Write-LogError "ERROR: Update-NcVol Failed: Failed to update volume [$VolName] [$message]" }
                                     }
-                                    if ($VolSisState -eq "enabled"){
-                                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
-                                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
-                                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar 
-                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
-                                    }
-                                    if ($VolSisState -eq "disabled"){
-                                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
-                                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
-                                        $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar
-                                        if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                    try{
+                                        $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                        if ( $? -ne $True ) { write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                    }catch{
+                                        $ErrorVar = $_.Exception.Message
+                                        Write-LogDebug "Failed to enable SIS reason [$ErrorVar]"
                                     }
                                     if ( $VolSisSchedule -eq "-" -and $VolSisPolicy.length -gt 0 )
                                     {
@@ -12403,8 +12501,13 @@ Function set_vol_options_from_voldb (
                                             Write-LogDebug "Current Efficiency Policy [$VolName] [$myVolSisPolicy] [$VolSisPolicy]"
                                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar"
                                             Write-Log "[$myVserver] Set Efficiency Policy [$VolSisPolicy] on volume [$VolName]"
-                                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar
-                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}
+                                            try{
+                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -policy $VolSisPolicy  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                                if ( $? -ne $True ) { write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]"}
+                                            }catch{
+                                                $ErrorVar = $_.Exception.Message
+                                                Write-LogDebug "Failed to Set-NcSis reason [$ErrorVar]"
+                                            }
                                         }   
                                     }
                                     if ($VolSisPolicy.length -eq 0 -and $VolSisSchedule -ne "-")
@@ -12420,8 +12523,35 @@ Function set_vol_options_from_voldb (
                                             Write-LogDebug "Current Efficiency Schedule [$VolName] [$myVolSisSchedule] [$VolSisSchedule]"
                                             Write-LogDebug "Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar"
                                             Write-Log "[$myVserver] Set Efficiency Schedule [$VolSisSchedule] on volume [$VolName]"
-                                            $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar
-                                            if ( $? -ne $True ) { $Return = $False ; write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }       
+                                            try{
+                                                $out=Set-NcSis -name $VolName -VserverContext $myVserver -controller $myController -schedule $VolSisSchedule  -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                                if ( $? -ne $True ) { write-logdebug "ERROR: Set-NcSis Failed: Failed to update volume  $VolName [$ErrorVar]" }  
+                                            }catch{
+                                                $ErrorVar = $_.Exception.Message
+                                                Write-LogDebug "Failed to Set-NcSis reason [$ErrorVar]"
+                                            }     
+                                        }
+                                    }
+                                    if ($VolSisState -eq "enabled"){
+                                        Write-LogDebug "Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                                        Write-Log "[$myVserver] Enable Efficiency on volume [$VolName]"
+                                        try{
+                                            $ret=Enable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                            if ( $? -ne $True ) { write-logdebug "ERROR: Enable-NcSis Failed to update volume  $VolName [$ErrorVar]" } 
+                                        }catch{
+                                            $ErrorVar = $_.Exception.Message
+                                            Write-LogDebug "Failed to enable SIS reason [$ErrorVar]"
+                                        }
+                                    }
+                                    if ($VolSisState -eq "disabled"){
+                                        Write-LogDebug "Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController"
+                                        Write-Log "[$myVserver] Disable Efficiency on volume [$VolName]"
+                                        try{
+                                            $ret=Disable-NcSis -Name $VolName -VserverContext $myVserver -controller $myController -ErrorVariable ErrorVar -ErrorAction SilentlyContinue
+                                            if ( $? -ne $True ) { write-logdebug "ERROR: Disable-NcSis Failed to update volume  $VolName [$ErrorVar]" }
+                                        }catch{
+                                            $ErrorVar = $_.Exception.Message
+                                            Write-LogDebug "Failed to disable SIS reason [$ErrorVar]"
                                         }
                                     }
                                 }
@@ -12484,12 +12614,14 @@ Function save_shareacl_options_to_shareacldb (
 						Write-LogDebug "New-Item -ItemType Directory -Path $SVMTOOL_DB_SRC_VSERVER -Force"
                         $out=New-Item -ItemType Directory -Path $SVMTOOL_DB_SRC_VSERVER -Force  -ErrorVariable ErrorVar
                     }catch{
+                        $ErrorVar = $_.Exception.Message
                         Write-LogDebug "cannot create [$SVMTOOL_DB_SRC_VSERVER], reason [$ErrorVar]"    
                     }
                     try{
 						Write-LogDebug "New-Item -ItemType Directory -Path $SVMTOOL_DB_DST_VSERVER -Force"
                         $out=New-Item -ItemType Directory -Path $SVMTOOL_DB_DST_VSERVER -Force  -ErrorVariable ErrorVar
                     }catch{
+                        $ErrorVar = $_.Exception.Message
                         Write-LogDebug "cannot create [$SVMTOOL_DB_DST_VSERVER], reason [$ErrorVar]"    
                     }
                     foreach($ShareAclFilename in ($SHAREACL_DB_SRC_FILE,$SHAREACL_DB_DST_FILE)){
@@ -13299,6 +13431,7 @@ Try {
                 }
                 if ( $DebugLevel ) { Write-Host '.' }
                 if ( $DebugLevel ) { Write-Host -NoNewLine "[$Vserver] Enable quota on Volume [$Volume]" }
+                Write-Log "[$myVserver] Restart Quota on volume [$Volume]"
                 Write-LogDebug "restart_quota_vol_from_list: Enable-NcQuota -Vserver $Vserver -Volume $Volume"
                 Start-Sleep 5 
                 $isTimeOut = $false

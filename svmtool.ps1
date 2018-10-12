@@ -141,7 +141,10 @@
 	Force a Default Password for all users inside an SVM DR or Clone SVM
 .PARAMETER ForceActivate
     Mandatory argument in case of disaster in Source site
-    Used only with ActivateDR when source site is unjoinable
+	Used only with ActivateDR when source site is unjoinable
+.PARAMETER ForceRestart
+	Optional argument used to force restart of a stopped Vserver
+	Used with ReActivate option
 .PARAMETER ForceDeleteQuota
     Optional argument
     Allow to forcibly delete a quota rules in error
@@ -297,6 +300,8 @@
 				  Correct Backup & Restore quota
 		- 0.0.8 : Add CloneDR option to create Cloned SVM from Destination Vserver
 				  Add DeleteCloneDR option to remove a previously Cloned Vserver
+		- 0.0.9 : Remove Restamp_msid option
+				  Add ForceRestart optional parameter to forcibly restart a stopped Vserver during ReActivate step
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -455,6 +460,7 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
 	[string]$DataAggr="",
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
 	[switch]$LastSnapshot,
@@ -478,6 +484,9 @@ Param (
 
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
 	[switch]$ForceActivate,
+
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[switch]$ForceRestart,
 
 	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
@@ -642,7 +651,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.8"
+$Global:RELEASE="0.0.9"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
@@ -1370,6 +1379,7 @@ $Global:CorrectQuotaError=$CorrectQuotaError
 $Global:ForceDeleteQuota=$ForceDeleteQuota
 $Global:ForceActivate=$ForceActivate
 $Global:ForceRecreate=$ForceRecreate
+$Global:ForceRestart=$ForceRestart
 $Global:ForceUpdateSnapPolicy=$ForceUpdateSnapPolicy
 $Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
 $Global:SelectVolume=$SelectVolume
@@ -1389,6 +1399,7 @@ Write-LogDebug "OPTION CorrectQuotaError    		 [$Global:CorrectQuotaError]"
 Write-LogDebug "OPTION ForceDelete          		 [$Global:ForceDeleteQuota]"
 Write-LogDebug "OPTION ForceActivate        		 [$Global:ForceActivate]"
 Write-LogDebug "OPTION ForceRecreate        		 [$Global:ForceRecreate]"
+Write-LogDebug "OPTION ForceRestart        		     [$Global:ForceRestart]"
 Write-LogDebug "OPTION ForceUpdateSnapPolicy         [$Global:ForceUpdateSnapPolicy]"
 Write-LogDebug "OPTION AlwaysChooseDataAggr 		 [$Global:AlwaysChooseDataAggr]"
 Write-LogDebug "OPTION SelectVolume         		 [$Global:SelectVolume]"
@@ -1617,10 +1628,10 @@ if($Migrate){
 			clean_and_exit 1
 		}
 		# Restamp MSID destination volume
-		if ( ( $ret=restamp_msid -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDr) -ne $True) {
-			Write-LogError "ERROR: restamp_msid failed"
-			clean_and_exit 1
-		}
+		# if ( ( $ret=restamp_msid -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDr) -ne $True) {
+		# 	Write-LogError "ERROR: restamp_msid failed"
+		# 	clean_and_exit 1
+		# }
         $ASK_MIGRATE=Read-HostOptions "IP and Services will switch now for [$Vserver]. Ready to go ?" "y/n"
         if($ASK_MIGRATE -eq 'y'){
 		    if ( ( $ret=migrate_lif -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
@@ -1632,7 +1643,7 @@ if($Migrate){
 			    Write-LogError "ERROR: migrate_cifs_server failed"
 			    clean_and_exit 1
 		    }
-		    if (($ret=set_all_lif -mySecondaryVserver $VserverDR -myPrimaryVserver $Vserver -mySecondaryController $NcSecondaryCtrl  -myPrimaryController $NcPrimaryCtrl -state up) -ne $True ) {
+		    if (($ret=set_all_lif -mySecondaryVserver $VserverDR -myPrimaryVserver $Vserver -mySecondaryController $NcSecondaryCtrl  -myPrimaryController $NcPrimaryCtrl -state up -AfterMigrate) -ne $True ) {
 				Write-LogError "ERROR: Failed to set all lif up on [$VserverDR]"
 				clean_and_exit 1
 			}
@@ -2085,6 +2096,10 @@ if ( $ReActivate ) {
 		Write-LogError "ERROR: disable_network_protocol_vserver_dr failed" 
 		clean_and_exit 1
 	}
+	if ( ( $ret=restart_vserver_dr -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne  $True ) {
+		Write-LogError "ERROR: restart_vserver_dr failed" 
+		clean_and_exit 1
+	}	
 	if ( ( $ret=activate_vserver_dr -myController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne  $True ) {
 		Write-LogError "ERROR: activate_vserver_dr failed" 
 		clean_and_exit 1
@@ -2152,7 +2167,7 @@ if ( $Resync ) {
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
-	$ANS = Read-HostOptions "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] ?" "y/n"
+	$ANS = Read-HostOptions "Do you want to erase data on vserver [$VserverDR] [$SECONDARY_CLUSTER] with data available on [$Vserver] [$PRIMARY_CLUSTER] ?" "y/n"
 	if ( $ANS -ne 'y' ) {
 		clean_and_exit 0
 	}
@@ -2272,7 +2287,7 @@ if ( $UpdateReverse ) {
 	}
 	if ( $AllowQuotaDR -eq "True" ) {
 		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" -firstValueIsSpecial
-		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $Vserver ) -ne $True ) {
+		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryController $NcPrimaryCtrl -mySecondaryVserver $Vserver ) -ne $True ) {
  			Write-LogError "ERROR: save_quota_rules_to_quotadb failed"
  			clean_and_exit 1
 		}
