@@ -12,6 +12,7 @@ Mains objectives of this script are:
 - Create/Maintain/Manage SVM Disaster Relationship between NetApp MetroCluster for old version of **ONTAP** 8.3 to 9.X
 - Migrate SVM with old **ONTAP** version (SVM Migrate is officially supported with **ONTAP** since 9.4)
 - Backup and Restore all configuration (volumes, lif, cron, junction-path, etc...) to original or alternate cluster
+- Clone DR SVM which allows to test your DR SVM through a cloned version of it, without interrupting SnapMirror relationships during the test timeframe
 
 ### DR & Migration Purpose
 **All Supported Options**
@@ -70,9 +71,10 @@ Can be use to test Failover | Yes
 Use an MCC for source or destination or both | Yes
 Two differents DR destination | Yes
 DR inside the same cluster, between HA pair in different rooms | Yes
-Use Version Flexible SnapMirror when necessary<br>(by example: build a DR from 9.X to 8.3.2) | Yes
-Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the same,<br>so users will only have to reconnect just by refreshing explorer<br>or double-click on folder<br><span style="color:red">**MSID cannot be preserved if destination is on a MetroCluster**</span> | Yes
+Use Version Flexible SnapMirror when necessary<br>(by example: build a DR from 8.3.2 to 9.X) | Yes
+Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the same,<br>so users will only have to reconnect just by refreshing explorer<br>or double-click on folder<br> | Yes 
 Select subset of sources volumes that will be replicated | Yes
+Clone DR SVM<br>In order to test DR without interrupting SnapMirror relationships during the timeframe of the test | Yes
 
 ### BACKUP & RESTORE Purpose
 In order to perform a restore operation a minimal config must exist on the destination Cluster:
