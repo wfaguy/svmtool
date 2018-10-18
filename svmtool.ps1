@@ -32,6 +32,13 @@
 .PARAMETER Setup
     Used with Instance to create a new instance
     -Instance <instance name> -Setup
+.PARAMETER PrimaryCluster
+    Use for silent setup
+.PARAMETER SecondaryCluster
+    Use for silent setup
+.PARAMETER QuotaDR
+    Use for silent setup
+    Enables QuotaDR for this setup
 .PARAMETER Help
     Display help message
 .PARAMETER ResetPassword
@@ -54,7 +61,7 @@
     -Instance <instance name> -Vserver <vserver source name> -DeleteDR
 .PARAMETER DeleteSource
     During Migrate procedure, you could choose not to delete source SVM
-    In this case, souce SVM is only stopped
+    In this case, source SVM is only stopped
     Once everything has been test and validate on destination, you could safely delete the source SVM,
     by running DeleteSource step
 .PARAMETER RemoveDRconf
@@ -79,7 +86,7 @@
 	               If not specified, script will ask for
 .PARAMETER Migrate
     Allow to migrate a source SVM to destination SVM
-    ConfigureDR and UpdateDR should have already being successfull
+    ConfigureDR and UpdateDR should have already been successful
 	You could choose to cleanly delete source SVM
 	Destination SVM is started with source identity (IP address and CIFS server identity)
     -Instance <instance name> -Vserver <vserver source name> -Migrate [-ForceUpdateSnapPolicy]
@@ -107,8 +114,7 @@
     Allow to ignore a volume for which quota are currently set to off
     Used with ConfigureDR, UpdateDR and UpdateReverse
 .PARAMETER LastSnapshot
-    Optional argument
-    Allow to use the last snapshot available to update SnapMirror relationship
+    Deprecated
 .PARAMETER UpdateReverse
     Allow to update data and metadata during a DR test or crash un reverse order, from DR to source
     -Instance <instance name> -Vserver <vserver source name> -UpdateReverse
@@ -135,8 +141,8 @@
 .PARAMETER ForceUpdateSnapPolicy
 	Optional argument
 	Allow to forcibly update SnapShot Policy on destination volume, based on source Snapshot Policy
-	Warning:	If Source & Destination volume have different number of snapshot (XDP relationship)
-			This could cause the deletion of snapshot on destination
+	Warning: If Source & Destination volume have different number of snapshot (XDP relationship)
+			 This could cause the deletion of snapshot on destination
 .PARAMETER AlwaysChooseDataAggr
     Optional argument used to always ask to choose a Data Aggregate to store each Data volume
     Used with ConfigureDR only
@@ -147,7 +153,9 @@
     Force a manual update of all data only for a particular DR relationship in reverse order, DR SVM to Source SVM 
     -Instance <instance name> -Vserver <vserver source name> -ResyncReverse
 .PARAMETER ReActivate
-    Allow to reactivate a source SVM following a test or real crash managed with an ActivateDR
+    Allows to ReActivate a source SVM after a DR-test or RealLife Crash.  
+    This will ReverseActivateDR (Destination->Source) + Resync (Source->Destination), 
+    thus recovering the relationship to the original state (Source->Destination)
     -Instance <instance name> -Vserver <vserver source name> -ReActivate [-ForceUpdateSnapPolicy]
 .PARAMETER Version
     Display version of the script
@@ -174,6 +182,16 @@
 .PARAMETER DefaultLocalUserCredentials
     Optional argument to pass the credentials for local user create/update
     In NonInteractive Mode, we cannot prompt for user password.  If you want users to be created, the password from these credentials is used.
+.PARAMETER ActiveDirectoryCredentials
+    Optional argument to pass the credentials for joining AD in NonInteractive Mode during configureDR
+.PARAMETER TemporarySecondaryCifsIp
+    For cifs, sometimes a secondary lif is needed to join in Active Directory (duplicate ip conflict)
+    This ip address will be used to create that temporary lif
+    Must be used together with SecondaryCifsLifMaster
+.PARAMETER SecondaryCifsLifMaster
+    For cifs, sometimes a secondary lif is needed to join in Active Directory (duplicate ip conflict)
+    This lif will be used as a template to create a new temporary lif to complete this AD join
+    Must be used together with TemporarySecondaryCifsIp
 .PARAMETER NonInteractive
     Runs the script in Non Interactive Mode.  
     No confirmations and resource selection is automated
@@ -275,7 +293,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : October 5th, 2018
+    Version : October 8th, 2018
     Version History : 
         - 0.0.3 : Initial version 
         - 0.0.4 : Bugfix, typos and added ParameterSets
@@ -290,14 +308,20 @@
                   Added default usercredentials for noninteractive mode
                   Added smart resource selections (with regex and defaults) for noninteractive mode
                   Minor typos
-        - 0.1.0 : Adding log4net logging and WFA logging integration
+        - 0.1.0 : Adding log4net logging and WFA logging integration, setup can now run in noninteractive mode
+        - 0.1.1 : Bugfixes, added new cmdlet wrapper with official verbs
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
-	#[int32]$Debug = 0,
 
     [Parameter(Mandatory = $true, ParameterSetName='Setup')]
 	[switch]$Setup,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+	[string]$PrimaryCluster,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+	[string]$SecondaryCluster,
 
     [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
     [switch]$ConfigureDR,
@@ -356,7 +380,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
     [string]$MirrorScheduleReverse,
 
-    [Parameter(Mandatory = $true, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
     [switch]$DeleteSource,
 
@@ -397,6 +421,12 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='ReCreateQuota')]
     [Parameter(Mandatory = $true, ParameterSetName='InternalTest')]
     [string]$Vserver,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [string]$VserverDr,
+
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [switch]$QuotaDR,
 
     [Parameter(Mandatory = $true, ParameterSetName='Setup')]
     [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
@@ -503,6 +533,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Restore')]
 	[switch]$RW,
 
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -524,49 +555,11 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
 	[switch]$HTTP,
 
-    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
-    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
-    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
 	[switch]$NoLog,
-
-    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
-    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
-    [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
     [switch]$Silent,
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ListInstance')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -592,6 +585,7 @@ Param (
     [string]$LogLevelConsole="Info",
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
+    [Parameter(Mandatory = $false, ParameterSetName='ListInstance')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -635,8 +629,11 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
 	[Int32]$Timeout = 60,
 
+    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
@@ -659,9 +656,17 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-    [pscredential]$DefaultLocalUserCredentials=$null
+    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [pscredential]$DefaultLocalUserCredentials=$null,
 
-	#[Int32]$ErrorAction = 0
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [pscredential]$ActiveDirectoryCredentials=$null,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [string]$TemporarySecondaryCifsIp=$null,
+
+    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [string]$SecondaryCifsLifMaster=$null
 )
 
 #############################################################################################
@@ -672,17 +677,33 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.0.9"
+$Global:RELEASE="0.1.1"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
+$Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR+="\DB"
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
 $Global:START_TIMEOUT=360
 $Global:SINGLE_CLUSTER = $False
 $DebugPreference="SilentlyContinue"
 $VerbosePreference="SilentlyContinue"
-$ErrorActionPreference="SilentlyContinue"
+$ErrorActionPreference="Continue"
+if($WfaIntegration -or $UpdateDR -or $UpdateReverse){
+    $NonInteractive=$true
+}
+$Global:NonInteractive=$NonInteractive
+if($NonInteractive){
+    $AlwaysChooseDataAggr=$true
+}
+$Global:LogLevelConsole=$LogLevelConsole
+$Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
+$Global:WfaIntegration=$WfaIntegration
+$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
+$Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
 $Global:BACKUPALLSVM=$False
 $Global:NumberOfLogicalProcessor = (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
+if($Global:NumberOfLogicalProcessor -lt 4){
+    $Global:NumberOfLogicalProcessor = 4
+}
 $Global:maxJobs=100
 $Global:XDPPolicy=$XDPPolicy
 
@@ -704,14 +725,14 @@ $Global:ROOTLOGDIR=($Global:BASEDIR + '\log\')
 
 if($Backup -ne "") {
 	$Global:ROOTLOGDIR=($Global:ROOTLOGDIR + $Backup + '\')
-	if(Test-Path $Global:ROOTLOGDIR -eq $False){
+	if(-not (Test-Path $Global:ROOTLOGDIR)){
         New-Item -Path $Global:ROOTLOGDIR -ItemType "directory" -ErrorAction "silentlycontinue" | Out-Null
     }		
 }
 
 if($Restore -ne "") {
 	$Global:ROOTLOGDIR=($Global:ROOTLOGDIR + $Restore + '\')
-	if(Test-Path $Global:ROOTLOGDIR -eq $False){
+	if(-not (Test-Path $Global:ROOTLOGDIR)){
         New-Item -Path $Global:ROOTLOGDIR -ItemType "directory" -ErrorAction "silentlycontinue" | Out-Null
     }
 }
@@ -729,53 +750,67 @@ $Global:MOUNT_RETRY_COUNT = 100
 #############################################################################################
 # MAIN
 #############################################################################################
-$scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 $Path=$env:PSModulePath.split(";")
-if($Path -notcontains $scriptDir){
-    $Path+=$scriptDir
+if($Path -notcontains $PSScriptRoot){
+    $Path+=$PSScriptRoot
     $Path=[string]::Join(";",$Path)
     [System.Environment]::SetEnvironmentVariable('PSModulePath',$Path)
 }
 remove-module -Name svmtools -ErrorAction SilentlyContinue
-$module=import-module svmtools -PassThru
+$module=import-module "$PSScriptRoot\svmtools" -PassThru
 if ( $module -eq $null ) {
+        Write-Host "ERROR: Failed to load module SVMTOOLS" -ForegroundColor Red
         Write-Error "ERROR: Failed to load module SVMTOOLS"
         exit 1
 }
 if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
     $env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
 }
-$module=import-module -Name DataONTAP -PassThru
-if ( $module -eq $null ) {
-        Write-LogError "ERROR: DataONTAP module not found" 
-        clean_and_exit 1
+if(-not $WfaIntegration){
+    $module=import-module -Name DataONTAP -PassThru
+    if ( $module -eq $null ) {
+            Write-Error "ERROR: DataONTAP module not found" 
+            clean_and_exit 1
+    }
+}else{
+    $module=import-module "$PSScriptRoot\..\DataOntap" -PassThru
 }
-
 # initialize log4net, only needed once.
 init_log4net
 
 # appenders (logfile, eventviewer & console)
 $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log" -file $LOGFILE -threshold $LogLevelLogFile
 $masterEventViewerAppender = create_eventviewer_appender -name "eventviewer" -applicationname "svmtool"
-$consoleAppender = create_console_appender -name "console"
+$consoleAppender = create_console_appender -name "console" -threshold $LogLevelConsole
 
 # initialize logonly
-add_appender -loggerinstance "logonly" $masterLogFileAppender -threshold $LogLevelLogFile
-set_log_level -loggerinstance "logonly" -level "Info"
+add_appender -loggerinstance "logonly" $masterLogFileAppender
+set_log_level -loggerinstance "logonly" -level "All"
 $Global:MasterLog = get_logger -name "logonly" 
 
 # initialize console
-add_appender -loggerinstance "console" $masterLogFileAppender -threshold $LogLevelLogFile
+add_appender -loggerinstance "console" $masterLogFileAppender
 add_appender -loggerinstance "console" $masterEventViewerAppender
-add_appender -loggerinstance "console" $consoleAppender -threshold $LogLevelConsole
-set_log_level -loggerinstance "console" -level "Info"
+add_appender -loggerinstance "console" $consoleAppender 
+set_log_level -loggerinstance "console" -level "All"
 $Global:ConsoleLog = get_logger -name "console"
 
 check_ToolkitVersion 
 
-if($Silent){Write-Warn "The switch -Silent is deprecated, please use parameter -LogLevelConsole"}
-if($NoLog){Write-Warn "The switch -NoLog is deprecated, please use parameter -LogLevelLogFile"}
-if($DebugLevel){Write-Warn "The switch -DebugLevel is deprecated, please use parameters -LogLevelLogFile Debug or -LogLevelConsole Debug"}
+if($LastSnapshot){Write-Warn "The switch -LastSnapshot is deprecated, Cdot always transfers last snapshot"}
+if($Silent){
+    Write-Warn "The switch -Silent is deprecated, please use parameter -LogLevelConsole"
+    $LogLevelConsole = "Off"
+}
+if($NoLog){
+    Write-Warn "The switch -NoLog is deprecated, please use parameter -LogLevelLogFile"
+    $LogLevelLogFile = "Off"
+}
+
+if($DebugLevel){
+    Write-Warn "The switch -DebugLevel is deprecated, please use parameters -LogLevelLogFile Debug or -LogLevelConsole Debug"
+    $LogLevelLogFile = "Debug"
+}
 
 if ( ( check_init_setup_dir ) -eq $False ) {
         Write-LogError "ERROR: Failed to create new folder item: exit" 
@@ -805,7 +840,7 @@ Write-LogDebug "LogLevelLogFile   [$LogLevelLogFile]"
 Write-LogDebug "RW                [$RW]"
 
 if ( $ListInstance ) {
-	show_instance_list
+	show_instance_list -ResetPassword:$ResetPassword
 	clean_and_exit 0
 }
 
@@ -827,7 +862,12 @@ if ( $RemoveInstance ) {
 }
 
 if ( $Setup ) {
-	create_config_file_cli
+    if($Global:NonInteractive){
+        if(-not $PrimaryCluster -or -not $SecondaryCluster){
+            Write-LogError "ERROR : Setup in non interactive requires options PrimaryCluster, SecondaryCluster and optionally Vserver"
+        }
+    }
+	create_config_file_cli -primaryCluster $PrimaryCluster -secondaryCluster $SecondaryCluster
 	if ( ! $Vserver ) {
 		clean_and_exit 1
 	}
@@ -853,6 +893,9 @@ if ( $Backup ) {
 		Write-Log "Create new Config File"
         $ANS='n'
         while ( $ANS -ne 'y' ) {
+            if(-not $SVMTOOL_DB){
+                $SVMTOOL_DB = $Global:SVMTOOL_DB_DEFAULT
+            }
             $SVMTOOL_DB = Read-HostDefault -question  "Please enter Backup directory where configuration will be backup" -default $SVMTOOL_DB
             Write-Log "SVMTOOL Backup directory:  [$SVMTOOL_DB]"
             Write-Log ""
@@ -894,10 +937,10 @@ if ( $Backup ) {
         $SVMList=@($Vserver)   
     }
 	$iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $RunspacePool_Backup=[runspacefactory]::CreateRunspacePool(1, $NumberOfLogicalProcessor, $iss, $Host)
+    $RunspacePool_Backup=[runspacefactory]::CreateRunspacePool(1, $Global:NumberOfLogicalProcessor, $iss, $Host)
     $RunspacePool_Backup.Open()
     [System.Collections.ArrayList]$jobs = @()
-    $SVMcount=($SVMList | Measure-Object -Sum).Count
+    $SVMcount=$SVMList.Count
 	$Jobs_Backup = @()
 	$stopwatch=[system.diagnostics.stopwatch]::StartNew()
 	$numJobBackup=0
@@ -919,16 +962,18 @@ if ( $Backup ) {
                 [Parameter(Mandatory=$True)][String]$BackupDate,
 				[Parameter(Mandatory=$True)][String]$LOGFILE,
 				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
-                [Parameter(Mandatory=$True)][string]$LogLevelLogFile
+                [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
+                [boolean]$NonInteractive
 			)
             $ConsoleThreadingRequired=$true
-			$scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
-			if($Path -notcontains $scriptDir){
-				$Path+=$scriptDir
+			if($Path -notcontains $script_path){
+				$Path+=$script_path
 				$Path=[string]::Join(";",$Path)
 				[System.Environment]::SetEnvironmentVariable('PSModulePath',$Path)
 			}
+
+
 			$module=import-module svmtools -PassThru
 			if ( $module -eq $null ) {
 					Write-Error "ERROR: Failed to load module SVMTOOLS"
@@ -945,14 +990,29 @@ if ( $Backup ) {
             # appenders (logfile, eventviewer & console)
 
             $guid = ([guid]::NewGuid()).Guid
-            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE
-            $consoleAppender = create_console_appender -name "console_$guid"
+            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE -threshold $LogLevelLogFile
+            $consoleAppender = create_console_appender -name "console_$guid" -threshold $LogLevelConsole
 
             # initialize console
-            add_appender -loggerinstance "console_$guid" $masterLogFileAppender -threshold $LogLevelLogFile
-            add_appender -loggerinstance "console_$guid" $consoleAppender -threshold $LogLevelConsole
-            set_log_level -loggerinstance "console_$guid" -level "Debug"
+            add_appender -loggerinstance "console_$guid" $masterLogFileAppender
+            add_appender -loggerinstance "console_$guid" $consoleAppender
+            set_log_level -loggerinstance "console_$guid" -level "All"
             $Global:ConsoleLog = get_logger -name "console_$guid"
+
+            add_appender -loggerinstance "logonly_$guid" $masterLogFileAppender
+            set_log_level -loggerinstance "logonly_$guid" -level "All"
+            $Global:MasterLog = get_logger -name "logonly" 
+
+            $Global:NonInteractive=$NonInteractive
+
+            $module=get-module dataontap
+            if(-not $module){
+			    $module=import-module "$script_path\..\DataOntap" -PassThru
+			    if ( $module -eq $null ) {
+					    Write-LogError "ERROR: Failed to load module Netapp PSTK"
+					    exit 1
+			    }
+            }
 
 			check_create_dir -FullPath $LOGFILE -Vserver $myPrimaryVserver
 			Write-Log "[$myPrimaryVserver] Log File is [$LOGFILE]"
@@ -965,6 +1025,7 @@ if ( $Backup ) {
             if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
                 flush_log4net -loggerinstance "console_$guid"
+                flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			Write-LogDebug "create_vserver_dr correctly finished [$ret]"
@@ -973,6 +1034,7 @@ if ( $Backup ) {
     		if ( $? -ne $True ) { 
         		Write-LogDebug "ERROR: Get-NcQuota Failed"
                 flush_log4net -loggerinstance "console_$guid"	
+                flush_log4net -loggerinstance "logonly_$guid"
         		return $False
 			}
 			$AllQuotaRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuota.json") -Encoding ASCII -Width 65535
@@ -981,6 +1043,7 @@ if ( $Backup ) {
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuota.json")"
                 flush_log4net -loggerinstance "console_$guid"
+                flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			Write-Log "[$myPrimaryVserver] Check Quota Policy"
@@ -988,6 +1051,7 @@ if ( $Backup ) {
     		if ( $? -ne $True ) { 
 				Write-LogDebug "ERROR: Get-NcQuotaPolicy Failed"
                 flush_log4net -loggerinstance "console_$guid"
+                flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			$AllQuotaPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuotaPolicy.json") -Encoding ASCII -Width 65535
@@ -996,9 +1060,11 @@ if ( $Backup ) {
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuotaPolicy.json")"
                 flush_log4net -loggerinstance "console_$guid"
+                flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
             flush_log4net -loggerinstance "console_$guid"
+            flush_log4net -loggerinstance "logonly_$guid"
             return $True
 
         })
@@ -1006,7 +1072,7 @@ if ( $Backup ) {
         ## $createVserverBackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
         ## $codeBackup=$createVserverBackup.Ast.Body.Extent.Text
         [void]$BackupJob.AddScript($codeBackup)
-        [void]$BackupJob.AddParameter("script_path",$scriptDir)
+        [void]$BackupJob.AddParameter("script_path",$PSScriptRoot)
         [void]$BackupJob.AddParameter("myPrimaryController",$NcPrimaryCtrl)
         [void]$BackupJob.AddParameter("myPrimaryVserver",$svm)
 		[void]$BackupJob.AddParameter("SVMTOOL_DB",$SVMTOOL_DB)
@@ -1014,9 +1080,8 @@ if ( $Backup ) {
 		[void]$BackupJob.AddParameter("LOGFILE",$LOGFILE)
 		[void]$BackupJob.AddParameter("LogLevelLogFile",$LogLevelLogFile)
         [void]$BackupJob.AddParameter("LogLevelConsole",$LogLevelConsole)
+        [void]$BackupJob.AddParameter("NonInteractive",$NonInteractive)
 		$BackupJob.RunspacePool=$RunspacePool_Backup
-		#wait-debugger
-		#$Object = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
         $Handle=$BackupJob.BeginInvoke()
         $JobBackup = "" | Select-Object Handle, Thread, Name
         $JobBackup.Handle=$Handle
@@ -1131,11 +1196,11 @@ if ( $Restore ) {
     }
     #Loop to backup all SVM in List . Loop in RunspacePool
     $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $RunspacePool_Restore=[runspacefactory]::CreateRunspacePool(1, $NumberOfLogicalProcessor, $iss, $Host)
+    $RunspacePool_Restore=[runspacefactory]::CreateRunspacePool(1, $Global:NumberOfLogicalProcessor, $iss, $Host)
     $RunspacePool_Restore.Open()
     [System.Collections.ArrayList]$jobs = @()
     $stopwatch=[system.diagnostics.stopwatch]::StartNew()
-    $SVMcount=($SVMList | Measure-Object -Sum).Count
+    $SVMcount=$SVMList.Count
 	$Jobs_Restore = @()
 	$numJobRestore=0
     foreach($svm in $SVMList){
@@ -1184,13 +1249,13 @@ if ( $Restore ) {
 				[Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$DestinationController,
 				[Parameter(Mandatory=$True)][string]$VOLTYPE,
 				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
-                [Parameter(Mandatory=$True)][string]$LogLevelLogFile
+                [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
+                [boolean]$NonInteractive
             )
             $Global:ConsoleThreadingRequired=$true
-            $scriptDir=($PSCmdlet.SessionState.Path.CurrentLocation).Path
 			$Path=$env:PSModulePath.split(";")
-			if($Path -notcontains $scriptDir){
-				$Path+=$scriptDir
+			if($Path -notcontains $script_path){
+				$Path+=$script_path
 				$Path=[string]::Join(";",$Path)
 				[System.Environment]::SetEnvironmentVariable('PSModulePath',$Path)
 			}
@@ -1208,18 +1273,24 @@ if ( $Restore ) {
             # appenders (logfile, eventviewer & console)
 
             $guid = ([guid]::NewGuid()).Guid
-            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE
-            $consoleAppender = create_console_appender -name "console_$guid"
+            $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE -threshold $LogLevelLogFile
+            $consoleAppender = create_console_appender -name "console_$guid" -threshold $LogLevelConsole
 
             # initialize console
-            add_appender -loggerinstance "console_$guid" $masterLogFileAppender -threshold $LogLevelLogFile
-            add_appender -loggerinstance "console_$guid" $consoleAppender -threshold $LogLevelConsole
+            add_appender -loggerinstance "console_$guid" $masterLogFileAppender
+            add_appender -loggerinstance "console_$guid" $consoleAppender
             set_log_level -loggerinstance "console_$guid" -level "Debug"
             $Global:ConsoleLog = get_logger -name "console_$guid"
 
+            add_appender -loggerinstance "logonly_$guid" $masterLogFileAppender
+            set_log_level -loggerinstance "logonly_$guid" -level "All"
+            $Global:MasterLog = get_logger -name "logonly" 
+
+            $Global:NonInteractive=$NonInteractive
+
 			check_create_dir -FullPath $LOGFILE -Vserver $SourceVserver
 
-			$Global:SVMTOOL_DB=$SVMTOOL_DB
+            $Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$JsonPath
 			$Global:VOLUME_TYPE=$VOLTYPE
 			check_create_dir -FullPath $Global:JsonPath -Vserver $SourceVserver
@@ -1251,13 +1322,14 @@ if ( $Restore ) {
 				Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
 			}
             flush_log4net -loggerinstance "console_$guid"
+            flush_log4net -loggerinstance "logonly_$guid"
             return $True
         })
         $RestoreJob=[System.Management.Automation.PowerShell]::Create()
         ## $createVserverVackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
         ## $codeRestore=$createVserverVackup.Ast.Body.Extent.Text
         [void]$RestoreJob.AddScript($codeRestore)
-        [void]$RestoreJob.AddParameter("script_path",$scriptDir)
+        [void]$RestoreJob.AddParameter("script_path",$PSScriptRoot)
         [void]$RestoreJob.AddParameter("SourceVserver",$svm)
 		[void]$RestoreJob.AddParameter("SVMTOOL_DB",$SVMTOOL_DB)
 		[void]$RestoreJob.AddParameter("JsonPath",$JsonPath)
@@ -1270,6 +1342,7 @@ if ( $Restore ) {
 		}
 		[void]$RestoreJob.AddParameter("LogLevelLogFile",$LogLevelLogFile)
         [void]$RestoreJob.AddParameter("LogLevelConsole",$LogLevelConsole)
+        [void]$RestoreJob.AddParameter("NonInteractive",$NonInteractive)
 		$RestoreJob.RunspacePool=$RunspacePool_Restore
         $Handle=$RestoreJob.BeginInvoke()
         $JobRestore = "" | Select-Object Handle, Thread, Name, Log
@@ -1409,7 +1482,7 @@ if ( ( $Setup ) -or ( $read_vconf -eq $null ) ) {
 			Write-Log "[$Vserver] -> [$VserverPeer]"
 		}
 	}
-	create_vserver_config_file_cli -Vserver $Vserver -ConfigFile $VCONFFILE
+	create_vserver_config_file_cli -Vserver $Vserver -ConfigFile $VCONFFILE -VserverDr $VserverDr -QuotaDr:$QuotaDR
 	$read_vconf = read_config_file $VCONFFILE
 	if ( $read_vconf -eq $null ){
 		Write-LogError "ERROR: Failed to create $VCONFFILE "
@@ -1433,13 +1506,6 @@ $Global:ForceDeleteQuota=$ForceDeleteQuota
 $Global:ForceActivate=$ForceActivate
 $Global:ForceRecreate=$ForceRecreate
 $Global:ForceUpdateSnapPolicy=$ForceUpdateSnapPolicy
-$Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
-$Global:NonInteractive=$NonInteractive
-$Global:WfaIntegration=$WfaIntegration
-if($WfaIntegration){
-    $Global:NonInteractive=$true
-}
-$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
 $Global:AllowQuotaDr=$AllowQuotaDr
@@ -1480,11 +1546,7 @@ if ( $ShowDR ) {
 		$NcSecondaryCtrl = $null
 	}
 	Write-LogDebug "show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR"
-	if($MSID.IsPresent){
-		$ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -MSID
-	}else{
-		$ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR
-	}
+    $ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -MSID:$MSID -Lag:$Lag -Schedule:$Schedule
 	clean_and_exit 0
 }
 
@@ -1525,14 +1587,8 @@ if ( $ConfigureDR ) {
 			$XDPPolicy="MirrorAllSnapshots"
 		}
 	}
-    if($DRfromDR.IsPresent){
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ) {
-			clean_and_exit 1
-		}
-	}else{
-		if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ) {
-			clean_and_exit 1
-		}
+	if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR:$DRfromDR -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
+		clean_and_exit 1
 	}
   	if ( ( $ret=svmdr_db_switch_datafiles -myController $NcPrimaryCtrl -myVserver $Vserver ) -eq $false ) {
         	Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
@@ -1622,7 +1678,7 @@ if($Migrate){
     	# Write-LogError "ERROR: analyse_junction_path" 
 		# clean_and_exit 1
 	# }
-    Write-Warning "SVMTOOL script does not manage FCP configuration and SYMLINK"
+    Write-Warning "SVMTOOL script does not manage FCP configuration"
     Write-Warning "You will have to backup and recreate all these configurations manually after the Migrate step"
     Write-Warning "Files Locks are not migrated during the Migration process"
     $ASK_WAIT=Read-HostOptions -question "[$Vserver] Have all clients saved their work ?" -options "y/n" -default "y"
@@ -1641,26 +1697,14 @@ if($Migrate){
 			clean_and_exit 1
 		}
 
-		if ( $LastSnapshot.IsPresent ) {
-			$UseLastSnapshot = $True
-		} else {
-			$UseLastSnapshot = $False
-		}
 		if ( ( $ret=update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -NoInteractive) -ne $True ) {
 			    Write-LogError "ERROR: update_cifs_usergroup failed"   
 		}
-		if($DRfromDR.IsPresent){
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
-				Write-LogError "ERROR: update_vserver_dr failed" 
-				clean_and_exit 1
-			}
-		}else{
-			if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
-				Write-LogError "ERROR: update_vserver_dr failed" 
-				clean_and_exit 1
-			}
+		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR:$DRfromDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex ) -ne $True ) {
+			Write-LogError "ERROR: update_vserver_dr failed" 
+			clean_and_exit 1
 		}
-		
+
 
 		# if ( $MirrorSchedule ) {
 			# Write-LogDebug "Flag MirrorSchedule"
@@ -1844,7 +1888,7 @@ if( $DeleteSource ) {
         Write-Log "ERROR : SVM [$Vserver] not correctly migrated to destination [$SecondaryClusterName]. Failed to delete on source"
         clean_and_exit 1
     }else{
-        Write-Warning "[$Vserver] Delete Source SVM could not be interrupted or rollback"
+        Write-Warning "[$Vserver] Delete Source SVM cannot be interrupted or rolled back"
         $ASK_WAIT=Read-HostOptions -question "Do you want to completely delete [$Vserver] on [$PrimaryClusterName] ?" -options "y/n" -default "y"
         if($ASK_WAIT -eq 'y'){
             if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
@@ -1876,7 +1920,6 @@ if( $DeleteSource ) {
 }
 
 if ( $UpdateDR ) {
-    $Global:NonInteractive=$true
     $Run_Mode="UpdateDR"
 	Write-LogOnly "SVMDR UpdateDR"
 	# Connect to the Cluster
@@ -1909,22 +1952,12 @@ if ( $UpdateDR ) {
 		Write-LogError "ERROR: check_cluster_peer failed"
 		clean_and_exit 1
 	}
-	if ( $LastSnapshot.IsPresent ) {
-    		$UseLastSnapshot = $True
-	} else {
-    		$UseLastSnapshot = $False
+
+	if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR:$DRfromDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
+		Write-LogError "ERROR: update_vserver_dr failed" 
+			clean_and_exit 1
 	}
-	if($DRfromDR.IsPresent){
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
-			Write-LogError "ERROR: update_vserver_dr failed" 
-			 clean_and_exit 1
-		}
-	}else{
-		if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
-			Write-LogError "ERROR: update_vserver_dr failed" 
-			 clean_and_exit 1
-		}
-	}
+
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
     }
@@ -2217,23 +2250,11 @@ if ( $UpdateReverse ) {
 		Write-LogError "ERROR: check_cluster_peer" 
 		clean_and_exit 1
 	}
-	if ( $LastSnapshot.IsPresent ) {
-    		$UseLastSnapshot = $True
-	} else {
-    		$UseLastSnapshot = $False
+	if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR:$DRfromDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
+		Write-LogError "ERROR: update_vserver_dr" 
+		clean_and_exit 1 
 	}
-	if($DRfromDR.IsPresent){
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $True -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
-			Write-LogError "ERROR: update_vserver_dr" 
-			clean_and_exit 1 
-		}
-	}else{
-		if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -UseLastSnapshot $UseLastSnapshot -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
-			Write-LogError "ERROR: update_vserver_dr" 
-			clean_and_exit 1 
-		}
-	}
-	
+
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$Vserver]"
     }
@@ -2257,7 +2278,7 @@ if ( $UpdateReverse ) {
 	}
 	if ( $AllowQuotaDR -eq "True" ) {
 		Write-Log "[$VserverDR] Save quota policy rules to SVMTOOL_DB [$SVMTOOL_DB]" -firstValueIsSpecial
-		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $Vserver ) -ne $True ) {
+		if ( ( $ret=save_quota_rules_to_quotadb -myPrimaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryController $NcPrimaryCtrl -mySecondaryVserver $Vserver ) -ne $True ) {
  			Write-LogError "ERROR: save_quota_rules_to_quotadb failed"
  			clean_and_exit 1
 		}
@@ -2325,19 +2346,22 @@ if ( $InternalTest ) {
 	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
-	Write-LogDebug "Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
+	Write-Log "[test] Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
 	Write-LogDebug "connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
 	if ( ( $NcPrimaryCtrl =  connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
         	clean_and_exit 1
 	}
 	$myCred=get_local_cDotcred ($SECONDARY_CLUSTER)
+    $tmp_str=$myCred.Username
+    Write-Log "[test] Connect to cluster [$SECONDARY_CLUSTER] with login [$tmp_str]"
 	Write-LogDebug "connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
 	if ( ( $NcSecondaryCtrl =  connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         	clean_and_exit 1
 	}
-	if ( ( $ret=check_cluster_peer -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl ) -ne $True ) {
+    Write-Log "[test] Cluster Peer from cluster [$NcPrimaryCtrl] to cluster [$NcSecondaryCtrl]" 
+	if ( ( $ret=check_cluster_peer -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl) -ne $True ) {
 		Write-LogError "ERROR: check_cluster_peer failed"
 		clean_and_exit 1
 	}
