@@ -2267,7 +2267,7 @@ function Backup-SvmDr{
     ERROR: create_quota_rules_from_quotadb failed
 
 #>
-function Invoke-SvmDrClone{
+function New-SvmDrClone{
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
