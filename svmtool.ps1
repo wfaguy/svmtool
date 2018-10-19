@@ -761,7 +761,7 @@ $Global:MIN_REVISION = 0
 #############################################################################################
 $Global:RELEASE="0.1.1"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
-$Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR+="\DB"
+$Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
 $Global:START_TIMEOUT=360
