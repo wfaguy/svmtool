@@ -1229,7 +1229,7 @@ Function select_node_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController
 }
 
 #############################################################################################
-Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion,[string]$regExMatch,[string]$default,[boolean]$autoselect=$false) {
+Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myController, [string]$myQuestion,[string]$regExMatch,[string]$default,[bool]$autoselect=$false) {
     $ans='n'
     $ctrlName=$myController.Name
     $indexMatch=0
@@ -6418,6 +6418,7 @@ Function create_lif_dr(
     [switch] $UpdateLif,
     [bool]$Backup,
     [bool]$Restore,
+    [switch]$ForClone,
     [string]$nodeMatchRegEx)
  {
 Try {
@@ -6523,9 +6524,22 @@ Try {
                     $ANS1 = Read-HostOptions -question "[$mySecondaryVserver] Do you want to create the DRP LIF $LIF on cluster [$mySecondaryController] ?" -options "y/n" -default "y"
                     if ( $ANS1 -eq 'y' ) 
                     {
+                        $BackupOfGateway=""
+                        if($Global:NonInteractive -and $ForClone){
+                            $tmp1 = (Get-Random -minimum 0 -maximum 255)
+                            $tmp2 = (Get-Random -minimum 1 -maximum 254)
+                            $BackupOfGateway=$PrimaryGateway
+                            $PrimaryAddress = "169.254.$tmp1.$tmp2"
+                            $PrimaryNetMask = "255.255.0.0"
+                            $PrimaryGateway = ""
+                            Write-LogWarn "[$workOn] Working in non interactive for clone - creating APIPA address [$PrimaryAddress]"
+                        }
+
                         $myIpAddr=ask_IpAddr_from_cli -myIpAddr $PrimaryAddress -workOn $workOn
                         $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask -workOn $workOn
                         $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway -workOn $workOn
+                        
+
                         if($nodeMatchRegEx -ne ""){
                             $nodeRegEx=replace_regex_groupmatches -string $PrimaryCurrentNode -regex $nodeMatchRegEx -replacewith "(.*)"
                         }else{
@@ -6550,6 +6564,10 @@ Try {
                                 Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController"
                                 $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController  -ErrorVariable ErrorVar
 
+                            }
+                            if($BackupOfGateway){
+                                # set gateway back to original, to add routes
+                                $myGateway = $BackupOfGateway
                             }
                             Write-LogDebug "Get ONTAP version for [$mySecondaryController]"
                             Write-LogDebug "Get-NcSystemVersionInfo -Controller $mySecondaryController"
@@ -8121,12 +8139,20 @@ Try {
             if($TemporarySecondaryCifsIp -and $SecondaryCifsLifMaster){
                 Write-LogDebug "[$workOn] Create tmp lif to join AD [$SecondaryCifsLifMaster][$TemporarySecondaryCifsIp]"
                 $SecondaryCifsLifCreated=$false
-                $InterfaceMaster = Get-NcNetInterface $SecondaryCifsLifMaster -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                if($Global:NonInteractive -and $ForClone){
+                    Write-Log "[$workOn] Clone mode in non-interactive mode - getting netmask from primary"
+                    $InterfaceMasterPrimary = Get-NcNetInterface $SecondaryCifsLifMaster -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
+                    $InterfaceMaster = Get-NcNetInterface $SecondaryCifsLifMaster -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                }
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetInterface failed [$ErrorVar]" }
 		        if($InterfaceMaster){
 			        $TempInterfaceName=("tmp_lif_to_join_in_ad_" + $InterfaceMaster.InterfaceName)
-			        $TempIpAddress=$TemporarySecondaryCifsIp
-			        $InterfaceMasterNetMask=$InterfaceMaster.Netmask
+                    $TempIpAddress=$TemporarySecondaryCifsIp
+                    if($Global:NonInteractive -and $ForClone){
+                        $InterfaceMasterNetMask=$InterfaceMasterPrimary.Netmask
+                    }else{
+                        $InterfaceMasterNetMask=$InterfaceMaster.Netmask
+                    }
 			        $InterfaceMasterCurrentNode=$InterfaceMaster.CurrentNode
 			        $InterfaceMasterCurrentPort=$InterfaceMaster.CurrentPort
 			        $InterfaceMasterDataProtocols=$InterfaceMaster.DataProtocols
@@ -9450,11 +9476,13 @@ Try {
     $PrimaryRootVolumeSecurityStyle = $PrimaryVserver.RootVolumeSecurityStyle
     $PrimaryLanguage = $PrimaryVserver.Language
     $PrimaryAllowedProtocols=$PrimaryVserver.AllowedProtocols
+    $RootVolumeAggregate=$PrimaryVserver.RootVolumeAggregate
     $PrimaryComment=$($PrimaryVserver.Comment+"clone environment")
 
+    $Question = "[$workOn] Select an aggregate for the root volume"
     # this now works differently, we try to pick the best matching aggr and fall back to default
     if($aggrMatchRegEx -ne ""){
-        $dataAggrMatchRegex = replace_regex_groupmatches -string $PrimaryRootVolumeAggr -regex $aggrMatchRegEx -replacewith "(.*)"
+        $dataAggrMatchRegex = replace_regex_groupmatches -string $RootVolumeAggregate -regex $aggrMatchRegEx -replacewith "(.*)"
     }else{
         $dataAggrMatchRegex = ""
     }
@@ -9497,7 +9525,7 @@ Try {
     if ( ( $ret=create_update_efficiency_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Efficiency policy" ; $Return = $False }
     if ( ( $ret=create_update_firewallpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Firewall policy" ; $Return = $False }
     if ( ( $ret=create_update_role_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Role"}
-    if ( ( $ret=create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -nodeMatchRegEx $nodeMatchRegEx) -ne $True ) { Write-LogError "ERROR: Failed to create all LIF" ; $Return = $True }
+    if ( ( $ret=create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -ForClone -nodeMatchRegEx $nodeMatchRegEx) -ne $True ) { Write-LogError "ERROR: Failed to create all LIF" ; $Return = $True }
     if ( ( $ret=create_update_localuser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all local user"}
     if ( ( $ret=create_update_localunixgroupanduser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all Local Unix User and Group"}
     if ( ( $ret=create_update_usermapping_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create User Mapping"}
@@ -9625,7 +9653,7 @@ Try {
 
 
             Write-Log "[$workOn] Create new vserver"
-            $Question = "[$mySecondaryVserver] Please Select root aggregate on Cluster [$MySecondaryController]:"
+            $Question = "[$workOn] Please Select root aggregate on Cluster [$MySecondaryController]:"
 
             # this now works differently, we try to pick the best matching aggr and fall back to default
             if($aggrMatchRegEx -ne ""){

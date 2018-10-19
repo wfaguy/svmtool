@@ -2184,7 +2184,7 @@ if ( $DeleteCloneDR ){
         clean_and_exit 0
 	}
 	foreach ($CloneVserver in $CloneVserverList){
-		$ANS=Read-HostOptions "Are you sure you want to delete Vserver Clone [$CloneVserver] from [$SECONDARY_CLUSTER] ?" "y/n"
+		$ANS=Read-HostOptions "Are you sure you want to delete Vserver Clone [$CloneVserver] from [$SECONDARY_CLUSTER] ?" "y/n" -default "y"
 		if ( $ANS -eq 'y' ) {
 			if ( ( $ret=remove_vserver_clone_dr -mySecondaryController $NcSecondaryCtrl -mySecondaryVserver $CloneVserver ) -eq $False ) {
 				Write-LogError "ERROR: remove_vserver_dr: Unable to remove Vserver [$VserverDR]" 
