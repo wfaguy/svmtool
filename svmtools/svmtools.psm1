@@ -4551,7 +4551,8 @@ Catch {
         }
     }
 	$IPsource=$lifssource  | ForEach-Object {$_.Address}
-	$set=$false
+    $set=$false
+    $SameIP=@()
 	foreach($lif in $lifsdest){
         $lif_name=$lif.InterfaceName
 		$lif_ip=$lif.Address
@@ -4562,9 +4563,14 @@ Catch {
 				Write-LogDebug "ERROR: failed to set lif [$lif_name] into state [$sate] reason [$ErrorVar]"
 			}
 			$set=$true
-		}
+		}elseif($state -eq "up"){
+            Write-LogDebug "Cannot set LIF [$lif_name] to up because it as same IP address [$lif_ip] as LIF on source"
+            $SameIP+=$lif_ip
+        }
     }
-
+    if($set -eq $false -and $SameIP.count -ge 1){
+        Write-Warning "You need to change IP address on secondary [$SameIP], which is in conflict with source IP address"
+    }
     if($AfterMigrate.IsPresent){
         return $True
     }else{
@@ -6116,7 +6122,7 @@ Try {
     $Return = $True 
     Write-LogDebug "create_snapmirror_dr[$myPrimaryVserver]: start"
     if($Backup -eq $True -or $Restore -eq $True){
-        Write-LogDebug "Backup or Restore mode does create any SnapMirror Relationship"
+        Write-LogDebug "Backup or Restore mode does not create any SnapMirror Relationship"
         Write-LogDebug "create_snapmirror_dr[$myPrimaryVserver]: end"
         return $Return
     }
@@ -8934,7 +8940,6 @@ Function show_vserver_dr (
     [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
     [string] $myPrimaryVserver,
     [string] $mySecondaryVserver,
-    [switch] $MSID,
     [switch] $lag,
     [switch] $schedule) 
 {
@@ -9221,18 +9226,19 @@ Function show_vserver_dr (
                     $SecondaryVolMSID=$SecondaryVol.VolumeIdAttributes.Msid
                     $PrimaryVolAttr="${PrimaryVolName}:${PrimaryVolStyle}:${PrimaryVolLang}:${PrimaryVolExportPolicy}:${PrimaryVolJunctionPath}"
                     $SecondaryVolAttr="${SecondaryVolName}:${SecondaryVolStyle}:${SecondaryVolLang}:${SecondaryVolExportPolicy}:${SecondaryVolJunctionPath}"
-                    if($MSID){
-                        if ( ($PrimaryVolAttr -eq $SecondaryVolAttr) -and ( $SecondaryVolMSID -eq $PrimaryVolMSID) ) 
-                        {
-                            Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]"
-                            Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n"
-                        }
-                        else{
-                            Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]" 
-                            Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" 
-                        }
-                    } 
-                    elseif ($PrimaryVolAttr -eq $SecondaryVolAttr)
+                    #if($MSID){
+                    #    if ( ($PrimaryVolAttr -eq $SecondaryVolAttr) -and ( $SecondaryVolMSID -eq $PrimaryVolMSID) ) 
+                    #    {
+                    #        Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]"
+                    #        Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n"
+                    #    }
+                    #    else{
+                    #        Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType] [$PrimaryVolMSID]" 
+                    #        Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType] [$SecondaryVolMSID]`n" 
+                    #    }
+                    #} 
+                    #elseif ($PrimaryVolAttr -eq $SecondaryVolAttr)
+                    if ($PrimaryVolAttr -eq $SecondaryVolAttr)
                     {
                         Format-ColorBrackets "Primary:   [$PrimaryVolAttr] [$PrimaryVolType]" 
                         Format-ColorBrackets "Secondary: [$SecondaryVolAttr] [$SecondaryVolType]`n"
@@ -9737,16 +9743,18 @@ Try {
         if($Backup -eq $False -and $Restore -eq $False){
             if ( ( $ret=wait_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) { Write-LogError "ERROR: Failed snapmirror relations bad status " ; $Return = $False }
         }
-        #Wait-Debugger
-        if ( ( $ret=mount_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to mount all volumes " ; $Return = $False }
-        #Wait-Debugger
+        if($Restore -eq $True -and $Global:VOLUME_TYPE -eq "DP"){
+            Write-Log "Junction-Path of Volume cannot be modified if restored as DP volume. You will have to mount them once data restored through snapmirror"
+            Write-LogDebug "Junction-Path cannot be modified fo DP volume"
+        }else{
+            if ( ( $ret=mount_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to mount all volumes " ; $Return = $False }
+        }
         if($Backup -eq $False){
             if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -workOn $workOn  -state up -Backup $runBackup -Restore $runRestore) -ne $True ) {
                 Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
                 $Return=$False
             }
         }
-        #Wait-Debugger
         if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){ # skip on interactive or no default creds
             if ( ( $ret=update_cifs_usergroup -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) {
 			    Write-LogError "ERROR: update_cifs_usergroup failed" 
@@ -11340,7 +11348,7 @@ Function resync_reverse_vserver_dr (
                         Write-LogDebug "New-NcSnapmirror -Type XDP -policy $XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController "
         			    $relation=New-NcSnapmirror -Type vault -policy $XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
-                        Write-Log "Reverse resync [${DestinationCluster}://${DestinationVserver}/$DestinationVolume] -> [${SourceCluster}://${SourceVserver}/$SourceVolume]"
+                        #Write-Log "Reverse resync [${DestinationCluster}://${DestinationVserver}/$DestinationVolume] -> [${SourceCluster}://${SourceVserver}/$SourceVolume]"
                         Write-LogDebug "Invoke-NcSnapmirrorResync -Source $DestinationLocation -Destination $SourceLocation  -Controller $myPrimaryController"
 				        $out=Invoke-NcSnapmirrorResync -Source $DestinationLocation -Destination $SourceLocation -Controller $myPrimaryController  -ErrorVariable ErrorVar
 				        if ( $? -ne $True ){Write-LogError "ERROR: snapmirror Resync Failed";$Return = $False}
@@ -11906,9 +11914,8 @@ Function svmdr_db_switch_datafiles (
     [switch] $Backup) {
 Try {
     $Return = $True
-    Write-Log "[$myVserver] Switch Datafiles"
     Write-LogDebug "svmdr_db_switch_datafiles: start"
-    Write-Log "svmdr_db_switch_datafiles: [$Global:SVMTOOL_DB]"
+    Write-Log "[$myVserver] svmdr_db_switch_datafiles: [$Global:SVMTOOL_DB]"
     if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {
             $out=new-item -Path $Global:SVMTOOL_DB -ItemType directory
             if ( ( Test-Path $Global:SVMTOOL_DB -pathType container ) -eq $false ) {

@@ -43,7 +43,7 @@ QoS Policy Group | Yes
 Vscan Policy | Yes
 Fpolicy | Yes
 CIFS Local User & Group | Yes
-CIFS Symlink | No
+CIFS Symlink | Yes
 Name Mapping | Yes
 Local Unix User & Group | Yes
 Vserver User & Role | Yes

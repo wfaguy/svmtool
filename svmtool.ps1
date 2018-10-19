@@ -51,11 +51,10 @@
     -Instance <instance name> -Vserver <vserver source name> -ConfigureDR [-SelectVolume]
 .PARAMETER ShowDR
     Allow to display all informations for a particular SVM DR relationship
-    -Instance <instance name> -Vserver <vserver source name> -ShowDR [-Lag] [-schedule] [-MSID]
+    -Instance <instance name> -Vserver <vserver source name> -ShowDR [-Lag] [-schedule]
     Optional parameters:
         Lag      : display lag beetween last transfert
 		Schedule : display automatic schedule set on SnapMirror relationship
-		MSID     : display volume MSID
 .PARAMETER DeleteDR
     Allow to delete a SVM DR relationship, by deleting all data and object associated to the DR SVM
     -Instance <instance name> -Vserver <vserver source name> -DeleteDR
@@ -132,7 +131,7 @@
 	A new temporary Vserver will be created on destination Cluster (named <destination-vserver>_clone)
 	All destination volumes will be cloned as RW volumes and hosted into this new temporary Vserver
 	This allows testing the DR without interrupting SnapMirror relationship between Source Vserver and Destination Vserver
-	-Instance <instance name> -Vserver <vserver source name> -CloneDR [-DataAggr <default data aggregate name>] [-DefaultPass] [-RootAggr <default svm rootvol aggregate name>]
+	-Instance <instance name> -Vserver <vserver source name> -CloneDR [-DefaultPass] [-RootAggr <default svm rootvol aggregate name>]
 .PARAMETER SplitCloneDR
 	Split a Cloned Vserver
 .PARAMETER DeleteCloneDR
@@ -268,13 +267,12 @@
 
 	Following an ActivateDR, restart production on source SVM
 .EXAMPLE
-	svmtools.ps1 -Instance test -Vserver source_svm -ShowDR [-Schedule] [-Lag] [-MSID]
+	svmtools.ps1 -Instance test -Vserver source_svm -ShowDR [-Schedule] [-Lag]
 
 	Display status and details of source SVM object and destination SVM object, as well as all SnapMirror relatiohships
 	Use color to display destination volume different from source
 	With option -Schedule, it also display SnapMirror schedule that is set
 	With option -Lag, it also display SnapMirror Lag
-	With option -MSID, it also display volume MSID
 .EXAMPLE
 	svmtool.ps1 -Instance test -Vserver svm_source -Migrate -ForceUpdateSnapPolicy
 
@@ -521,7 +519,6 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
-	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
   	[string]$DataAggr,
@@ -571,8 +568,6 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
 	[switch]$ForceRestart,
 
-	[Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-	[switch]$MSID,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
   	[switch]$Lag,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -1344,18 +1339,18 @@ if ( $Restore ) {
             param(
                 [Parameter(Mandatory=$True)][string]$script_path,
                 [Parameter(Mandatory=$True)][string]$SourceVserver,
-		[Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
+				[Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
                 [Parameter(Mandatory=$True)][String]$JsonPath,
                 [Parameter(Mandatory=$True)][String]$LOGFILE,
                 [Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$DestinationController,
                 [Parameter(Mandatory=$True)][string]$VOLTYPE,
-		[Parameter(Mandatory=$False)][pscredential]$DefaultLocalUserCredentials,
-		[Parameter(Mandatory=$False)][pscredential]$ActiveDirectoryCredentials,
-		[Parameter(Mandatory=$False)][string]$TemporarySecondaryCifsIp,
-		[Parameter(Mandatory=$False)][string]$SecondaryCifsLifMaster,
+				[Parameter(Mandatory=$False)][pscredential]$DefaultLocalUserCredentials,
+				[Parameter(Mandatory=$False)][pscredential]$ActiveDirectoryCredentials,
+				[Parameter(Mandatory=$False)][string]$TemporarySecondaryCifsIp,
+				[Parameter(Mandatory=$False)][string]$SecondaryCifsLifMaster,
                 [Parameter(Mandatory=$False)][string]$RootAggr,
                 [Parameter(Mandatory=$False)][string]$DataAggr,        
-		[Parameter(Mandatory=$True)][string]$LogLevelConsole,
+				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
                 [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
                 [boolean]$NonInteractive
             )
@@ -1666,7 +1661,7 @@ if ( $ShowDR ) {
 		$NcSecondaryCtrl = $null
 	}
 	Write-LogDebug "show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR"
-    $ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -MSID:$MSID -Lag:$Lag -Schedule:$Schedule
+    $ret=show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -Lag:$Lag -Schedule:$Schedule
 	clean_and_exit 0
 }
 
