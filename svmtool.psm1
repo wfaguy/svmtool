@@ -2130,6 +2130,286 @@ function Backup-SvmDr{
 
     invokeSvmtool -ParameterList ([ref]$ParameterList) -Add "-Backup $Cluster" -Drop "Cluster"
 }
+
+<#
+.Synopsis
+    Makes a clone from the DR vserver.
+.DESCRIPTION
+	Makes a clone from the DR vserver.
+    It tries to make an exact copy and use flexclone to clone the volumes
+.NOTES
+    If ran in non-interactive mode we will assume identical ip's
+    However, that will result in duplicate ip's
+    So, in that case, private APIPA ip's are generated
+
+    The Aggregate Regex and/or RootAggr can be used for root aggregate selection
+    And the Node Regex for lif ports, but since this is a clone, an exact match is always found
+
+    Default credentials can also be passed when working in non-interactive mode
+
+.EXAMPLE
+
+    Invoke-SvmDrClone -Instance reverse -Vserver cifs -AggrMatchRegex ".*" -NodeMatchRegex "(.*)-[0-9]{2}" -DefaultLocalUserCredentials tmp -ActiveDirectoryCredentials administrator -TemporarySecondaryCifsIp 172.16.55.66 -SecondaryCifsLifMaster cifs -NonInteractive
+
+    Windows PowerShell credential request
+    Enter your credentials.
+    Password for user tmp: ********
+
+    Windows PowerShell credential request
+    Enter your credentials.
+    Password for user administrator: ********
+
+    Create Clone SVM [cifs-dr_clone.0]
+    [cifs-dr_clone.0] Check SVM configuration
+    [cifs-dr_clone.0] Select an aggregate for the root volume
+            [1] : [aggr2]   [r2d2-01]       [28 GB]
+            [2] : [aggr1]   [r2d2-01]       [14 GB]
+    Default found based on regex [aggr1]
+    [r2d2] Select Aggr 1-2 [2] : -> 2
+    [r2d2] You have selected the aggregate [aggr1] ? [y/n] : -> y
+    [cifs-dr_clone.0] create Clone vserver : [svm_root] [c.utf_8] [r2d2] [aggr1]
+    [cifs-dr_clone.0] Check SVM options
+    [c3po] Check Cluster Cron configuration
+    [cifs-dr_clone.0] Check SVM Export Policy
+    [cifs-dr_clone.0] Export Policy [default] already exists
+    [cifs-dr_clone.0] Check SVM Efficiency Policy
+    [cifs-dr_clone.0] Sis Policy [auto] already exists and identical
+    [cifs-dr_clone.0] Sis Policy [default] already exists and identical
+    [cifs-dr_clone.0] Sis Policy [inline-only] already exists and identical
+    [cifs-dr_clone.0] Check SVM Firewall Policy
+    [cifs-dr_clone.0] Check Role
+    [cifs-dr_clone.0] Check SVM LIF
+    [cifs-dr_clone.0] Do you want to create the DRP LIF [cifs] [172.16.0.178] [255.255.0.0] [] [c3po-01] [e0c-16] on cluster [r2d2] ? [y/n] : -> y
+    [cifs-dr_clone.0] Working in non interactive for clone - creating APIPA address [169.254.186.199]
+    [cifs-dr_clone.0] Please Enter a valid IP Address [169.254.186.199] : -> 169.254.186.199
+    [cifs-dr_clone.0] Please Enter a valid IP NetMask [255.255.0.0] : -> 255.255.0.0
+    [cifs-dr_clone.0] Please Enter a valid Default Gateway Address [] : ->
+    Please select secondary node for LIF [cifs] :
+            [1] : [r2d2-01]
+    Default found based on regex [(.*)-01]
+    Select Node 1-1 [1] : -> 1
+    Please select Port for LIF [cifs] on node [r2d2-01]
+            [1] : [e0a] role [data] status [up] broadcastdomain []
+            [2] : [e0b] role [data] status [up] broadcastdomain []
+            [3] : [e0c] role [node_mgmt] status [up] broadcastdomain []
+            [4] : [e0c-16] role [node_mgmt] status [up] broadcastdomain [vlan-16]
+            [5] : [e0c-17] role [node_mgmt] status [up] broadcastdomain [vlan-17]
+            [6] : [e0c-18] role [node_mgmt] status [up] broadcastdomain [vlan-18]
+            [7] : [e0c-19] role [node_mgmt] status [up] broadcastdomain [vlan-19]
+            [8] : [e0d] role [data] status [up] broadcastdomain [thuis]
+    Default found based on exact match [vlan-16][e0c-16]
+    Select Port 1-8 [4] : -> 4
+    [cifs-dr_clone.0] Ready to create the LIF [cifs] [169.254.186.199] [255.255.0.0] [] [r2d2-01] [e0c-16] ? [y/n] : -> y
+    [cifs-dr_clone.0] Create the LIF [cifs] [169.254.186.199] [255.255.0.0] [] [r2d2-01] [e0c-16]
+    [cifs-dr_clone.0] Do you want to create the DRP LIF [cifs2] [192.168.96.178] [255.255.255.0] [] [c3po-01] [e0d]
+    on cluster [r2d2] ? [y/n] : -> y
+    [cifs-dr_clone.0] Working in non interactive for clone - creating APIPA address [169.254.235.89]
+    [cifs-dr_clone.0] Please Enter a valid IP Address [169.254.235.89] : -> 169.254.235.89
+    [cifs-dr_clone.0] Please Enter a valid IP NetMask [255.255.0.0] : -> 255.255.0.0
+    [cifs-dr_clone.0] Please Enter a valid Default Gateway Address [] : ->
+    [cifs-dr_clone.0] Check SVM Users
+    [cifs-dr_clone.0] Add user [mirko] [http] [password] [vsadmin] [False]
+    [cifs-dr_clone.0] Please Enter password for user [mirko]
+    [cifs-dr_clone.0] Password extracted from default credentials [tmp]
+    [cifs-dr_clone.0] Check SVM Name Mapping
+    [cifs-dr_clone.0] Check Local Unix User
+    [cifs-dr_clone.0] Modify Local Unix User [nobody] [65535] [65535] [] on [cifs-dr_clone.0]
+    [cifs-dr_clone.0] Modify Local Unix User [pcuser] [65534] [65534] [] on [cifs-dr_clone.0]
+    [cifs-dr_clone.0] Modify Local Unix User [root] [0] [1] [] on [cifs-dr_clone.0]
+    [cifs-dr_clone.0] Check Local Unix Group
+    [cifs-dr_clone.0] Check User Mapping
+    [cifs-dr_clone.0] Check SVM DNS configuration
+    [cifs-dr_clone.0] Check SVM LDAP configuration
+    [cifs-dr_clone.0] Check SVM NIS configuration
+    [cifs-dr_clone.0] No NIS service found on Vserver [cifs]
+    [cifs-dr_clone.0] Check SVM NFS configuration
+    [cifs-dr_clone.0] No NFS services in vserver [cifs]
+    [cifs-dr_clone.0] Check SVM iSCSI configuration
+    [cifs-dr_clone.0] No ISCSI services in vserver [cifs]
+    [cifs-dr_clone.0] Check SVM CIFS Sever configuration
+    [cifs-dr_clone.0] Add CIFS Server in Vserver DR : [cifs-dr_clone.0] [r2d2]
+    [cifs-dr_clone.0] Clone CIFS server name set to [cifs-dr_clone.0]
+    [cifs-dr_clone.0] Clone mode in non-interactive mode - getting netmask from primary
+    [cifs-dr_clone.0] Create the LIF [tmp_lif_to_join_in_ad_cifs] (cloning from cifs)
+    [cifs-dr_clone.0] LIF [tmp_lif_to_join_in_ad_cifs] is the Temp Cifs LIF, it must be in Administrative up status
+    [cifs-dr_clone.0] Cifs server is joined, Removing tmp lif
+    [cifs-dr_clone.0] Check SVM CIFS Server options
+    WARNING: 'KerberosKdcTimeout' parameter is not available for Data ONTAP 9.0 and up. Ignoring 'KerberosKdcTimeout'.
+    [cifs-dr_clone.0] Check SVM iGroup configuration[cifs-dr_clone.0] No igroup found on cluster [c3po]
+    [cifs-dr_clone.0] Check SVM VSCAN configuration
+    [cifs-dr_clone.0] Check SVM FPolicy configuration
+    [cifs-dr_clone.0] Create Clones
+    [cifs-dr_clone.0] Create Flexclone [vol1] from SVM [cifs-dr]
+    [cifs-dr_clone.0] Check SVM Volumes options
+    [cifs-dr_clone.0] Check SVM QOS configuration
+    [cifs-dr_clone.0] Check SVM Snapshot Policy
+    [cifs-dr_clone.0] Check SVM Volumes Junction-Path configuration
+    [cifs-dr_clone.0] Modify Junction Path for [vol10]: from [] to [/vol10]
+    [cifs-dr_clone.0] Modify Junction Path for [vol1]: from [] to [/vol1]
+    [cifs-dr_clone.0] Update CIFS Local User & Local Group
+    [cifs-dr_clone.0] Do you want to reset Password for User [CIFS-DR_CLONE.0\Administrator] on [cifs-dr_clone.0]? [y/n] : -> n
+    [cifs-dr_clone.0] Please Enter password for CIFS Local User [CIFS-DR_CLONE.0\testuserke]
+    [cifs-dr_clone.0] Password extracted from default credentials [tmp]
+    [cifs-dr_clone.0] Please Enter password for CIFS Local User [CIFS-DR_CLONE.0\useros1]
+    [cifs-dr_clone.0] Password extracted from default credentials [tmp]
+    [cifs-dr_clone.0] Check SVM CIFS shares
+    [cifs-dr_clone.0] Create share [vol1]
+    [cifs-dr_clone.0] Check LUN Mapping
+    [cifs-dr_clone.0] Check LUN Serial Number
+    [cifs-dr_clone.0] Check Qtree
+    [cifs-dr_clone.0] No ISCSI services in vserver
+    [cifs-dr_clone.0] No NFS services in vserver
+    [cifs-dr_clone.0] Set volumes options from SVMTOOL_DB [C:\Scripts\SVMTOOL]
+    ERROR: Cluster [r2d2] not found in SVMTOOL_DB [C:\Scripts\SVMTOOL]
+    ERROR: set_vol_options_from_voldb failed
+    [cifs-dr] Create Quota policy rules from SVMTOOL_DB [C:\Scripts\SVMTOOL]
+    ERROR: Cluster [r2d2] found in SVMTOOL_DB [C:\Scripts\SVMTOOL]
+    ERROR: create_quota_rules_from_quotadb failed
+
+#>
+function Invoke-SvmDrClone{
+    [CmdletBinding()]
+    param(
+        # The unique name, referencing the relationship between the 2 clusters.
+        [Parameter(Mandatory = $true)]
+	    [string]$Instance,
+
+        # The source vserver
+        [Parameter(Mandatory = $true)]
+        [string]$Vserver,
+
+        # Optional, makes an aggregate suggestion for the root volume
+        [string]$RootAggr,
+
+        # Optional, A regular expression to map source aggregate to destination aggregate
+        # Use regex-groups (wrap in brackets) to create wildcards
+        #   - 1 on 1 match : ".*" => (src = * ; dst = src)
+        #   - string replace : "ep(.*)snas[0-9]*_aggr[0-9]*" => (src = ep*snas54_aggr1 ; dst = ep*snas54_aggr1)
+        [regex]$AggrMatchRegex,
+
+        # Optional, A regular expression to map source node to destination node (for lif-port selection)
+        # Use regex-groups (wrap in brackets) to create wildcards
+        #   - node number match : "(.*)-[0-9]{2}" => (src = *-03 ; dst = *-03)
+        [regex]$NodeMatchRegex,
+
+        # Optional, this SvmDr solution cannot transfer the passwords of local users (cifs, cluster)
+        # In Non-Interactive Mode, the script cannot create missing users
+        # If you pass this parameter, the password will used to create missing users
+        [pscredential]$DefaultLocalUserCredentials,
+
+        # Optional, when running in Non-Interactive mode, this script cannot prompt for AD credentials
+        # Use this parameter to join the dr vserver in AD without interaction
+        [pscredential]$ActiveDirectoryCredentials,
+
+        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # By passing an temporary ip-address and in combination with parameter "SecondaryCifsLifMaster"
+        # A temporary lif will be created to join the vserver dr in AD
+        [string]$TemporarySecondaryCifsIp,
+
+        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # So we will clone the lif that is passed in this parameter (using same port and options)
+        # Use this in combination with parameter "TemporarySecondaryCifsIp"
+        # A temporary lif will be created to join the vserver dr in AD
+        [string]$SecondaryCifsLifMaster,
+
+        # Loglevel of the console output
+	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+        [string]$LogLevelConsole="Info",
+
+        # Loglevel of the logfile output
+	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+        [string]$LogLevelLogFile="Info",
+
+        # Enables Non-Interactive Mode
+        # Is default enabled in Wfa-Integration Mode
+        [switch]$NonInteractive,
+
+        # Enables OnCommand Workflow Automation (WFA) Integration
+        [switch]$WfaIntegration,
+
+        # Enables HTTP mode (default HTTPS)
+	    [switch]$HTTP,
+	    [Int32]$Timeout = 60
+    )
+
+
+    $CommandName = $PSCmdlet.MyInvocation.InvocationName;
+    $ParameterList = (Get-Command -Name $CommandName).Parameters;
+
+    invokeSvmtool -ParameterList ([ref]$ParameterList) -Action "CloneDR"
+}
+
+<#
+.Synopsis
+    Deletes a Vserver Dr Clone
+.DESCRIPTION
+	Deletes a Vserver Dr Clone
+
+.EXAMPLE
+
+    Remove-SvmDrClone -Instance reverse -Vserver cifs -CloneName cifs-dr_clone.0 -NonInteractive
+    
+    Are you sure you want to delete Vserver Clone [cifs-dr_clone.0] from [r2d2] ? [y/n] : -> y
+    [cifs-dr_clone.0] Remove volume [vol1]
+    [cifs-dr_clone.0] Remove volume [vol10]
+    [cifs-dr_clone.0] Remove volume [vol2]
+    [cifs-dr_clone.0] Remove volume [vol3]
+    [cifs-dr_clone.0] Remove volume [vol4]
+    [cifs-dr_clone.0] Remove volume [vol5]
+    [cifs-dr_clone.0] Remove volume [vol6]
+    [cifs-dr_clone.0] Remove volume [vol7]
+    [cifs-dr_clone.0] Remove volume [vol8]
+    [cifs-dr_clone.0] Remove volume [vol9]
+    [cifs-dr_clone.0] Remove root volume [svm_root]
+    [cifs-dr_clone.0] Remove CIFS server
+    [cifs-dr_clone.0] Stop SVM
+    [cifs-dr_clone.0] Remove SVM
+
+#>
+function Remove-SvmDrClone{
+    [CmdletBinding()]
+    param(
+        # The unique name, referencing the relationship between the 2 clusters.
+        [Parameter(Mandatory = $true)]
+	    [string]$Instance,
+
+        # The source vserver
+        [Parameter(Mandatory = $true)]
+        [string]$Vserver,
+
+        # The name of the clone to delete
+        [Parameter(Mandatory = $true)]
+        [string]$CloneName,
+
+        # Loglevel of the console output
+	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+        [string]$LogLevelConsole="Info",
+
+        # Loglevel of the logfile output
+	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
+        [string]$LogLevelLogFile="Info",
+
+        # Enables Non-Interactive Mode
+        # Is default enabled in Wfa-Integration Mode
+        [switch]$NonInteractive,
+
+        # Enables OnCommand Workflow Automation (WFA) Integration
+        [switch]$WfaIntegration,
+
+        # Enables HTTP mode (default HTTPS)
+	    [switch]$HTTP,
+	    [Int32]$Timeout = 60
+    )
+
+
+    $CommandName = $PSCmdlet.MyInvocation.InvocationName;
+    $ParameterList = (Get-Command -Name $CommandName).Parameters;
+
+    invokeSvmtool -ParameterList ([ref]$ParameterList) -Action "DeleteCloneDR"
+}
+
 <#
 .Synopsis
     Restores Cluster and Vserver information from previously created Json-files
@@ -2149,7 +2429,7 @@ function Backup-SvmDr{
 
 .EXAMPLE 
 
-    Clear-SvmDrReverse -Instance reverse -Vserver cifs
+    Restore-SvmDr -Cluster r2d2 -Destination c3po -Vserver cifs
 
 #>
 function Restore-SvmDr{
@@ -2164,6 +2444,7 @@ function Restore-SvmDr{
 	    [string]$Destination,
 
         # Optional, the vserver to be restored
+        [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Enables the volumes to be restored as type RW (instead of DP)
@@ -2175,6 +2456,46 @@ function Restore-SvmDr{
         # Does not work in Non-Interactive mode
         # If ommited, the last backup is used.
         [switch]$SelectBackupDate,
+
+        # Optional, makes an aggregate suggestion for the rootvolume
+        [string]$RootAggr,
+
+        # Optional, makes an aggregate suggestion for the datavolumes
+        [string]$DataAggr,
+
+        # Optional, A regular expression to map source aggregate to destination aggregate
+        # Use regex-groups (wrap in brackets) to create wildcards
+        #   - 1 on 1 match : ".*" => (src = * ; dst = src)
+        #   - string replace : "ep(.*)snas[0-9]*_aggr[0-9]*" => (src = ep*snas54_aggr1 ; dst = ep*snas54_aggr1)
+        #   - node number match : "(.*)-[0-9]{2}" => (src = *-03 ; dst = *-03)
+        [regex]$AggrMatchRegex,
+
+        # Optional, A regular expression to map source node to destination node (for lif-port selection)
+        # Use regex-groups (wrap in brackets) to create wildcards
+        #   - node number match : "(.*)-[0-9]{2}" => (src = *-03 ; dst = *-03)
+        [regex]$NodeMatchRegex,
+
+        # Optional, this SvmDr solution cannot transfer the passwords of local users (cifs, cluster)
+        # In Non-Interactive Mode, the script cannot create missing users
+        # If you pass this parameter, the password will used to create missing users
+        [pscredential]$DefaultLocalUserCredentials,
+
+        # Optional, when running in Non-Interactive mode, this script cannot prompt for AD credentials
+        # Use this parameter to join the dr vserver in AD without interaction
+        [pscredential]$ActiveDirectoryCredentials,
+
+        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # By passing an temporary ip-address and in combination with parameter "SecondaryCifsLifMaster"
+        # A temporary lif will be created to join the vserver dr in AD
+        [string]$TemporarySecondaryCifsIp,
+
+        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # So we will clone the lif that is passed in this parameter (using same port and options)
+        # Use this in combination with parameter "TemporarySecondaryCifsIp"
+        # A temporary lif will be created to join the vserver dr in AD
+        [string]$SecondaryCifsLifMaster,
 
         # Loglevel of the console output
 	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
