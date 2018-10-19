@@ -260,6 +260,7 @@ function Format-ColorBrackets {
             }else{
                 $color="cyan"
             }
+            if($ForceColor.length -gt 1){$color=$ForceColor}
             WriteHost $group.Value -NoNewline -ForegroundColor $color
             $i = $group.Index + $group.Length
         }
@@ -1011,7 +1012,7 @@ Function get_pwd_from_cli ([string]$workOn,[string]$for,[string]$name="",[switch
     Write-Log "[$workOn] Please Enter password for $for1"
     do{
         $ReEnter=$false
-        if(-not $Global:NonInteractive){
+        if(-not $Global:NonInteractive -and $Global:DefaultLocalUserCredentials -eq $null){
             $pass1=Read-Host "[$workOn] Enter Password for $for2" -AsSecureString
             $pass2=Read-Host "[$workOn] Confirm Password for $for2" -AsSecureString
         }else{
@@ -13514,7 +13515,7 @@ Function create_quota_rules_from_quotadb (
         $NcCluster = Get-NcCluster -Controller $myController
         $ClusterName = $NcCluster.ClusterName
         Write-LogDebug "create_quota_rules_from_quotadb: ClusterName [$ClusterName]"
-        if($CloneDR.legnth -gt 1){
+        if($CloneDR.length -gt 1){
             Write-Log "[$CloneDR] Create Quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]"
         }else{
             Write-Log "[$myVserver] Create Quota policy rules from SVMTOOL_DB [$Global:SVMTOOL_DB]"
