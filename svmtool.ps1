@@ -2136,7 +2136,7 @@ if ( $CloneDR ) {
 		$CloneVserverDR+=$("."+$newNumber)	
 	}
 	Write-Log "Create Clone SVM [$CloneVserverDR]"
-	if ( ( $ret=create_clonevserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $CloneVserverDR)[-1] -ne $True ) {
+	if ( ( $ret=create_clonevserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $CloneVserverDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
 		Write-LogDebug "ERROR: create_vserver_dr failed"
 		clean_and_exit 1
 	}
