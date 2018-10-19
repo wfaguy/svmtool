@@ -737,7 +737,10 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
+    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]	
     [switch]$NonInteractive,
 
     [switch]$WfaIntegration,
