@@ -506,10 +506,9 @@ Function create_config_file_cli ([string]$primaryCluster,[string]$secondaryClust
 	}
 	$ANS='n'
 	while ( $ANS -ne 'y' ) {
-
         $primaryCluster = Read-HostDefault -question "Please Enter your default Primary Cluster Name" -default $primaryCluster
         $secondaryCluster = Read-HostDefault -question "Please Enter your default Secondary Cluster Name" -default $secondaryCluster
-		$Global:SVMTOOL_DB = Read-HostDefault -question "Please enter local DB directory where config files will be saved for this instance" -default $Global:SVMTOOL_DB
+		$Global:SVMTOOL_DB = Read-HostDefault -question "Please enter local DB directory where config files will be saved for this instance" -default $Global:SVMTOOL_DB_DEFAULT
 		Write-Log "Default Primary Cluster Name:        [$primaryCluster]" 
 		Write-Log "Default Secondary Cluster Name:      [$secondaryCluster]" 
 		Write-Log "SVMTOOL Configuration DB directory:  [$Global:SVMTOOL_DB]" 

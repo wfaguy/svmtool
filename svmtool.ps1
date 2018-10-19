@@ -351,53 +351,53 @@
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
 
-    [Parameter(Mandatory = $true, ParameterSetName='Setup')]
-    [switch]$Setup,
+	[Parameter(Mandatory = $true, ParameterSetName='Setup')]
+	[switch]$Setup,
 
-    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
-	  [string]$PrimaryCluster,
+	[Parameter(Mandatory = $false, ParameterSetName='Setup')]
+	[string]$PrimaryCluster,
 
-    [Parameter(Mandatory = $false, ParameterSetName='Setup')]
-	  [string]$SecondaryCluster,
+	[Parameter(Mandatory = $false, ParameterSetName='Setup')]
+	[string]$SecondaryCluster,
 
-    [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
-    [switch]$ConfigureDR,
+	[Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
+	[switch]$ConfigureDR,
 
-    [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
-	  [switch]$UpdateDR,
+	[Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
+	[switch]$UpdateDR,
 
-    [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
-	  [switch]$ShowDR,
+	[Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
+	[switch]$ShowDR,
 
-    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
-	  [switch]$ActivateDR,
+	[Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[switch]$ActivateDR,
 
-	  [Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
-	  [switch]$CloneDR,
+	[Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
+	[switch]$CloneDR,
 
-	  [Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
-	  [switch]$SplitCloneDR,
+	[Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
+	[switch]$SplitCloneDR,
 
-	  [Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
-	  [switch]$DeleteCloneDR,
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
+	[switch]$DeleteCloneDR,
 
-    [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
-	  [switch]$DeleteDR,
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
+	[switch]$DeleteDR,
 
-    [Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
-    [switch]$RemoveDRConf,
+	[Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
+	[switch]$RemoveDRConf,
 
-    [Parameter(Mandatory = $true,ParameterSetName='ResyncReverse')]
-	  [switch]$ResyncReverse,
+	[Parameter(Mandatory = $true,ParameterSetName='ResyncReverse')]
+	[switch]$ResyncReverse,
 
-    [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
-	  [switch]$UpdateReverse,
+	[Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
+	[switch]$UpdateReverse,
 
-    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
-	  [switch]$ReActivate,
+	[Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
+	[switch]$ReActivate,
 
-    [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
-    [switch]$CleanReverse,
+	[Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
+	[switch]$CleanReverse,
 
     [Parameter(Mandatory = $true, ParameterSetName='Resync')]
     [switch]$Resync,
@@ -501,20 +501,24 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
     [string]$Instance,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-	  [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
-	  [Parameter(Mandatory = $false, ParameterSetName='Restore')]
-	  [string]$RootAggr="",
-	  [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [switch]$AlwaysChooseDataAggr,
-	  [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-	  [switch]$SelectVolume,
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [switch]$DRfromDR,
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-  	[string]$XDPPolicy="MirrorAllSnapshots",
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[string]$RootAggr="",
 
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[switch]$AlwaysChooseDataAggr,
+
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[switch]$SelectVolume,
+
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[switch]$DRfromDR,
+
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[string]$XDPPolicy="MirrorAllSnapshots",
+
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
@@ -536,63 +540,68 @@ Param (
   	[string]$NodeMatchRegex,    
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-  	[switch]$CorrectQuotaError,
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$CorrectQuotaError,
+
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$IgnoreQtreeExportPolicy,
+	  
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-  	[switch]$IgnoreQtreeExportPolicy,
+	[switch]$IgnoreQuotaOff,
+	   
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-   	[switch]$IgnoreQuotaOff,
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-    [switch]$ForceDeleteQuota,
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$ForceDeleteQuota,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-	  [switch]$ForceActivate,
+	[Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+	[switch]$ForceActivate,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [switch]$ForceRestart,
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[switch]$ForceRestart,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [switch]$MSID,
+	[Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
+	[switch]$MSID,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
   	[switch]$Lag,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
   	[switch]$Schedule,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ListInstance')]
-  	[switch]$ResetPassword,
+	[Parameter(Mandatory = $false, ParameterSetName='ListInstance')]
+	[switch]$ResetPassword,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [Parameter(Mandatory = $false, ParameterSetName='Resync')]
-    [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-	  [switch]$ForceRecreate,
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='Resync')]
+	[Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
+	[switch]$ForceRecreate,
 
-  	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
-    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
-    [switch]$ForceUpdateSnapPolicy,
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[switch]$ForceUpdateSnapPolicy,
 
-    [Parameter(Mandatory = $false, ParameterSetName='Backup')]
-	  [switch]$Recreateconf,
-	
-  	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
-    [string]$CloneName="",
+	[Parameter(Mandatory = $false, ParameterSetName='Backup')]
+	[switch]$Recreateconf,
 
-    [Parameter(Mandatory = $true, ParameterSetName='Restore')]
-  	[string]$Destination="",
-    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
-  	[switch]$SelectBackupDate,
-    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
+	[string]$CloneName="",
+
+	[Parameter(Mandatory = $true, ParameterSetName='Restore')]
+	[string]$Destination="",
+
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
+	[switch]$SelectBackupDate,
+
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
   	[switch]$RW,
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
@@ -761,7 +770,7 @@ $Global:MIN_REVISION = 0
 #############################################################################################
 $Global:RELEASE="0.1.1"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
-$Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR+="\DB"
+$Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
 $Global:START_TIMEOUT=360
@@ -979,10 +988,7 @@ if ( $Backup ) {
 		Write-Log "Create new Config File"
         $ANS='n'
         while ( $ANS -ne 'y' ) {
-            if(-not $SVMTOOL_DB){
-                $SVMTOOL_DB = $Global:SVMTOOL_DB_DEFAULT
-            }
-            $SVMTOOL_DB = Read-HostDefault -question  "Please enter Backup directory where configuration will be backup" -default $SVMTOOL_DB
+            $SVMTOOL_DB = Read-HostDefault -question  "Please enter Backup directory where configuration will be backup" -default $Global:SVMTOOL_DB_DEFAULT
             Write-Log "SVMTOOL Backup directory:  [$SVMTOOL_DB]"
             Write-Log ""
                 $ANS = Read-HostOptions -question "Apply new configuration ?" -options "y/n/q" -default "y"
