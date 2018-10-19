@@ -4840,7 +4840,7 @@ Try {
         $DestVolName=$DestVol.Name
         $DestVolSize=$DestVol.VolumeSpaceAttributes.Size
         $DestVolJunctionPath=$DestVol.VolumeIdAttributes.JunctionPath
-        if( $Global:SelectVolume -eq $True -and $NoInteractive -eq $False )
+        if( $Global:SelectVolume -eq $True )
         {
             $volsizeGB=[math]::round($DestVolSize/1024/1024,2)
             $ANS=Read-HostOptions "Does volume [$DestVolName  $($volsizeGB) GB  $DestVolJunctionPath] need to be cloned on [$mySecondaryVserver] ?" "y/n"
