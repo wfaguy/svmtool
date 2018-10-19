@@ -1926,7 +1926,7 @@ Function create_update_localuser_dr(
                                     $PasswordEntered+=$Username
                                 }
                             }while($passwordIsGood -eq $False)
-                            if($Global:DefaultPass -eq $True){
+                            if($Global:DefaultLocalUserCredentials -ne $null){
                                 Write-LogDebug "Invoke-NcSecurityLoginExpirePassword -Vserver $mySecondaryVserver -UserName $Username -Controller $mySecondaryController"
                                 $ret=Invoke-NcSecurityLoginExpirePassword -Vserver $mySecondaryVserver -UserName $Username -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False    
                                 if ( $? -ne $True ) {Write-LogDebug "Failed to expire [$Username] password"}
@@ -5056,7 +5056,7 @@ Try {
 
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" } 
                     if ( $Aggr -eq $null ) {
-                        Write-LogError "ERROR: aggr [$Global:DataAggr] not found on [$mySecondaryController] : Exit"
+                        Write-LogError "ERROR: aggr [$myDataAggr] not found on [$mySecondaryController] : Exit"
                         clean_and_exit 1 
                     }
                     $Available=$Aggr.Available
@@ -5071,7 +5071,7 @@ Try {
                     while ( $Available -lt $PrimaryVolSize ) {
 
                         Write-LogWarn "Unable to create volume [$PrimaryVolName] [$PrimaryVolSize]"
-                        Write-LogWarn "Not enough space available in aggr [$Global:DataAggr] [$Available]"
+                        Write-LogWarn "Not enough space available in aggr [$myDataAggr] [$Available]"
                         $Question ="[$workOn] WARNING: Please select another Aggregate:"
 
                         # we keep asking, no autoselect, but we do want to keep suggesting our best match, even if it's a bad one
@@ -5084,20 +5084,20 @@ Try {
                     }
                     if($Restore -eq $False){	
                         Write-Log "[$workOn] Create new volume DR: [$PrimaryVolName]"
-                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
+                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
+                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }
                     }else{
                         Write-Log "[$workOn] Create new volume: [$PrimaryVolName]"
                         if($Global:VOLUME_TYPE -eq "RW"){
                             Write-LogDebug "Create RW volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }else{
                             Write-LogDebug "Create DP volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $Global:DataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }
                     }
@@ -9297,7 +9297,7 @@ Function show_vserver_dr (
                 $LagTimeDate=(Get-Date).AddSeconds(-$LagTime)
                 $tmp_str = ""  
                 if ( $Lag ) { $tmp_str = $tmp_str + "[$LagTimeDate]"  }
-                if ( $Global:Schedule -eq $True ) { $tmp_str = $tmp_str + "[$SmSchedule]"  }
+                if ( $Schedule ) { $tmp_str = $tmp_str + "[$SmSchedule]"  }
                 if ($RelationHealth -eq $True)
                 {
                     $rel=[string]::Format("Status relation {0,-30} {1,-30} {2,-3} {3,-20} {4,-10} {5,-15} {6,-30}",$("["+$SourceLocation+"]"),`
@@ -9625,7 +9625,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" ; }
 
             if ( $out -eq $null ) {
-                Write-LogError "ERROR: aggregate [$Global:RootAggr] not found on cluster [$mySecondaryController]" 
+                Write-LogError "ERROR: aggregate [$RootAggr] not found on cluster [$mySecondaryController]" 
                 Write-LogError "ERROR: exit" 
                  
                 clean_and_exit 1 
@@ -10851,13 +10851,14 @@ Function update_vserver_dr (
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
 	[string] $mySecondaryVserver,
+	[string] $myDataAggr,
     [bool] $DDR,
     [string]$aggrMatchRegEx,
     [string]$nodeMatchRegEx ) {
 	$Return = $True
 	Write-LogDebug "update_vserver_dr: start"
 	if ( ( check_update_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed check update vserver" ; return $False }
-	if ( $Global:DataAggr.length -gt 1 ) {
+	if ( $myDataAggr -or $aggrMatchRegEx ) {
 		Write-LogDebug "update_vserver_dr: Create required new volumes $mySecondaryController Vserver $Vserver"
 
 		if ( ( create_volume_voldr -myDataAggr $myDataAggr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -aggrMatchRegEx $aggrMatchRegEx ) -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; return $False }
