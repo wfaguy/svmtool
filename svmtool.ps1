@@ -558,11 +558,6 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [switch]$ForceRestart,
 
-    [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
-    [switch]$DefaultPass,
-
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
     [switch]$MSID,
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
@@ -620,6 +615,9 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='SplitCloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteCloneDR')]
   	[switch]$HTTP,
 
   	[switch]$NoLog,
@@ -648,6 +646,9 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
     [Parameter(Mandatory = $false, ParameterSetName='Restore')]
     [Parameter(Mandatory = $false, ParameterSetName='ImportInstance')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='SplitCloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteCloneDR')]
     [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
     [string]$LogLevelConsole="Info",
 
@@ -674,6 +675,9 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
     [Parameter(Mandatory = $false, ParameterSetName='Restore')]
     [Parameter(Mandatory = $false, ParameterSetName='ImportInstance')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='SplitCloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteCloneDR')]
     [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
     [string]$LogLevelLogFile="Info",
 
@@ -727,15 +731,23 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]
     [pscredential]$DefaultLocalUserCredentials=$null,
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [pscredential]$ActiveDirectoryCredentials=$null,
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [string]$TemporarySecondaryCifsIp=$null,
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [string]$SecondaryCifsLifMaster=$null
 )
 
@@ -1035,7 +1047,7 @@ if ( $Backup ) {
                 [Parameter(Mandatory=$True)][string]$myPrimaryVserver,
                 [Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
                 [Parameter(Mandatory=$True)][String]$BackupDate,
-				        [Parameter(Mandatory=$True)][String]$LOGFILE,
+		[Parameter(Mandatory=$True)][String]$LOGFILE,
                 [Parameter(Mandatory=$True)][string]$LogLevelConsole,
                 [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
                 [boolean]$NonInteractive
@@ -1319,15 +1331,18 @@ if ( $Restore ) {
             param(
                 [Parameter(Mandatory=$True)][string]$script_path,
                 [Parameter(Mandatory=$True)][string]$SourceVserver,
-				        [Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
+		[Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
                 [Parameter(Mandatory=$True)][String]$JsonPath,
                 [Parameter(Mandatory=$True)][String]$LOGFILE,
                 [Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$DestinationController,
                 [Parameter(Mandatory=$True)][string]$VOLTYPE,
-                [Parameter(Mandatory=$False)][boolean]$DefaultPass,
+		[Parameter(Mandatory=$False)][pscredential]$DefaultLocalUserCredentials,
+		[Parameter(Mandatory=$False)][pscredential]$ActiveDirectoryCredentials,
+		[Parameter(Mandatory=$False)][string]$TemporarySecondaryCifsIp,
+		[Parameter(Mandatory=$False)][string]$SecondaryCifsLifMaster,
                 [Parameter(Mandatory=$False)][string]$RootAggr,
                 [Parameter(Mandatory=$False)][string]$DataAggr,        
-				        [Parameter(Mandatory=$True)][string]$LogLevelConsole,
+		[Parameter(Mandatory=$True)][string]$LogLevelConsole,
                 [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
                 [boolean]$NonInteractive
             )
@@ -1374,7 +1389,8 @@ if ( $Restore ) {
 			$Global:VOLUME_TYPE=$VOLTYPE
 			$Global:RootAggr=$RootAggr
 			$Global:DataAggr=$DataAggr
-			$Global:DefaultPass=$DefaultPass
+			$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
+			$Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
 			check_create_dir -FullPath $Global:JsonPath -Vserver $SourceVserver
 			$DestinationCluster=$DestinationController.Name
 			Write-LogDebug ""
@@ -1387,7 +1403,6 @@ if ( $Restore ) {
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
 			Write-LogDebug "RootAggr [$Global:RootAggr]"
 			Write-LogDebug "DataAggr [$Global:DataAggr]"
-			Write-LogDebug "DefaultPass [$Global:DefaultPass]"      
         if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
 
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
@@ -1421,7 +1436,10 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("JsonPath",$JsonPath)
 		[void]$RestoreJob.AddParameter("LOGFILE",$LOGFILE)
 		[void]$RestoreJob.AddParameter("DestinationController",$NcSecondaryCtrl)
-		[void]$RestoreJob.AddParameter("DefaultPass",$Global:DefaultPass)
+		[void]$RestoreJob.AddParameter("DefaultLocalUserCredentials",$DefaultLocalUserCredentials)
+		[void]$RestoreJob.AddParameter("ActiveDirectoryCredentials",$ActiveDirectoryCredentials)
+		[void]$RestoreJob.AddParameter("TemporarySecondaryCifsIp",$TemporarySecondaryCifsIp)
+		[void]$RestoreJob.AddParameter("SecondaryCifsLifMaster",$SecondaryCifsLifMaster)
 		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)
 		[void]$RestoreJob.AddParameter("DataAggr",$Global:DataAggr)
 		if($RW -eq $True){
