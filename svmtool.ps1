@@ -1048,28 +1048,24 @@ if ( $Backup ) {
 		}
 		Write-Log "Create Backup Job for [$svm]" "Blue" -multithreaded
         $codeBackup=[scriptblock]::Create({
-        param(
-
-                [Parameter(Mandatory=$True)][string]$script_path,
-                [Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$myPrimaryController,
-                [Parameter(Mandatory=$True)][string]$myPrimaryVserver,
-                [Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
-                [Parameter(Mandatory=$True)][String]$BackupDate,
-		[Parameter(Mandatory=$True)][String]$LOGFILE,
-                [Parameter(Mandatory=$True)][string]$LogLevelConsole,
-                [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
-                [boolean]$NonInteractive
-
-			)
-      
-      $ConsoleThreadingRequired=$true
+			param(
+				[Parameter(Mandatory=$True)][string]$script_path,
+				[Parameter(Mandatory=$True)][NetApp.Ontapi.Filer.C.NcController]$myPrimaryController,
+				[Parameter(Mandatory=$True)][string]$myPrimaryVserver,
+				[Parameter(Mandatory=$True)][string]$SVMTOOL_DB,
+				[Parameter(Mandatory=$True)][String]$BackupDate,
+				[Parameter(Mandatory=$True)][String]$LOGFILE,
+				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
+				[Parameter(Mandatory=$True)][string]$LogLevelLogFile,
+				[boolean]$NonInteractive
+				)
+			$ConsoleThreadingRequired=$true
 			$Path=$env:PSModulePath.split(";")
 			if($Path -notcontains $script_path){
 				$Path+=$script_path
 				$Path=[string]::Join(";",$Path)
 				[System.Environment]::SetEnvironmentVariable('PSModulePath',$Path)
 			}
-
 			$module=import-module svmtools -PassThru
 			if ( $module -eq $null ) {
 					Write-Error "ERROR: Failed to load module SVMTOOLS"
@@ -1077,38 +1073,36 @@ if ( $Backup ) {
 			}
 			$Global:STOP_TIMEOUT=360
 			$Global:START_TIMEOUT=360
-
 			$dir=split-path -Path $LOGFILE -Parent
 			$file=split-path -Path $LOGFILE -Leaf
 			$LOGFILE=($dir+'\'+$myPrimaryVserver+'\'+$file)
 
+			# appenders (logfile, eventviewer & console)
 
-      # appenders (logfile, eventviewer & console)
+			$guid = ([guid]::NewGuid()).Guid
+			$masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE -threshold $LogLevelLogFile
+			$consoleAppender = create_console_appender -name "console_$guid" -threshold $LogLevelConsole
 
-      $guid = ([guid]::NewGuid()).Guid
-      $masterLogFileAppender = create_rolling_log_appender -name "svmtool.log_$guid"  -file $LOGFILE -threshold $LogLevelLogFile
-      $consoleAppender = create_console_appender -name "console_$guid" -threshold $LogLevelConsole
+			# initialize console
+			add_appender -loggerinstance "console_$guid" $masterLogFileAppender
+			add_appender -loggerinstance "console_$guid" $consoleAppender
+			set_log_level -loggerinstance "console_$guid" -level "All"
+			$Global:ConsoleLog = get_logger -name "console_$guid"
 
-      # initialize console
-      add_appender -loggerinstance "console_$guid" $masterLogFileAppender
-      add_appender -loggerinstance "console_$guid" $consoleAppender
-      set_log_level -loggerinstance "console_$guid" -level "All"
-      $Global:ConsoleLog = get_logger -name "console_$guid"
+			add_appender -loggerinstance "logonly_$guid" $masterLogFileAppender
+			set_log_level -loggerinstance "logonly_$guid" -level "All"
+			$Global:MasterLog = get_logger -name "logonly" 
 
-      add_appender -loggerinstance "logonly_$guid" $masterLogFileAppender
-      set_log_level -loggerinstance "logonly_$guid" -level "All"
-      $Global:MasterLog = get_logger -name "logonly" 
-
-      $Global:NonInteractive=$NonInteractive
-
-      $module=get-module dataontap
-      if(-not $module){
-			    $module=import-module "$script_path\..\DataOntap" -PassThru
-			    if ( $module -eq $null ) {
-					    Write-LogError "ERROR: Failed to load module Netapp PSTK"
-					    exit 1
-			    }
-      }
+			$Global:NonInteractive=$NonInteractive
+			
+			if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
+				$env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
+			}
+			$module=import-module -Name DataONTAP -PassThru
+			if ( $module -eq $null ) {
+				Write-LogError "ERROR: Failed to load module Netapp PSTK"
+				exit 1
+			}
 
 			check_create_dir -FullPath $LOGFILE -Vserver $myPrimaryVserver
 			Write-Log "[$myPrimaryVserver] Log File is [$LOGFILE]"
@@ -1118,36 +1112,36 @@ if ( $Backup ) {
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
 
 			Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]"
-            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr)[-1] -ne $True ){
+			if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
-                flush_log4net -loggerinstance "console_$guid"
-                flush_log4net -loggerinstance "logonly_$guid"
+				flush_log4net -loggerinstance "console_$guid"
+				flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			Write-LogDebug "create_vserver_dr correctly finished [$ret]"
 			Write-Log "[$myPrimaryVserver] Check Quota"
 			$AllQuotaRulesList=Get-NcQuota -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
-    		if ( $? -ne $True ) { 
-        		Write-LogDebug "ERROR: Get-NcQuota Failed"
-                flush_log4net -loggerinstance "console_$guid"	
-                flush_log4net -loggerinstance "logonly_$guid"
-        		return $False
+			if ( $? -ne $True ) { 
+				Write-LogDebug "ERROR: Get-NcQuota Failed"
+				flush_log4net -loggerinstance "console_$guid"	
+				flush_log4net -loggerinstance "logonly_$guid"
+				return $False
 			}
 			$AllQuotaRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuota.json") -Encoding ASCII -Width 65535
 			if( ($ret=get-item $($Global:JsonPath+"Get-NcQuota.json") -ErrorAction SilentlyContinue) -ne $null ){
 				Write-LogDebug "$($Global:JsonPath+"Get-NcQuota.json") saved successfully"
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuota.json")"
-                flush_log4net -loggerinstance "console_$guid"
-                flush_log4net -loggerinstance "logonly_$guid"
+				flush_log4net -loggerinstance "console_$guid"
+				flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			Write-Log "[$myPrimaryVserver] Check Quota Policy"
 			$AllQuotaPolicyList=Get-NcQuotaPolicy -Controller $myPrimaryController -VserverContext $myPrimaryVserver -ErrorVariable ErrorVar 
-    		if ( $? -ne $True ) { 
+			if ( $? -ne $True ) { 
 				Write-LogDebug "ERROR: Get-NcQuotaPolicy Failed"
-                flush_log4net -loggerinstance "console_$guid"
-                flush_log4net -loggerinstance "logonly_$guid"
+				flush_log4net -loggerinstance "console_$guid"
+				flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
 			$AllQuotaPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcQuotaPolicy.json") -Encoding ASCII -Width 65535
@@ -1155,14 +1149,13 @@ if ( $Backup ) {
 				Write-LogDebug "$($Global:JsonPath+"Get-NcQuotaPolicy.json") saved successfully"
 			}else{
 				Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcQuotaPolicy.json")"
-                flush_log4net -loggerinstance "console_$guid"
-                flush_log4net -loggerinstance "logonly_$guid"
+				flush_log4net -loggerinstance "console_$guid"
+				flush_log4net -loggerinstance "logonly_$guid"
 				return $False
 			}
-            flush_log4net -loggerinstance "console_$guid"
-            flush_log4net -loggerinstance "logonly_$guid"
-            return $True
-
+			flush_log4net -loggerinstance "console_$guid"
+			flush_log4net -loggerinstance "logonly_$guid"
+			return $True
         })
         $BackupJob=[System.Management.Automation.PowerShell]::Create()
         ## $createVserverBackup=Get-Content Function:\create_vserver_dr -ErrorAction Stop
@@ -1365,6 +1358,16 @@ if ( $Restore ) {
 			if ( $module -eq $null ) {
 					Write-Error "ERROR: Failed to load module SVMTOOLS"
 					exit 1
+			}
+			$Global:NonInteractive=$NonInteractive
+			
+			if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
+				$env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
+			}
+			$module=import-module -Name DataONTAP -PassThru
+			if ( $module -eq $null ) {
+				Write-LogError "ERROR: Failed to load module Netapp PSTK"
+				exit 1
 			}
 			$Global:STOP_TIMEOUT=360
 			$Global:START_TIMEOUT=360
