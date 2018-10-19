@@ -4840,7 +4840,7 @@ Try {
         $DestVolName=$DestVol.Name
         $DestVolSize=$DestVol.VolumeSpaceAttributes.Size
         $DestVolJunctionPath=$DestVol.VolumeIdAttributes.JunctionPath
-        if( $Global:SelectVolume -eq $True -and $NoInteractive -eq $False )
+        if( $Global:SelectVolume -eq $True )
         {
             $volsizeGB=[math]::round($DestVolSize/1024/1024,2)
             $ANS=Read-HostOptions "Does volume [$DestVolName  $($volsizeGB) GB  $DestVolJunctionPath] need to be cloned on [$mySecondaryVserver] ?" "y/n"
@@ -9423,7 +9423,13 @@ Function create_clonevserver_dr (
     [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
     [string] $mySecondaryVserver,
-    [string] $workOn=$mySecondaryVserver){
+    [string] $workOn=$mySecondaryVserver,
+    [string] $aggrMatchRegEx,
+    [string] $nodeMatchRegEx,
+    [string]$TemporarySecondaryCifsIp,
+    [string]$SecondaryCifsLifMaster,
+    [string]$RootAggr
+    ){
 Try {
 	$Return = $True
     $runBackup=$False
@@ -9442,21 +9448,27 @@ Try {
     $PrimaryLanguage = $PrimaryVserver.Language
     $PrimaryAllowedProtocols=$PrimaryVserver.AllowedProtocols
     $PrimaryComment=$($PrimaryVserver.Comment+"clone environment")
-    if($Global:RootAggr.length -eq 0){
-        $Question = "[$mySecondaryVserver] Please Select root aggregate on Cluster [$MySecondaryController]:"
-        $Global:RootAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question
+
+    # this now works differently, we try to pick the best matching aggr and fall back to default
+    if($aggrMatchRegEx -ne ""){
+        $dataAggrMatchRegex = replace_regex_groupmatches -string $PrimaryRootVolumeAggr -regex $aggrMatchRegEx -replacewith "(.*)"
+    }else{
+        $dataAggrMatchRegex = ""
     }
-    Write-LogDebug "Get-NcAggr -Controller $mySecondaryController -Name $Global:RootAggr"
-    $out = Get-NcAggr -Controller $mySecondaryController -Name $Global:RootAggr  -ErrorVariable ErrorVar
+    # we find a regex match first, but fall back to default.  If default is provided, we also assume autoselect (it's just for the rootvol)
+    $RootAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $RootAggr -autoSelect ($Global:NonInteractive -or ($RootAggr -ne ""))
+
+    Write-LogDebug "Get-NcAggr -Controller $mySecondaryController -Name $RootAggr"
+    $out = Get-NcAggr -Controller $mySecondaryController -Name $RootAggr  -ErrorVariable ErrorVar
     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" ;free_mutexconsole}
     if ( $out -eq $null ) {
-        Write-LogError "ERROR: aggregate [$Global:RootAggr] not found on cluster [$mySecondaryController]" 
+        Write-LogError "ERROR: aggregate [$RootAggr] not found on cluster [$mySecondaryController]" 
         Write-LogError "ERROR: exit" 
         clean_and_exit 1 
     }
-    Write-Log "[$workOn] create Clone vserver : [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$Global:RootAggr]"
-    Write-LogDebug "create_clonevserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $Global:RootAggr"
-    $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $Global:RootAggr  -ErrorVariable ErrorVar
+    Write-Log "[$workOn] create Clone vserver : [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$RootAggr]"
+    Write-LogDebug "create_clonevserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
+    $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
     if ( $? -ne $True ) {
         Write-LogError "ERROR: Failed to create vserver $mySecondaryVserver on $mySecondaryController"  
         Write-LogError "ERROR: exit" 
@@ -9491,7 +9503,7 @@ Try {
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
-    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -ForClone) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
+    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -ForClone) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$workOn]"    
@@ -9544,7 +9556,8 @@ Function create_vserver_dr (
     [string] $nodeMatchRegEx,
     [string] $myDataAggr,
     [string]$TemporarySecondaryCifsIp,
-    [string]$SecondaryCifsLifMaster    
+    [string]$SecondaryCifsLifMaster,
+    [string]$RootAggr   
     ){
 Try {
 	$Return = $True
