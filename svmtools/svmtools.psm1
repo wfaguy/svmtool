@@ -1298,7 +1298,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
         if(-not $autoselect){
             $ans=Read-HostOptions -question "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" -options "y/n" -default "y"
         }else{
-            $ans = "y"
+            $ans = "y" 
         }
 
 	}
