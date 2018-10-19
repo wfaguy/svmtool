@@ -738,9 +738,9 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName='CreateQuotaDR')]
 	[Parameter(Mandatory = $false, ParameterSetName='ReCreateQuota')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]	
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]	
+    [Parameter(Mandatory = $false, ParameterSetName='SplitCloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='DeleteCloneDR')]	
     [switch]$NonInteractive,
 
     [switch]$WfaIntegration,
