@@ -413,12 +413,13 @@ function Read-HostDefault{
         [string] $question,
         [Parameter(Position=1)]
         [string] $default,
-        [switch] $NotEmpty
+        [switch] $NotEmpty,
+        [switch]$autoselect
     )
 
     do{
         Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $default -NoNewLine
-        if($Global:NonInteractive){
+        if($Global:NonInteractive -or $autoselect){
             Write-Log ("-> {0}" -f $default)
             $ans = $default
         }else{
@@ -437,12 +438,13 @@ function Read-HostOptions{
         [string] $question,
         [Parameter(Position=1, Mandatory=$true)]
         [string] $options,
-        [string] $default
+        [string] $default,
+        [switch]$autoselect
     )
 
     Format-Colors -Format "$question [{0:Yellow}] : " -Arguments $options -NoNewLine
     $optionlist = @($options -split "/")
-    if($Global:NonInteractive){
+    if($Global:NonInteractive -or $autoselect){
         Write-Log ("-> {0}" -f $default)
         $ans = $default
     }else{
@@ -1286,7 +1288,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			$ErrAns = $True 
 			while ( $ErrAns -eq $True ) {
                 Write-Log $defaultReason
-				$ans = Read-HostDefault -question "[$ctrlName] Select Aggr 1-$i" -default $indexMatch
+				$ans = Read-HostDefault -question "[$ctrlName] Select Aggr 1-$i" -default $indexMatch -autoselect:$autoselect
 				if ($ans -match  "^[0-9]*" ) { 
 					$ErrAns = $False
 				}
@@ -1295,11 +1297,8 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 			$AggrSelected=$AggrSelectedList[$index]
 			if ( $AggrSelected -ne $null ) { $ErrAggr = $False }
         }
-        if(-not $autoselect){
-            $ans=Read-HostOptions -question "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" -options "y/n" -default "y"
-        }else{
-            $ans = "y" 
-        }
+
+        $ans=Read-HostOptions -question "[$ctrlName] You have selected the aggregate [$AggrSelected] ?" -options "y/n" -default "y" -autoselect:$autoselect
 
 	}
 	return $AggrSelected
