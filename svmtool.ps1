@@ -520,7 +520,9 @@ Param (
 
 	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
   	[string]$DataAggr,
 
@@ -529,13 +531,17 @@ Param (
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
   	[string]$AggrMatchRegex,    
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
+	[Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
   	[string]$NodeMatchRegex,    
 
@@ -797,8 +803,6 @@ if($Global:NumberOfLogicalProcessor -lt 4){
 }
 $Global:maxJobs=100
 $Global:XDPPolicy=$XDPPolicy
-$Global:RootAggr=$RootAggr
-$Global:DataAggr=$DataAggr
 $Global:DefaultPass=$DefaultPass
 $Global:Schedule=$Schedule
 
@@ -1116,7 +1120,7 @@ if ( $Backup ) {
 			check_create_dir -FullPath $($Global:JsonPath+"backup.json") -Vserver $myPrimaryVserver
 
 			Write-LogDebug "[$myPrimaryVserver] Backup Folder after check_create_dir is [$Global:JsonPath]"
-            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
+            if ( ( $ret=create_vserver_dr -myPrimaryController $myPrimaryController -workOn $myPrimaryVserver -Backup -myPrimaryVserver $myPrimaryVserver -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr)[-1] -ne $True ){
 				Write-LogDebug "create_vserver_dr return False [$ret]"
                 flush_log4net -loggerinstance "console_$guid"
                 flush_log4net -loggerinstance "logonly_$guid"
@@ -1393,8 +1397,6 @@ if ( $Restore ) {
             $Global:SVMTOOL_DB=$SVMTOOL_DB
 			$Global:JsonPath=$JsonPath
 			$Global:VOLUME_TYPE=$VOLTYPE
-			$Global:RootAggr=$RootAggr
-			$Global:DataAggr=$DataAggr
 			$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 			$Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
 			check_create_dir -FullPath $Global:JsonPath -Vserver $SourceVserver
@@ -1407,9 +1409,9 @@ if ( $Restore ) {
 			Write-LogDebug "SourceVserver [$SourceVserver]"
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
-			Write-LogDebug "RootAggr [$Global:RootAggr]"
-			Write-LogDebug "DataAggr [$Global:DataAggr]"
-        if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr)[-1] -ne $True ){
+			Write-LogDebug "RootAggr [$RootAggr]"
+			Write-LogDebug "DataAggr [$DataAggr]"
+        if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ){
 
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
                 #return $False
@@ -1446,8 +1448,8 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("ActiveDirectoryCredentials",$ActiveDirectoryCredentials)
 		[void]$RestoreJob.AddParameter("TemporarySecondaryCifsIp",$TemporarySecondaryCifsIp)
 		[void]$RestoreJob.AddParameter("SecondaryCifsLifMaster",$SecondaryCifsLifMaster)
-		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)
-		[void]$RestoreJob.AddParameter("DataAggr",$Global:DataAggr)
+		[void]$RestoreJob.AddParameter("RootAggr",$RootAggr)
+		[void]$RestoreJob.AddParameter("DataAggr",$DataAggr)
 		if($RW -eq $True){
 			[void]$RestoreJob.AddParameter("VOLTYPE","RW")
 		}else{
@@ -1624,7 +1626,6 @@ $Global:SelectVolume=$SelectVolume
 $Global:IgnoreQtreeExportPolicy=$IgnoreQtreeExportPolicy
 $Global:AllowQuotaDr=$AllowQuotaDr
 $Global:IgnoreQuotaOff=$IgnoreQuotaOff
-$Global:DataAggr=$DataAggr
 
 Write-LogDebug "PRIMARY_CLUSTER:            		 [$PRIMARY_CLUSTER]" 
 Write-LogDebug "SECONDARY_CLUSTER:          		 [$SECONDARY_CLUSTER]" 
@@ -1704,7 +1705,7 @@ if ( $ConfigureDR ) {
 		}
 	}
 
-	if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.isPresent) -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
+	if ( ( $ret=create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.isPresent) -XDPPolicy $XDPPolicy -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
 		clean_and_exit 1
 
 	}
