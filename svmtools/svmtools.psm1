@@ -1014,17 +1014,23 @@ Function get_pwd_from_cli ([string]$workOn,[string]$for,[string]$name="",[switch
         $for1 = "$for"
         $for2 = "$for"
     }
+    wait-debugger
+    if($for -match "LDAP"){
+        $DefaultPass=$Global:DefaultLDAPCredentials
+    }else{
+        $DefaultPass=$Global:DefaultLocalUserCredentials
+    }
     Write-Log "[$workOn] Please Enter password for $for1"
     do{
         $ReEnter=$false
-        if(-not $Global:NonInteractive -and $Global:DefaultLocalUserCredentials -eq $null){
+        if(-not $Global:NonInteractive -and $DefaultPass -eq $null){
             $pass1=Read-Host "[$workOn] Enter Password for $for2" -AsSecureString
             $pass2=Read-Host "[$workOn] Confirm Password for $for2" -AsSecureString
         }else{
-            if($Global:DefaultLocalUserCredentials -ne $null){
-                Write-Log ("[$workOn] Password extracted from default credentials [{0}]" -f $Global:DefaultLocalUserCredentials.GetNetworkCredential().UserName)
-                $pass1=$Global:DefaultLocalUserCredentials.GetNetworkCredential().SecurePassword
-                $pass2=$Global:DefaultLocalUserCredentials.GetNetworkCredential().SecurePassword
+            if($DefaultPass -ne $null){
+                Write-Log ("[$workOn] Password extracted from default credentials [{0}]" -f $DefaultPass.GetNetworkCredential().UserName)
+                $pass1=$DefaultPass.GetNetworkCredential().SecurePassword
+                $pass2=$DefaultPass.GetNetworkCredential().SecurePassword
             }else{
                 Write-LogError "ERROR : cannot get credentials in NonInteractive mode and without default credentials"
                 clean_and_exit 1
@@ -6862,24 +6868,31 @@ Try {
     $RunRestore=$False
     Write-Log "[$workOn] Check Cifs Symlinks"
     Write-LogDebug "create_update_cifs_symlink_dr[$myPrimaryVserver]: start"
-    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
-    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
+    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$workOn]";$RunBackup=$True}
+    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$workOn]";$RunRestore=$True}
     if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
         Write-LogDebug "create_update_cifs_symlink_dr: end"
         return $True
     }
-    if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
-    if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]"}
-
     if($Restore -eq $False){
         $PrimaryCifsSymlinks=Get-NcCifsSymlink -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsSymlink failed [$ErrorVar]" }
+        $PrimaryCifs=Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
+        if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Cifs server on [$myPrimaryVserver] reason [$ErrorVar]"}
+        $PrimaryCifs = $PrimaryCifs.CifsServer
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsSymlink.json")){
             $PrimaryCifsSymlinks=Get-Content $($Global:JsonPath+"Get-NcCifsSymlink.json") | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsSymlink.json")
+            Throw "ERROR: failed to read $filepath"
+        }
+        if(Test-Path $($Global:JsonPath+"Get-NcCifsServer.json")){
+            $PrimaryCifs=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") | ConvertFrom-Json
+        }else{
+            $Return=$False
+            $filepath=$($Global:JsonPath+"Get-NcCifsServer.json")
             Throw "ERROR: failed to read $filepath"
         }
     }
@@ -6891,16 +6904,12 @@ Try {
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcCifsSymlink.json")"
             $Return=$False
         }
-    }
-    if($Backup -eq $False){
-        $PrimaryCifs=Get-NcCifsServer -VserverContext $myPrimaryVserver -controller $myPrimaryController  -ErrorVariable ErrorVar
-        if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Cifs server on [$myPrimaryVserver] reason [$ErrorVar]"}
-        $PrimaryCifs = $PrimaryCifs.CifsServer
-
+    }else{
         $SecondaryCifs=Get-NcCifsServer -VserverContext $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
         if($? -ne $True){$Return=$False;Throw "ERROR: Failed to Cifs server on [$mySecondaryVserver] reason [$ErrorVar]"}
         $SecondaryCifs = $SecondaryCifs.CifsServer
-
+    }
+    if($Backup -eq $False){
         foreach($PrimarySymlink in ($PrimaryCifsSymlinks | Skip-Null)){
             $PrimaryCifsPath                 =$PrimarySymlink.CifsPath 
             $PrimaryCifsServer               =$PrimarySymlink.CifsServer
@@ -6933,7 +6942,6 @@ Try {
                     -or ($SecondaryHomeDirectory           -ne  $PrimaryHomeDirectory          ) `
                     -or ($SecondaryLocality                -ne  $PrimaryLocality               ) `
                     -or ($SecondaryShareName               -ne  $PrimaryShareName              ) 
-
                 ){
                     Write-LogDebug "Set-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory:$PrimaryHomeDirectory  -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcCifsSymlink -CifsPath $PrimaryCifsPath -CifsServer $PrimaryCifsServer -HomeDirectory:$PrimaryHomeDirectory -Locality $PrimaryLocality -ShareName $PrimaryShareName -UnixPath $PrimaryUnixPath  -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
@@ -7277,7 +7285,10 @@ Function check_update_CIFS_server_dr (
                 $cifsServerDest=$False
                 if($Restore -eq $True){return $False}
             }
-            else{$cifsServerDest=$True}
+            else{
+                $cifsServerDest=$True
+                if($Restore -eq $True){return $True}
+            }
 
         }else{
             $cifsServerDest=$cifsServerSource  
@@ -7934,9 +7945,7 @@ Try {
                 }
                 while($ANS -eq "y")
                 $LDAPclientADServers=$ldapserverslist
-
                 $LDAPclientBindPassword=get_pwd_from_cli -workOn $mySecondaryVserver -for "LDAP server Bind Password"
-
                 Write-LogDebug "New-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver `
                 -Schema $LDAPclientSchema `
                 -AdDomain $LDAPclientAdDomain `
@@ -7945,7 +7954,7 @@ Try {
                 -QueryTimeout $LDAPclientQueryTimeout `
                 -MinBindLevel $LDAPclientMinBindLevel `
                 -BindDn $LDAPclientBindDn `
-                -BindPassword $pass1 `
+                -BindPassword ********** `
                 -BaseDn $LDAPclientBaseDn `
                 -BaseScope $LDAPclientBaseScope `
                 -UserDn $LDAPclientUserDn `
@@ -8004,7 +8013,6 @@ Try {
                 }
                 while($ANS -eq "y")
                 $LDAPclientBindPassword=get_pwd_from_cli -workOn $mySecondaryVserver -for "LDAP server Bind Password" 
-
                 $LDAPclientServers=$serverslist
                 Write-LogDebug "New-NcLdapClient -Name $PrimClient -VserverContext $mySecondaryVserver `
                 -Schema $LDAPclientSchema `
@@ -8013,7 +8021,7 @@ Try {
                 -QueryTimeout $LDAPclientQueryTimeout `
                 -MinBindLevel $LDAPclientMinBindLevel `
                 -BindDn $LDAPclientBindDn `
-                -BindPassword $pass1 `
+                -BindPassword ******** `
                 -BaseDn $LDAPclientBaseDn `
                 -BaseScope $LDAPclientBaseScope `
                 -UserDn $LDAPclientUserDn `
@@ -8355,12 +8363,12 @@ Function create_update_CIFS_shares_dr (
     [bool]$Backup,
     [bool]$Restore) {
 Try {
-
 	$Return=$True
     $RunBackup=$False
     $RunRestore=$False
     Write-Log "[$workOn] Check SVM CIFS shares"
     Write-LogDebug "create_update_CIFS_shares_dr[$myPrimaryVserver]: start"
+    #wait-debugger
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
     if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
@@ -13462,6 +13470,9 @@ Function restore_quota (
                             {
                                 Write-LogDebug "Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
                                 try{
+                                    if($Qtree -eq $null -or $Qtree.length -eq 0){
+                                        $Qtree=""
+                                    }
                                     $Output=Remove-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar 
                                     if ( $? -ne $True ) { $Return = $False ; write-logDebug "ERROR: Remove-NcQuota failed [$ErrorVar]" }
                                 }catch{
@@ -13500,6 +13511,9 @@ Function restore_quota (
                             {
                                 Write-LogDebug "Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy"
                                 try{
+                                    if($Qtree -eq $null -or $Qtree.length -eq 0){
+                                        $Qtree=""
+                                    }
                                     $Output=Remove-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree -Policy $myPolicy  -ErrorVariable ErrorVar
                                     if ( $? -ne $True ) { $Return = $False ; Write-LogDebug "ERROR: Remove-NcQuota failed [$ErrorVar]" }
                                 }catch{
@@ -13841,7 +13855,7 @@ Try {
                 $VolQuotaStatus=$status.Status
                 if ( $VolQuotaStatus -eq 'on' ) { 
                     Write-LogDebug "restart_quota_vol_from_list: Disable-NcQuota -Vserver $Vserver -Volume $Volume"
-                    Write-Log "Disable quota on [$Vserver] Volume [$Volume]" 
+                    Write-Log "[$Vserver] Disable quota on Volume [$Volume]" 
                     $Output=Disable-NcQuota -Controller $myController -Vserver $myVserver -Volume $Volume  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcQuota failed [$ErrorVar]" }
                 }

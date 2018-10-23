@@ -143,6 +143,7 @@
 	Name of the Cloned Vserver to work with
 	Use with [-DeleteCloneDR]
 .PARAMETER DefaultPass
+	Deprecated. Use DefaultLocalUserCredentials argument
 	Force a Default Password for all users inside an SVM DR or Clone SVM
 .PARAMETER ForceActivate
     Mandatory argument in case of disaster in Source site
@@ -201,9 +202,12 @@
     Values are Debug,Info,Warn,Error,Fatal,Off
 .PARAMETER DefaultLocalUserCredentials
     Optional argument to pass the credentials for local user create/update
-    In NonInteractive Mode, we cannot prompt for user password.  If you want users to be created, the password from these credentials is used.
+	In NonInteractive Mode, we cannot prompt for user password.  If you want users to be created, the password from these credentials is used.
+	Can be used during ConfigureDR, Restore or CloneDR
 .PARAMETER ActiveDirectoryCredentials
-    Optional argument to pass the credentials for joining AD in NonInteractive Mode during configureDR
+	Optional argument to pass the credentials for joining AD in NonInteractive Mode during ConfigureDR, Restore or CloneDR
+.PARAMETER DefaultLDAPCredentials
+	Optional argument to pass the credentials for binding LDAP server during ConfigureDR, Restore or CloneDR
 .PARAMETER TemporarySecondaryCifsIp
     For cifs, sometimes a secondary lif is needed to join in Active Directory (duplicate ip conflict)
     This ip address will be used to create that temporary lif
@@ -326,7 +330,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : October 8th, 2018
+    Version : October 23th, 2018
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -346,6 +350,10 @@
     	- 0.1.0 : 	Adding log4net logging and WFA logging integration, setup can now run in noninteractive mode
 		- 0.1.1 : 	Bugfixes, added new cmdlet wrapper with official verbs
 		- 0.1.2 :	Bugfixes, Add FabricPool support on destination
+		- 0.1.3 : 	Fix create CIFS share during Restore
+					Fix create SYMLINK
+					Fix restore Quota
+
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -506,6 +514,7 @@ Param (
 	[string]$RootAggr="",
 
 	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='Restore')]
 	[switch]$AlwaysChooseDataAggr,
 
 	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
@@ -716,7 +725,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
     [Parameter(Mandatory = $false, ParameterSetName='Restore')]
-	  [Int32]$Timeout = 60,
+	[Int32]$Timeout = 60,
 
     [Parameter(Mandatory = $false, ParameterSetName='Setup')]
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
@@ -752,7 +761,12 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName='Restore')]    
-    [pscredential]$ActiveDirectoryCredentials=$null,
+	[pscredential]$ActiveDirectoryCredentials=$null,
+	
+	[Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName='Restore')]    
+    [pscredential]$DefaultLDAPCredentials=$null,
 
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='CloneDR')]
@@ -773,7 +787,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.2"
+$Global:RELEASE="0.1.3"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -797,6 +811,7 @@ $Global:AlwaysChooseDataAggr=$AlwaysChooseDataAggr
 $Global:WfaIntegration=$WfaIntegration
 $Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 $Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
+$Global:DefaultLDAPCredentials=$DefaultLDAPCredentials
 $Global:BACKUPALLSVM=$False
 $Global:NumberOfLogicalProcessor = (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
 if($Global:NumberOfLogicalProcessor -lt 4){
@@ -863,6 +878,13 @@ if ( $module -eq $null ) {
         Write-Error "ERROR: Failed to load module SVMTOOLS"
         exit 1
 }
+remove-module -Name svmtool -ErrorAction SilentlyContinue
+$module=import-module "$PSScriptRoot\svmtool" -PassThru
+if ( $module -eq $null ) {
+        Write-Host "ERROR: Failed to load module SVMTOOL" -ForegroundColor Red
+        Write-Error "ERROR: Failed to load module SVMTOOL"
+        exit 1
+}
 if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
     $env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
 }
@@ -921,10 +943,13 @@ Write-LogOnly ""
 Write-LogOnly "SVMTOOL START"
 if ( $Help ) { Write-Help }
 if ( $Version ) {
-	$ModuleVersion=(Get-Module -Name svmtools).Version
+	$ModulesVersion=(Get-Module -Name svmtools).Version
+	$ModulesVersion=$ModulesVersion.ToString()
+	$ModuleVersion=(Get-Module -Name svmtool).Version
 	$ModuleVersion=$ModuleVersion.ToString()
 	Write-Log "Script Version [$RELEASE]"
-	Write-Log "Module Version [$ModuleVersion]"
+	Write-Log "Module svmtool Version [$ModuleVersion]"
+	Write-Log "Module svmtools Version [$ModulesVersion]"
 	Clean_and_exit 0 
 }
 Write-LogDebug "BASEDIR           [$BASEDIR]"
@@ -1342,6 +1367,7 @@ if ( $Restore ) {
                 [Parameter(Mandatory=$True)][string]$VOLTYPE,
 				[Parameter(Mandatory=$False)][pscredential]$DefaultLocalUserCredentials,
 				[Parameter(Mandatory=$False)][pscredential]$ActiveDirectoryCredentials,
+				[Parameter(Mandatory=$False)][pscredential]$DefaultLDAPCredentials,
 				[Parameter(Mandatory=$False)][string]$TemporarySecondaryCifsIp,
 				[Parameter(Mandatory=$False)][string]$SecondaryCifsLifMaster,
                 [Parameter(Mandatory=$False)][string]$RootAggr,
@@ -1405,6 +1431,7 @@ if ( $Restore ) {
 			$Global:VOLUME_TYPE=$VOLTYPE
 			$Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 			$Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
+			$Global:DefaultLDAPCredentials=$DefaultLDAPCredentials
 			check_create_dir -FullPath $Global:JsonPath -Vserver $SourceVserver
 			$DestinationCluster=$DestinationController.Name
 			Write-LogDebug ""
@@ -1453,6 +1480,7 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("DestinationController",$NcSecondaryCtrl)
 		[void]$RestoreJob.AddParameter("DefaultLocalUserCredentials",$DefaultLocalUserCredentials)
 		[void]$RestoreJob.AddParameter("ActiveDirectoryCredentials",$ActiveDirectoryCredentials)
+		[void]$RestoreJob.AddParameter("DefaultLDAPCredentials",$DefaultLDAPCredentials)
 		[void]$RestoreJob.AddParameter("TemporarySecondaryCifsIp",$TemporarySecondaryCifsIp)
 		[void]$RestoreJob.AddParameter("SecondaryCifsLifMaster",$SecondaryCifsLifMaster)
 		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)

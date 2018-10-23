@@ -429,6 +429,11 @@ function New-SvmDr{
         # If you pass this parameter, the password will used to create missing users
         [pscredential]$DefaultLocalUserCredentials,
 
+        # Optional, this SvmDr solution cannot transfer the passwords for LDAP Binding
+        # In Non-Interactive Mode, the script cannot bind to new LDAP server
+        # If you pass this parameter, the password will be used to Bind LDAP server
+        [pscredential]$DefaultLDAPCredentials,
+
         # Optional, when running in Non-Interactive mode, this script cannot prompt for AD credentials
         # Use this parameter to join the dr vserver in AD without interaction
         [pscredential]$ActiveDirectoryCredentials,
@@ -2297,6 +2302,11 @@ function New-SvmDrClone{
         # If you pass this parameter, the password will used to create missing users
         [pscredential]$DefaultLocalUserCredentials,
 
+        # Optional, this SvmDr solution cannot transfer the passwords for LDAP Binding
+        # In Non-Interactive Mode, the script cannot bind to new LDAP server
+        # If you pass this parameter, the password will be used to Bind LDAP server
+        [pscredential]$DefaultLDAPCredentials,
+
         # Optional, when running in Non-Interactive mode, this script cannot prompt for AD credentials
         # Use this parameter to join the dr vserver in AD without interaction
         [pscredential]$ActiveDirectoryCredentials,
@@ -2479,6 +2489,11 @@ function Restore-SvmDr{
         # In Non-Interactive Mode, the script cannot create missing users
         # If you pass this parameter, the password will used to create missing users
         [pscredential]$DefaultLocalUserCredentials,
+
+        # Optional, this SvmDr solution cannot transfer the passwords for LDAP Binding
+        # In Non-Interactive Mode, the script cannot bind to new LDAP server
+        # If you pass this parameter, the password will be used to Bind LDAP server
+        [pscredential]$DefaultLDAPCredentials,
 
         # Optional, when running in Non-Interactive mode, this script cannot prompt for AD credentials
         # Use this parameter to join the dr vserver in AD without interaction
