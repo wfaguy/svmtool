@@ -328,23 +328,24 @@
     Author  : Mirko Van Colen
     Version : October 8th, 2018
     Version History : 
-        - 0.0.3 : Initial version 
-        - 0.0.4 : Bugfix, typos and added ParameterSets
-		- 0.0.5 : Bugfixes, advancements and colorcoding
-		- 0.0.6 : Change behaviour when SVM has no LIF, nor Data volume
-		- 0.0.7 : Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
-				  Add EXAMPLE for ShowDR, DeleteSource, Migrate, ...
-    - 0.0.8 : Add CloneDR option to create Cloned SVM from Destination Vserver
-				      Add DeleteCloneDR option to remove a previously Cloned Vserver          
-    - 0.0.9 : Added symlinks and noninteractive mode
-              Bugfixes (cifs groups & users)
-              Added default usercredentials for noninteractive mode
-              Added smart resource selections (with regex and defaults) for noninteractive mode
-              Minor typos
-              Remove Restamp_msid option
-				     Add ForceRestart optional parameter to forcibly restart a stopped Vserver during ReActivate step
-    - 0.1.0 : Adding log4net logging and WFA logging integration, setup can now run in noninteractive mode
-    - 0.1.1 : Bugfixes, added new cmdlet wrapper with official verbs
+        - 0.0.3 : 	Initial version 
+        - 0.0.4 : 	Bugfix, typos and added ParameterSets
+		- 0.0.5 : 	Bugfixes, advancements and colorcoding
+		- 0.0.6 : 	Change behaviour when SVM has no LIF, nor Data volume
+		- 0.0.7 : 	Add ForceUpdateSnapPolicy to not update snapshot policy on destination volumes by default
+				  	Add EXAMPLE for ShowDR, DeleteSource, Migrate, ...
+    	- 0.0.8 : 	Add CloneDR option to create Cloned SVM from Destination Vserver
+					Add DeleteCloneDR option to remove a previously Cloned Vserver          
+    	- 0.0.9 : 	Added symlinks and noninteractive mode
+              		Bugfixes (cifs groups & users)
+              		Added default usercredentials for noninteractive mode
+              		Added smart resource selections (with regex and defaults) for noninteractive mode
+              		Minor typos
+              		Remove Restamp_msid option
+				    Add ForceRestart optional parameter to forcibly restart a stopped Vserver during ReActivate step
+    	- 0.1.0 : 	Adding log4net logging and WFA logging integration, setup can now run in noninteractive mode
+		- 0.1.1 : 	Bugfixes, added new cmdlet wrapper with official verbs
+		- 0.1.2 :	Bugfixes, Add FabricPool support on destination
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -521,7 +522,7 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='Migrate')]
 	[Parameter(Mandatory = $false, ParameterSetName='Restore')]    
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
-  	[string]$DataAggr,
+  	[string]$DataAggr="",
 
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
   	[switch]$LastSnapshot,
@@ -772,7 +773,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.1"
+$Global:RELEASE="0.1.2"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -785,6 +786,8 @@ $ErrorActionPreference="Continue"
 if($WfaIntegration -or $UpdateDR -or $UpdateReverse){
     $NonInteractive=$true
 }
+$Global:RootAggr=$RootAggr
+$Global:DataAggr=$DataAggr
 $Global:NonInteractive=$NonInteractive
 if($NonInteractive){
     $AlwaysChooseDataAggr=$true
@@ -1346,7 +1349,9 @@ if ( $Restore ) {
 				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
                 [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
                 [boolean]$NonInteractive
-            )
+			)
+			$Global:RootAggr=$RootAggr
+			$Global:DataAggr=$DataAggr
             $Global:ConsoleThreadingRequired=$true
 			$Path=$env:PSModulePath.split(";")
 			if($Path -notcontains $script_path){
@@ -1405,14 +1410,15 @@ if ( $Restore ) {
 			Write-LogDebug ""
 			Write-LogDebug "Restore [$SourceVserver] on Cluster [$DestinationCluster]"
 			Write-LogDebug "LOGFILE [$LOGFILE]"
+			Write-Log "[$SourceVserver] LOGFILE [$LOGFILE]"
 			Write-LogDebug "SVMTOOL_DB [$Global:SVMTOOL_DB]"
 			Write-LogDebug "JsonPath [$Global:JsonPath]"
 			Write-LogDebug "SourceVserver [$SourceVserver]"
 			Write-LogDebug "DestinationController [$DestinationController]"
 			Write-LogDebug "VOLUME_TYPE [$Global:VOLUME_TYPE]"
-			Write-LogDebug "RootAggr [$RootAggr]"
-			Write-LogDebug "DataAggr [$DataAggr]"
-        if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ){
+			Write-LogDebug "RootAggr [$Global:RootAggr]"
+			Write-LogDebug "DataAggr [$Global:DataAggr]"
+        if ( ( $ret=create_vserver_dr -myPrimaryVserver $SourceVserver -mySecondaryController $DestinationController -workOn $SourceVserver -mySecondaryVserver $SourceVserver -Restore -DDR $False -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $Global:DataAggr -RootAggr $Global:RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ){
 
 				Write-LogDebug "ERROR in create_vserver_dr [$ret]"
                 #return $False
@@ -1449,8 +1455,8 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("ActiveDirectoryCredentials",$ActiveDirectoryCredentials)
 		[void]$RestoreJob.AddParameter("TemporarySecondaryCifsIp",$TemporarySecondaryCifsIp)
 		[void]$RestoreJob.AddParameter("SecondaryCifsLifMaster",$SecondaryCifsLifMaster)
-		[void]$RestoreJob.AddParameter("RootAggr",$RootAggr)
-		[void]$RestoreJob.AddParameter("DataAggr",$DataAggr)
+		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)
+		[void]$RestoreJob.AddParameter("DataAggr",$Global:DataAggr)
 		if($RW -eq $True){
 			[void]$RestoreJob.AddParameter("VOLTYPE","RW")
 		}else{

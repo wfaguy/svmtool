@@ -75,6 +75,7 @@ Use Version Flexible SnapMirror when necessary<br>(by example: build a DR from 8
 Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the same,<br>so users will only have to reconnect just by refreshing explorer<br>or double-click on folder<br> | Yes 
 Select subset of sources volumes that will be replicated | Yes
 Clone DR SVM<br>In order to test DR without interrupting SnapMirror relationships during the timeframe of the test | Yes
+FabricPool on Destination | Yes<br>
 
 ### BACKUP & RESTORE Purpose
 In order to perform a restore operation a minimal config must exist on the destination Cluster:

@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : October 18th, 2018
+    Release : October 23th, 2018
 
 #>
 
@@ -71,7 +71,7 @@ function set_log_level{
     )
     $wrapper = [log4net.LogManager]::GetLogger($loggerinstance)
     $l = $wrapper.Logger
-    $l.Level = get_log4net_level - level $level
+    $l.Level = get_log4net_level -level $level
     $l.Repository.Configured=$true
 
 }
@@ -190,7 +190,12 @@ Function clean_and_exit ([int]$return_code) {
 
 #############################################################################################
 Function handle_error([object]$object,[string]$vserver){
-	$ErrorMessage = $object.Exception.Message
+    foreach($appenders in $Global:consolelog.Logger.Appenders){
+        if($appenders.Name -match "svmtool.log"){
+            $appenders.Threshold=[log4net.Core.Level]::Debug
+        }
+    }
+    $ErrorMessage = $object.Exception.Message
 	$FailedItem = $object.Exception.ItemName
 	$Type = $object.Exception.GetType().FullName
 	$CategoryInfo = $object.CategoryInfo
@@ -4599,7 +4604,7 @@ Function check_update_voldr(
     [bool]$Backup,
     [bool]$Restore) {
 Try {
-	$Return = $True
+    $Return = $True
     Write-Log "[$workOn] Check SVM Volumes options"
     Write-logDebug "check_update_voldr[$myPrimaryVserver]: start"
 	if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]"}
@@ -4898,7 +4903,7 @@ Function create_volume_voldr(
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
 	[string] $mySecondaryVserver,
-    [string] $myDataAggr,
+    [string] $myDataAggr="",
     [string]$workOn=$mySecondaryVserver,
     [bool]$Backup,
     [bool]$Restore,
@@ -5036,8 +5041,8 @@ Try {
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
                 if ( $SecondaryVol -eq $null )  {
                     # Create the volume
-                #  THIS NOW WORKS DIFFERENTLY
-                #  WE ALWAYS TRY TO FIND A MATCH IN NON INTERACTIVE MODE
+                    #  THIS NOW WORKS DIFFERENTLY
+                    #  WE ALWAYS TRY TO FIND A MATCH IN NON INTERACTIVE MODE
 
                     if($Global:NonInteractive){
                         Write-LogDebug "create_volume_voldr with `$Global:NonInteractive enabled, auto selecting aggregate for volume [$PrimaryVolName]"
@@ -5046,67 +5051,96 @@ Try {
                         if( $Global:AlwaysChooseDataAggr -eq $true) {
                             Write-LogDebug "create_volume_voldr with `$Global:AlwaysChooseDataAggr enabled, ask dataAggr for volume [$PrimaryVolName]"
                             $Question = "[$mySecondaryVserver] Please Select a destination DATA aggregate for [$PrimaryVolName] on Cluster [$MySecondaryController]:"
-                        }else {
+                        }elseif($myDataAggr.length -eq 0) {
                             $Question = "[$mySecondaryVserver] Please Select the default DATA aggregate on Cluster [$MySecondaryController]:"
                         }
                     }
-
-
                     if($aggrMatchRegEx -ne ""){
                         $dataAggrMatchRegex = replace_regex_groupmatches -string $PrimaryVolAggr -regex $aggrMatchRegEx -replacewith "(.*)"
                     }else{
                         $dataAggrMatchRegex = ""
                     }
-                    $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr
-                     
-
-
+                    $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr -autoSelect ($Global:NonInteractive -or ($myDataAggr -ne ""))
                     $Aggr = Get-NcAggr -Controller $mySecondaryController -Name $myDataAggr  -ErrorVariable ErrorVar 
-
+                    $AggrName=$Aggr.Name
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" } 
                     if ( $Aggr -eq $null ) {
                         Write-LogError "ERROR: aggr [$myDataAggr] not found on [$mySecondaryController] : Exit"
                         clean_and_exit 1 
                     }
+                    if($Aggr.AggrRaidAttributes.IsComposite -eq $True){
+                        $ObjectStore=(Get-NcAggrObjectStore -Controller $mySecondaryController -Aggregate $AggrName).ObjectStoreName
+                        $CompositeServer=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).Server
+                        $S3Name=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).S3Name
+                        $ProviderType=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).ProviderType
+                        $UsedSpace=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).UsedSpace
+                        Write-Log "[$Workon] Aggr [$AggrName] is a FabricPool [$ObjectStore] [$CompositeServer] [$S3Name] [$ProviderType] [$UsedSpace]"
+                        $SpaceReserve="none"
+                        $option=@{"TieringPolicy"="auto"}
+                    }else{
+                        $SpaceReserve=$PrimaryVolSpaceGuarantee
+                        $option=@{}
+                    }
                     $Available=$Aggr.Available
 
                     # if in non-interactive mode and matching aggr does not have enought space, break
+                    # break only if we are provisioning Thick volume and available space is not enough
                     # we already defaulted to the largest aggr anyways
-                    if($Global:NonInteractive -and ($Available -lt $PrimaryVolSize) ){
+                    if($Global:NonInteractive -and ($SpaceReserve -ne "none" -and ($Available -lt $PrimaryVolSize)) ){
                         Write-LogError "ERROR: No space left on [$myDataAggr] [$mySecondaryController] for create [$PrimaryVolName]"
                         $Return = $False
                         return $Return 
                     }
-                    while ( $Available -lt $PrimaryVolSize ) {
+                    if($Global:NonInteractive -and ($SpaceReserve -eq "none" -and ($Available -lt $PrimaryVolSize)) ){
+                        Write-Warning "Monitor space available on Aggr [$myDataAggr] [$mySecondaryController]. Thin volume [$PrimaryVolName] is larger than available space" 
+                    }
+                    if($SpaceReserve -ne "none"){
+                        while ( $Available -lt $PrimaryVolSize ) {
 
-                        Write-LogWarn "Unable to create volume [$PrimaryVolName] [$PrimaryVolSize]"
-                        Write-LogWarn "Not enough space available in aggr [$myDataAggr] [$Available]"
-                        $Question ="[$workOn] WARNING: Please select another Aggregate:"
+                            Write-LogWarn "Unable to create volume [$PrimaryVolName] [$PrimaryVolSize]"
+                            Write-LogWarn "Not enough space available in aggr [$myDataAggr] [$Available]"
+                            $Question ="[$workOn] WARNING: Please select another Aggregate:"
 
-                        # we keep asking, no autoselect, but we do want to keep suggesting our best match, even if it's a bad one
-                        $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr
-                         
-                        $Aggr = Get-NcAggr -Controller $mySecondaryController -Name $myDataAggr  -ErrorVariable ErrorVar 
-
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" } 
-                        $Available=$Aggr.Available
+                            # we keep asking, no autoselect, but we do want to keep suggesting our best match, even if it's a bad one
+                            $myDataAggr = select_data_aggr_from_cli -myController $mySecondaryController -myQuestion $Question -regExMatch $dataAggrMatchRegex -default $myDataAggr
+                            
+                            $Aggr = Get-NcAggr -Controller $mySecondaryController -Name $myDataAggr  -ErrorVariable ErrorVar 
+                            $AggrName=$Aggr.Name
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" }
+                            if($Aggr.AggrRaidAttributes.IsComposite -eq $True){
+                                $ObjectStore=(Get-NcAggrObjectStore -Controller $mySecondaryController -Aggregate $AggrName).ObjectStoreName
+                                $CompositeServer=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).Server
+                                $S3Name=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).S3Name
+                                $ProviderType=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).ProviderType
+                                $UsedSpace=(Get-NcAggrObjectStoreConfig -Controller $mySecondaryController -ObjectStoreName $ObjectStore).UsedSpace
+                                Write-Log "[$Workon] Aggr [$AggrName] is a FabricPool [$ObjectStore] [$CompositeServer] [$S3Name] [$ProviderType] [$UsedSpace]"
+                                $SpaceReserve="none"
+                                $option=@{"TieringPolicy"="auto"}
+                            }else{
+                                $SpaceReserve=$PrimaryVolSpaceGuarantee
+                                $option=@{}
+                            } 
+                            $Available=$Aggr.Available
+                        }
+                    }elseif($Available -lt $PrimaryVolSize){
+                        Write-Warning "Monitor space available on Aggr [$myDataAggr] [$mySecondaryController]. Thin volume [$PrimaryVolName] is larger than available space"    
                     }
                     if($Restore -eq $False){	
                         Write-Log "[$workOn] Create new volume DR: [$PrimaryVolName]"
-                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
+                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }
                     }else{
                         Write-Log "[$workOn] Create new volume: [$PrimaryVolName]"
                         if($Global:VOLUME_TYPE -eq "RW"){
                             Write-LogDebug "Create RW volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }else{
                             Write-LogDebug "Create DP volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr  -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $PrimaryVolSpaceGuarantee -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize  -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }
                     }
@@ -5117,7 +5151,6 @@ Try {
                     }else 
                     {
                         Write-LogDebug "create_volume_voldr with `$Global:AlwaysChooseDataAggr set to False, so reusing variable `$myDataAggr"
-
                     }
                 } 
                 else {
@@ -6439,12 +6472,21 @@ Try {
     if($Restore -eq $False){
         $PrimaryInterfaceList = Get-NcNetInterface -Role DATA -VserverContext $myPrimaryVserver -DataProtocols cifs,nfs,none,iscsi -Controller $myPrimaryController  -ErrorVariable ErrorVar 
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetInterface failed [$ErrorVar]" }
+        $PrimaryNetPortList = Get-NcNetPort -Controller $myPrimaryController -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNetInterface.json")){
             $PrimaryInterfaceList=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetInterface.json")
+            Throw "ERROR: failed to read $filepath"
+        }
+        if(Test-Path $($Global:JsonPath+"Get-NcNetPort.json")){
+            $PrimaryNetPortList=Get-Content $($Global:JsonPath+"Get-NcNetPort.json") | ConvertFrom-Json
+        }else{
+            $Return=$False
+            $filepath=$($Global:JsonPath+"Get-NcNetPort.json")
             Throw "ERROR: failed to read $filepath"
         }
     }
@@ -6454,6 +6496,13 @@ Try {
             Write-LogDebug "$($Global:JsonPath+"Get-NcNetInterface.json") saved successfully"
         }else{
             Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetInterface.json")"
+            $Return=$False
+        }
+        $PrimaryNetPortList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcNetPort.json") -Encoding ASCII -Width 65535
+        if( ($ret=get-item $($Global:JsonPath+"Get-NcNetPort.json") -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$($Global:JsonPath+"Get-NcNetPort.json") saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcNetPort.json")"
             $Return=$False
         }
     } 
@@ -6469,8 +6518,9 @@ Try {
         $PrimaryDnsDomainName=$PrimaryInterface.DnsDomainName
         $PrimaryRole=$PrimaryInterface.Role
         $PrimaryCurrentNode=$PrimaryInterface.CurrentNode
-        $PrimaryCurrentPortObj=Get-NcNetPort -Name $PrimaryCurrentPort -Node $PrimaryCurrentNode -Controller $myPrimaryController -ErrorVariable ErrorVar
-        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
+        #$PrimaryCurrentPortObj=Get-NcNetPort -Name $PrimaryCurrentPort -Node $PrimaryCurrentNode -Controller $myPrimaryController -ErrorVariable ErrorVar
+        $PrimaryCurrentPortObj=$PrimaryNetPortList | where-object {($_.Port -eq $PrimaryCurrentPort) -and ($_.Node -eq $PrimaryCurrentNode)}   
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: find Net Port failed [$ErrorVar]" }
         $PrimaryBroadcastDomain = $PrimaryCurrentPortObj.BroadcastDomain
         $PrimaryRoutingGroupName=$PrimaryInterface.RoutingGroupName
         $PrimaryFirewallPolicy=$PrimaryInterface.FirewallPolicy
@@ -6515,7 +6565,7 @@ Try {
                 $PrimaryGateway=$PrimaryDefaultRoute.GatewayAddress
             }else{
                 $Return=$False
-                Throw "ERROR: neither Get-NcNetRoute.json or Get-NcNetRoutingGroupRoute.json are available in backup folder for []"        
+                Throw "ERROR: neither Get-NcNetRoute.json or Get-NcNetRoutingGroupRoute.json are available in backup folder for [$mySecondaryVserver]"        
             }       
         }
         if($Backup -eq $False){
@@ -6546,7 +6596,6 @@ Try {
                         $myNetMask=ask_NetMask_from_cli -myNetMask $PrimaryNetMask -workOn $workOn
                         $myGateway=ask_gateway_from_cli -myGateway $PrimaryGateway -workOn $workOn
                         
-
                         if($nodeMatchRegEx -ne ""){
                             $nodeRegEx=replace_regex_groupmatches -string $PrimaryCurrentNode -regex $nodeMatchRegEx -replacewith "(.*)"
                         }else{
@@ -6564,13 +6613,11 @@ Try {
                                 Write-Log "[$workOn] LIF [$LIF] is the Administration LIF it must be in Administrative up status"
                                 Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController"
                                 $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
                             } 
                             else 
                             {
                                 Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController"
                                 $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
                             }
                             if($BackupOfGateway){
                                 # set gateway back to original, to add routes
@@ -9441,9 +9488,9 @@ function check_create_dir{
         [string]
         $Vserver
     )
-    Write-Log "[$Vserver] FullPath = [$FullPath]"
+    #Write-Log "[$Vserver] FullPath = [$FullPath]"
     $Path=Split-Path $FullPath
-    Write-Log "[$Vserver] Path = [$Path]"
+    #Write-Log "[$Vserver] Path = [$Path]"
     if(Test-Path $Path){
         return $True
     }else{
@@ -9498,7 +9545,7 @@ Try {
 
     Write-LogDebug "Get-NcAggr -Controller $mySecondaryController -Name $RootAggr"
     $out = Get-NcAggr -Controller $mySecondaryController -Name $RootAggr  -ErrorVariable ErrorVar
-    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]" ;free_mutexconsole}
+    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcAggr failed [$ErrorVar]"}
     if ( $out -eq $null ) {
         Write-LogError "ERROR: aggregate [$RootAggr] not found on cluster [$mySecondaryController]" 
         Write-LogError "ERROR: exit" 
@@ -9657,8 +9704,6 @@ Try {
         } 
         else 
         {
-
-
             Write-Log "[$workOn] Create new vserver"
             $Question = "[$workOn] Please Select root aggregate on Cluster [$MySecondaryController]:"
 
@@ -13426,6 +13471,9 @@ Function restore_quota (
                             }
                         }
                         try{
+                            if($Qtree -eq $null -or $Qtree.length -eq 0){
+                                $Qtree=""
+                            }
                             Write-LogDebug "Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                             $Output=Add-NcQuota -User $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
                             if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry [$ErrorVar]"; $Return = $False }
@@ -13461,6 +13509,9 @@ Function restore_quota (
                             }
                         }
                         try{
+                            if($Qtree -eq $null -or $Qtree.length -eq 0){
+                                $Qtree=""
+                            }
                             Write-LogDebug "Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree $Opts -Policy $myPolicy"
                             $Output=Add-NcQuota -Group $QuotaTarget -Volume $Volume -Controller $myController -Vserver $Vserver -Qtree $Qtree @NcQuotaParamList -Policy $myPolicy  -ErrorVariable ErrorVar
                             if ( $? -ne $True -and $ErrorVar -ne "duplicate entry" ) {Write-LogDebug "Add-NcQuota failed on a duplicate entry [$ErrorVar]"; $Return = $False }
