@@ -878,13 +878,13 @@ if ( $module -eq $null ) {
         Write-Error "ERROR: Failed to load module SVMTOOLS"
         exit 1
 }
-remove-module -Name svmtool -ErrorAction SilentlyContinue
-$module=import-module "$PSScriptRoot\svmtool" -PassThru
-if ( $module -eq $null ) {
-        Write-Host "ERROR: Failed to load module SVMTOOL" -ForegroundColor Red
-        Write-Error "ERROR: Failed to load module SVMTOOL"
-        exit 1
-}
+#remove-module -Name svmtool -ErrorAction SilentlyContinue
+#$module=import-module "$PSScriptRoot\svmtool" -PassThru
+#if ( $module -eq $null ) {
+#        Write-Host "ERROR: Failed to load module SVMTOOL" -ForegroundColor Red
+#        Write-Error "ERROR: Failed to load module SVMTOOL"
+#        exit 1
+#}
 if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
     $env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
 }

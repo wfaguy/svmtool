@@ -9694,6 +9694,7 @@ Try {
         $PrimaryRootVolumeAggr = $PrimaryRootVolume.Aggregate
         $PrimaryRootVolumeSecurityStyle = $PrimaryVserver.RootVolumeSecurityStyle
         $PrimaryLanguage = $PrimaryVserver.Language
+        $PrimaryIPSpace = $PrimaryVserver.Ipspace
         $PrimaryAllowedProtocols=$PrimaryVserver.AllowedProtocols
         $PrimaryComment=$PrimaryVserver.Comment
         $SecondaryVserver = Get-NcVserver -Controller $mySecondaryController -Name $mySecondaryVserver  -ErrorVariable ErrorVar 
@@ -9735,8 +9736,8 @@ Try {
             }
              
             Write-Log "[$workOn] Create vserver dr: [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$RootAggr]"
-            Write-LogDebug "create_vserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
-            $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
+            Write-LogDebug "create_vserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
+            $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
 
             if ( $? -ne $True ) {
                 Write-LogError "ERROR: Failed to create vserver $mySecondaryVserver on $mySecondaryController"  
