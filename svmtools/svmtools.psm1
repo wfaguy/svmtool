@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : October 23th, 2018
+    Release : October 25th, 2018
 
 #>
 
@@ -813,12 +813,23 @@ Function get-lag ($epochdate) {
 #############################################################################################
 Function get_local_cred ([string]$myCredential) {
 
+    if($Global:WfaIntegration){
+        Write-LogDebug "get_local_cred: get from WFA - [$myCredential]"
+        try{
+            $cred = Get-WfaCredentials $myCredential
+            return $cred
+        }catch{
+			Write-LogError "ERROR: failed to get credentials for $myCredential in WfaIntegration mode | Exit" 
+        	clean_and_exit 1            
+        }
+    }
+
 	# Manage Default cDOT Credentials
 	Write-LogDebug "get_local_cred:  [$myCredential]"
 	$Global:CRED_CONF_FILE=$Global:CRED_CONFDIR + $myCredential + '.cred'
 
 	if ( $ResetPassword ) { 
-        if(-not $Global:NonInteractive -or $Global:WfaIntegration){
+        if(-not $Global:NonInteractive){
         	$status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
 		    if ( $status -eq $False ) {
 			    Write-LogError "ERROR: Unable to set your credentials for $myCredential Exit" 
@@ -830,9 +841,9 @@ Function get_local_cred ([string]$myCredential) {
 	}
 
 	$cred=read_cred_from_file $Global:CRED_CONF_FILE
-	if ( $cred -eq $null -or $Global:WfaIntegration ) 
+	if ( $cred -eq $null ) 
     {
-        if(-not $Global:NonInteractive -or $Global:WfaIntegration -or ($Global:ActiveDirectoryCredentials -ne $null)){
+        if(-not $Global:NonInteractive -or ($Global:ActiveDirectoryCredentials -ne $null)){
             $status = set_cred_from_cli $myCredential $Global:CRED_CONF_FILE
 		    $cred=read_cred_from_file $Global:CRED_CONF_FILE
 		    if ( $cred -eq $null ) 
@@ -851,10 +862,7 @@ Function get_local_cred ([string]$myCredential) {
 #############################################################################################
 Function set_cred_from_cli ([string]$myCredential, [string]$cred_file ) {
 	Write-Log "Login for [$myCredential]"
-    if($Global:WfaIntegration){
-        $cred = Get-WfaCredentials $myCredential
-        $login = $cred.Username
-    }elseif($Global:ActiveDirectoryCredentials -ne $null){
+    if($Global:ActiveDirectoryCredentials -ne $null){
         $cred = $Global:ActiveDirectoryCredentials
         $login = $cred.Username
     }else{
@@ -877,6 +885,7 @@ Function connect_cluster (
 Try {
 
     if($Global:WfaIntegration){
+        Write-LogDebug "Connect-WfaCluster $myController"
 		$NcController =  Connect-WfaCluster $myController -ErrorVariable ErrorVar
         if ( $? -ne $True ) { throw "ERROR: Connect-WfaCluster failed [$ErrorVar]" }
         return $NcController
@@ -906,16 +915,18 @@ Catch {
 }
 #############################################################################################
 Function set_cDotcred_from_cli ([string]$filer, [string]$cred_file ) {
+
+    if($Global:WfaIntegration){
+        return $true
+    }
+
     Try {
         Write-Log "Login for cluster [$filer]"
-        if($Global:WfaIntegration){
-            $cred = Get-WfaCredentials $filer
-            $login = $cred.Username
-        }else{
-            $login = Read-Host "Enter login"
-            $password = Read-Host "password" -AsSecureString
-            $cred =  New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $login,$password
-        }
+
+        $login = Read-Host "Enter login"
+        $password = Read-Host "password" -AsSecureString
+        $cred =  New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $login,$password
+
         Write-LogDebug "connect_cluster -myController $filer -myCred $cred -myTimeout $Timeout"
         if ( ( $filer_connect=connect_cluster -myController $filer -myCred $cred -myTimeout $Timeout ) -eq $False ) {
                 return $False
@@ -938,12 +949,17 @@ Function set_cDotcred_from_cli ([string]$filer, [string]$cred_file ) {
 #############################################################################################
 Function get_local_cDotcred ([string]$myCluster) {
 
+    if($Global:WfaIntegration){
+        Write-LogDebug "get_cDOT_cred: Get from WFA - Cluster: [$myCluster]"
+        return Get-WfaCredentials $myCluster
+    }
+
 	# Manage Default cDOT Credentials
 	Write-LogDebug "get_cDOT_cred: Cluster: [$myCluster]"
 	$Global:CRED_CONF_FILE=$Global:CRED_CONFDIR + $myCluster + '.cred'
 
 	if ( $ResetPassword ) { 
-        if(-not $Global:NonInteractive -or $Global:WfaIntegration){
+        if(-not $Global:NonInteractive){
         	$status = set_cDotcred_from_cli $myCluster $Global:CRED_CONF_FILE
 		    if ( $status -eq $False ) {
 			    Write-LogError "ERROR: Unable to set your credential for $myCluster Exit" 
@@ -956,7 +972,7 @@ Function get_local_cDotcred ([string]$myCluster) {
 
 	$cred=read_cred_from_file $Global:CRED_CONF_FILE
 	if ( $cred -eq $null ) {
-        if(-not $Global:NonInteractive -or $Global:WfaIntegration){
+        if(-not $Global:NonInteractive){
         	$status = set_cDotcred_from_cli $myCluster $Global:CRED_CONF_FILE
 		    $cred=read_cred_from_file $Global:CRED_CONF_FILE
 		    if ( $cred -eq $null ) {
@@ -1159,7 +1175,7 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
             # do we have a same vlan ?
             $similarVlans = ($NodePortSelectedList -match "[^-]+-$myDefaultVlan$")
             if($similarVlans){
-                $mySelectedDefault=@($similarVlan)[0]
+                $mySelectedDefault=@($similarVlans)[0]
                 $indexMatch = [array]::indexof($NodePortSelectedList,$mySelectedDefault)+1
                 $defaultReason = "Defaulting to similar vlan port"
             }
@@ -1167,8 +1183,11 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
     }
     # still no vlan ?  Then map to a non data vlan
     if($indexMatch -eq 0){
-        Write-LogError "ERROR: Could not find matching home port, defaulting to first port"
+        Write-LogError "ERROR: Could not find matching home port"
         $defaultReason = "Defaulting to first port"
+        if($Global:NonInteractive){
+            return ""
+        }
         $indexMatch = 1
     }
 
@@ -1407,11 +1426,7 @@ Function create_update_vscan_dr (
                             }
                             while($ANS -ne 'n')
                             {
-                                if(-not $Global:NonInteractive){
-                                    $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
-                                }else{
-                                    Write-LogWarn "SKIPPING Vscan Server Entry in NonInteractive Mode"
-                                }
+                                $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
                                 $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
                             }
                             Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
@@ -1439,11 +1454,7 @@ Function create_update_vscan_dr (
                     $num=0
                     while($ANS -ne 'n')
                     {
-                        if(-not $Global:NonInteractive){
-                            $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
-                        }else{
-                            Write-LogWarn "SKIPPING Vscan Server Entry in NonInteractive Mode"
-                        }
+                        $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
                         $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
                     }
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
@@ -2496,11 +2507,7 @@ Function create_update_fpolicy_dr(
                             }
                             while($ANS -ne 'n')
                             {
-                                if(-not $Global:NonInteractive){
-                                    $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                                }else{
-                                    Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
-                                }
+                                $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
                                 $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Primary External Server ?" -options "y/n"
                             }
                             if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
@@ -2519,11 +2526,7 @@ Function create_update_fpolicy_dr(
                                 }
                                 while($ANS -ne 'n')
                                 {
-                                    if(-not $Global:NonInteractive){
-                                        $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                                    }else{
-                                        Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
-                                    }
+                                    $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
                                     $ANS=Read-HostOptions -question "Do you want to add more Secondary External Server ?" -options "y/n"
                                 }        
                             }
@@ -2625,11 +2628,7 @@ Function create_update_fpolicy_dr(
                     $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
                     while($ANS -ne 'n')
                     {
-                        if(-not $Global:NonInteractive){
-                            $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                        }else{
-                            Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
-                        }
+                        $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
                         $ANS=Read-HostOptions -question "Do you want to add more Primary External Server ?" -options "y/n"
                     }
                     if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
@@ -2640,11 +2639,7 @@ Function create_update_fpolicy_dr(
                         $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
                         while($ANS -ne 'n')
                         {
-                            if(-not $Global:NonInteractive){
-                                $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                            }else{
-                                Write-LogWarn "SKIPPING Fpolicy Server Entry in NonInteractive Mode"
-                            }
+                            $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
                             $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Secondary External Server ?" -options "y/n"
                         }    
                     }
@@ -6609,97 +6604,102 @@ Try {
                         }
                         $myNode=select_node_from_cli -myController $mySecondaryController -myQuestion "Please select secondary node for LIF [$PrimaryInterfaceName] :" -regExMatch $nodeRegEx
                         $myPort=select_nodePort_from_cli -myController $mySecondaryController -myNode $myNode -myQuestion "Please select Port for LIF [$PrimaryInterfaceName] on node [$myNode] " -default $PrimaryCurrentPort -broadcastDomain $PrimaryBroadcastDomain
-                        $LIF = '[' + $PrimaryInterfaceName + '] [' + $myIpAddr + '] [' + $myNetMask +  '] [' + $myGateway + '] [' +$myNode + '] [' + $myPort + ']'					
-                            $ANS2 = Read-HostOptions -question "[$mySecondaryVserver] Ready to create the LIF $LIF ?" -options "y/n" -default "y"
-                        if ( $ANS2 -eq 'y' ) 
-                        {
-                            Write-Log "[$workOn] Create the LIF $LIF"
-                            if ( ( $PrimaryFirewallPolicy -eq "mgmt" ) -and ( $PrimaryDataProtocols -eq "none" ) ) 
+                        if($myPort){
+                            $LIF = '[' + $PrimaryInterfaceName + '] [' + $myIpAddr + '] [' + $myNetMask +  '] [' + $myGateway + '] [' +$myNode + '] [' + $myPort + ']'					
+                                $ANS2 = Read-HostOptions -question "[$mySecondaryVserver] Ready to create the LIF $LIF ?" -options "y/n" -default "y"
+                            if ( $ANS2 -eq 'y' ) 
                             {
-                                Write-Log "[$workOn] LIF [$LIF] is the Administration LIF it must be in Administrative up status"
-                                Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController"
-                                $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                            } 
-                            else 
-                            {
-                                Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController"
-                                $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                            }
-                            if($BackupOfGateway){
-                                # set gateway back to original, to add routes
-                                $myGateway = $BackupOfGateway
-                            }
-                            Write-LogDebug "Get ONTAP version for [$mySecondaryController]"
-                            Write-LogDebug "Get-NcSystemVersionInfo -Controller $mySecondaryController"
-                            $VersionTuple=(Get-NcSystemVersionInfo -Controller $mySecondaryController | Select-Object VersionTuple).VersionTuple
-                            if($VersionTuple.Generation -ge 9){
-                                Write-LogDebug "[$mySecondaryController] run ONTAP 9.X"
-                                Write-LogDebug "Get-NcNetRoute -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                $NetRoute=Get-NcNetRoute -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoute failed [$ErrorVar]" }
-                                if(($NetRoute.count) -gt 0){
-                                    $Gateway=$NetRoute.Gateway
-                                    Write-LogDebug "Remove-NcNetRoute -Destination '0.0.0.0/0' -Gateway $Gateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                    $out=Remove-NcNetRoute -Destination '0.0.0.0/0' -Gateway $Gateway -Vserver $mySecondaryVserver -Confirm:$False -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
-                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcNetRoute failed [$ErrorVar]" ; }
-                                }
-                                if( ( $myGateway -ne $null ) -and ( $myGateway -ne "" ) ){
-                                    Write-LogDebug "New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                    $out=New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoute failed [$ErrorVar]" ; }
-                                }
-
-                            }
-                            else{
-                                Write-LogDebug "[$mySecondaryController] run ONTAP 8.X"
-                                Write-LogDebug "Use RoutingGroup"
-                                $SecondaryRoutingGroupName=$SecondaryInterface.RoutingGroupName
-                                $SecondaryDefaultRoute=Get-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoutingGroupRoute failed [$ErrorVar]" ; }
-
-                                $SecondaryGateway=$SecondaryDefaultroute.GatewayAddress
-                                if ( ( $myGateway -eq $null ) -or ( $myGateway -eq "" )  ) 
+                                Write-Log "[$workOn] Create the LIF $LIF"
+                                if ( ( $PrimaryFirewallPolicy -eq "mgmt" ) -and ( $PrimaryDataProtocols -eq "none" ) ) 
                                 {
-                                    Write-Log "[$workOn] No default Gateway for lif [$PrimaryInterfaceName]"
-                                    if ( $SecondaryGateway -ne $null  ) {
-                                        $ANS3 = Read-HostOptions -question "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ?" -options "y/n" -default "y"
-                                        if ( $ANS3 -eq 'y' ) 
-                                        {
-                                            $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
-                                            if ( $? -ne $True ) 
-                                            {
-                                                Write-LogError "ERROR: Failed to remove default route" 
-                                                $Return = $False
-                                            }	
-                                        }
-                                    }
+                                    Write-Log "[$workOn] LIF [$LIF] is the Administration LIF it must be in Administrative up status"
+                                    Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController"
+                                    $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus up -AutoRevert $PrimaryIsAutoRevert -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                 } 
                                 else 
                                 {
-                                    if (  $myGateway -ne $SecondaryGateway ) 
+                                    Write-LogDebug "New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController"
+                                    $SecondaryInterface=New-NcNetInterface -Name $PrimaryInterfaceName -Vserver $mySecondaryVserver  -Role $PrimaryRole -Node $myNode -Port $myPort -DataProtocols $PrimaryDataProtocols -FirewallPolicy $PrimaryFirewallPolicy -Address $myIpAddr -Netmask $myNetMask -DnsDomain $PrimaryDnsDomainName -AdministrativeStatus down -AutoRevert $PrimaryIsAutoRevert  -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                }
+                                if($BackupOfGateway){
+                                    # set gateway back to original, to add routes
+                                    $myGateway = $BackupOfGateway
+                                }
+                                Write-LogDebug "Get ONTAP version for [$mySecondaryController]"
+                                Write-LogDebug "Get-NcSystemVersionInfo -Controller $mySecondaryController"
+                                $VersionTuple=(Get-NcSystemVersionInfo -Controller $mySecondaryController | Select-Object VersionTuple).VersionTuple
+                                if($VersionTuple.Generation -ge 9){
+                                    Write-LogDebug "[$mySecondaryController] run ONTAP 9.X"
+                                    Write-LogDebug "Get-NcNetRoute -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                    $NetRoute=Get-NcNetRoute -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoute failed [$ErrorVar]" }
+                                    if(($NetRoute.count) -gt 0){
+                                        $Gateway=$NetRoute.Gateway
+                                        Write-LogDebug "Remove-NcNetRoute -Destination '0.0.0.0/0' -Gateway $Gateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                        $out=Remove-NcNetRoute -Destination '0.0.0.0/0' -Gateway $Gateway -Vserver $mySecondaryVserver -Confirm:$False -Controller $mySecondaryController  -ErrorVariable ErrorVar
+
+                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcNetRoute failed [$ErrorVar]" ; }
+                                    }
+                                    if( ( $myGateway -ne $null ) -and ( $myGateway -ne "" ) ){
+                                        Write-LogDebug "New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                        $out=New-NcNetRoute -Destination '0.0.0.0/0' -Metric 20 -Gateway $myGateway -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoute failed [$ErrorVar]" ; }
+                                    }
+
+                                }
+                                else{
+                                    Write-LogDebug "[$mySecondaryController] run ONTAP 8.X"
+                                    Write-LogDebug "Use RoutingGroup"
+                                    $SecondaryRoutingGroupName=$SecondaryInterface.RoutingGroupName
+                                    $SecondaryDefaultRoute=Get-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoutingGroupRoute failed [$ErrorVar]" ; }
+
+                                    $SecondaryGateway=$SecondaryDefaultroute.GatewayAddress
+                                    if ( ( $myGateway -eq $null ) -or ( $myGateway -eq "" )  ) 
                                     {
-                                        if ( $SecondaryGateway -ne $null  ) 
-                                        {
-                                            Write-LogDebug "Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
-                                            $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
-                                            if ( $? -ne $True ) 
+                                        Write-Log "[$workOn] No default Gateway for lif [$PrimaryInterfaceName]"
+                                        if ( $SecondaryGateway -ne $null  ) {
+                                            $ANS3 = Read-HostOptions -question "[$myPrimaryVserver] Do you want to to remove default route [$SecondaryGateway] from Vserver [$mySecondaryVserver] RoutingGroup [$SecondaryRoutingGroupName] ?" -options "y/n" -default "y"
+                                            if ( $ANS3 -eq 'y' ) 
                                             {
-                                                Write-LogError "ERROR: Failed to remove default route" 
-                                                $Return = $False
+                                                $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+                                                if ( $? -ne $True ) 
+                                                {
+                                                    Write-LogError "ERROR: Failed to remove default route" 
+                                                    $Return = $False
+                                                }	
                                             }
                                         }
+                                    } 
+                                    else 
+                                    {
+                                        if (  $myGateway -ne $SecondaryGateway ) 
+                                        {
+                                            if ( $SecondaryGateway -ne $null  ) 
+                                            {
+                                                Write-LogDebug "Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
+                                                $out=Remove-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+                                                if ( $? -ne $True ) 
+                                                {
+                                                    Write-LogError "ERROR: Failed to remove default route" 
+                                                    $Return = $False
+                                                }
+                                            }
 
-                                        if ( ( $myGateway -ne $null ) -and ( $myGateway -ne "" )  ) {
-                                            Write-LogDebug "New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                                            $out=New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoutingGroupRoute failed [$ErrorVar]" ; }
-                                        }
+                                            if ( ( $myGateway -ne $null ) -and ( $myGateway -ne "" )  ) {
+                                                Write-LogDebug "New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                                                $out=New-NcNetRoutingGroupRoute -RoutingGroup $SecondaryRoutingGroupName -Destination '0.0.0.0/0' -Gateway $myGateway -Metric $PrimaryDefaultRoute.Metric -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcNetRoutingGroupRoute failed [$ErrorVar]" ; }
+                                            }
 
-                                    }													
-                                }
-                            }						
+                                        }													
+                                    }
+                                }						
+                            }
+                        }else{
+                            Write-LogError "[$workOn] No suitable port found to create lif [$PrimaryInterfaceName]"
+                            $ANS1 = "n"
                         }
                     }
                 }
@@ -8201,8 +8201,8 @@ Try {
             if($TemporarySecondaryCifsIp -and $SecondaryCifsLifMaster){
                 Write-LogDebug "[$workOn] Create tmp lif to join AD [$SecondaryCifsLifMaster][$TemporarySecondaryCifsIp]"
                 $SecondaryCifsLifCreated=$false
-                if($Global:NonInteractive -and $ForClone){
-                    Write-Log "[$workOn] Clone mode in non-interactive mode - getting netmask from primary"
+                if($Global:NonInteractive -or $ForClone){
+                    Write-Log "[$workOn] getting master lif to clone"
                     $InterfaceMasterPrimary = Get-NcNetInterface $SecondaryCifsLifMaster -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
                     $InterfaceMaster = Get-NcNetInterface $SecondaryCifsLifMaster -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                 }
@@ -8302,12 +8302,32 @@ Try {
                     }
                 }
                 if($oneDRLIFupReady -eq $True){
-                    Write-logDebug "Add-NcCifsServer -Name $SecondaryCifsServer -Domain $SecondaryDomain -OrganizationalUnit $SecondaryOrganizationalUnit -DefaultSite  $SecondaryDefaultSite -AdminCredential $ADCred -Force -AdministrativeStatus down -VserverContext $mySecondaryVserver -Controller $mySecondaryController" 
 
+                    # presetting cifssecurity, needed before join ad
+                    Write-LogDebug "Get-NcCifsSecurity -Vservercontext $myPrimaryVserver -Controller $myPrimaryController"
+                    $PrimaryCIFSsecurity=Get-NcCifsSecurity -Vservercontext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
+                    if($? -ne $True){Throw "ERROR: Failed to get CIFS security for [$myPrimaryVserver] reason [$ErrorVar]"}
+
+                    $PrimUseStartTlsForAdLdap=$PrimaryCIFSsecurity.UseStartTlsForAdLdap
+                    $PrimLmCompatibilityLevel=$PrimaryCIFSsecurity.LmCompatibilityLevel
+                    $PrimSessionSecurityForAdLdap=$PrimaryCIFSsecurity.SessionSecurityForAdLdap
+                    $PrimSmb1EnabledForDcConnections=$PrimaryCIFSsecurity.Smb1EnabledForDcConnections
+                    $PrimSmb2EnabledForDcConnections=$PrimaryCIFSsecurity.Smb2EnabledForDcConnections
+                    Write-LogDebug "Set-NcCifsSecurity -UseStartTlsForAdLdap $PrimUseStartTlsForAdLdap -LmCompatibilityLevel $PrimLmCompatibilityLevel `
+                    -SessionSecurityForAdLdap $PrimSessionSecurityForAdLdap -Smb1EnabledForDcConnections $PrimSmb1EnabledForDcConnections -Smb2EnabledForDcConnections $PrimSmb2EnabledForDcConnections `
+                    -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+
+                    $out=Set-NcCifsSecurity -UseStartTlsForAdLdap $PrimUseStartTlsForAdLdap -LmCompatibilityLevel $PrimLmCompatibilityLevel `
+                    -SessionSecurityForAdLdap $PrimSessionSecurityForAdLdap -Smb1EnabledForDcConnections $PrimSmb1EnabledForDcConnections -Smb2EnabledForDcConnections $PrimSmb2EnabledForDcConnections `
+                    -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
+                    if($? -ne $True){Throw "ERROR: Failed to set CIFS security on [$mySecondaryVserver] reason [$ErrorVar]"}
+
+                    Write-logDebug "Add-NcCifsServer -Name $SecondaryCifsServer -Domain $SecondaryDomain -OrganizationalUnit $SecondaryOrganizationalUnit -DefaultSite  $SecondaryDefaultSite -AdminCredential $ADCred -Force -AdministrativeStatus down -VserverContext $mySecondaryVserver -Controller $mySecondaryController" 
                     $out = Add-NcCifsServer -Name $SecondaryCifsServer -Domain $SecondaryDomain -OrganizationalUnit $SecondaryOrganizationalUnit -DefaultSite  $SecondaryDefaultSite -AdminCredential $ADCred -Force -AdministrativeStatus down -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Add-NcCifsServer failed [$ErrorVar]" ; }
+
+                    if ( $? -ne $True ) { $AddNcCifsFailed = $true; throw "ERROR: Add-NcCifsServer failed [$ErrorVar]" ; }else{ $AddNcCifsFailed = $false;Write-Log "[$workOn] Cifs server is joined"}
                     if($SecondaryCifsLifCreated){
-                        Write-Log "[$workOn] Cifs server is joined, Removing tmp lif"
+                        Write-Log "[$workOn] Removing tmp lif"
                         Write-logDebug "Set-NcNetInterface $($TempCifsLif.InterfaceName) -Vserver $mySecondaryVserver -AdministrativeStatus down -Controller $mySecondaryController -ErrorVariable ErrorVar"
                         $out = Set-NcNetInterface -Name $TempCifsLif.InterfaceName -Vserver $mySecondaryVserver -AdministrativeStatus down -Controller $mySecondaryController -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcNetInterface failed [$ErrorVar]" ; }
@@ -9800,12 +9820,16 @@ Try {
     if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster) -ne $True ) {Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $? -ne $True ) {
-        Write-LogWarn "Some CIFS options has not been set on [$workOn]"    
+        Write-LogWarn "[$workOn] Some CIFS options has not been set on"    
     }
     
     if ( ( $ret=create_update_igroupdr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all igroups" ; $Return = $False }
-    if ( ( $ret=create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Vscan config" ; $Return = $False }
-    if ( ( $ret=create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Fpolicy config" ; $Return = $False }
+    if(-not $Global:NonInteractive){
+        if ( ( $ret=create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Vscan config" ; $Return = $False }
+        if ( ( $ret=create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Fpolicy config" ; $Return = $False }
+    }else{
+        Write-LogWarn "[$workOn] SKIPPING vscan and fpolicy in non-interactive mode"
+    }
 	$ret=create_volume_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn  -Backup $runBackup -Restore $runRestore -aggrMatchRegEx $aggrMatchRegEx -myDataAggr $myDataAggr 
     if ( $ret.count -gt 0 ) {
         if ($ret[0] -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; $Return = $False }
@@ -11040,15 +11064,19 @@ Function update_vserver_dr (
         Write-LogError "ERROR: Failed to create User Mapping"
         $Return = $True
     }
-    Write-LogDebug "update_vserver_dr: Update Vscan dr"
-	if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-        Write-LogError "ERROR: create_update_vscan_dr failed" 
-        $Return = $False 
-    }
-    Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
-	if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-        Write-LogError "ERROR: create_update_fpolicy_dr failed" 
-        $Return = $False 
+    if(-not $Global:NonInteractive){
+        Write-LogDebug "update_vserver_dr: Update Vscan dr"
+        if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+            Write-LogError "ERROR: create_update_vscan_dr failed" 
+            $Return = $False 
+        }
+        Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
+        if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+            Write-LogError "ERROR: create_update_fpolicy_dr failed" 
+            $Return = $False 
+        }
+    }else{
+        Write-LogWarn "SKIPPING vscan and fpolicy in non-interactive mode"
     }
 	Write-LogDebug "update_vserver_dr: Check Destination Volumes"
 	if ( ( check_update_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
