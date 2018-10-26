@@ -146,6 +146,7 @@ function WriteHost{
         if($Global:WfaIntegration){
             if($Object.ToString() -ne ""){
                 get-wfalogger -info -message $($Object)
+                write-log $Object
             }
         } else{
             Write-Host $Object -ForegroundColor $ForegroundColor -NoNewline:$NoNewLine
@@ -10788,7 +10789,10 @@ try{
 
                     }catch{
                         Write-Warning "[$workOn] Impossible to modify CIFS local user [$UserName] on [$mySecondaryVserver] reason [$_.Description]"
-                        $modok=$False
+                        if(-not $NoInteractive -and -not $Global:NonInteractive){
+                            $modok=$False
+                        }
+                        
                     }
                 }while($modok -eq $False)
                  
