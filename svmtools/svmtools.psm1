@@ -1031,7 +1031,6 @@ Function get_pwd_from_cli ([string]$workOn,[string]$for,[string]$name="",[switch
         $for1 = "$for"
         $for2 = "$for"
     }
-    wait-debugger
     if($for -match "LDAP"){
         $DefaultPass=$Global:DefaultLDAPCredentials
     }else{
