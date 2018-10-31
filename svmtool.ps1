@@ -133,7 +133,7 @@
 	This allows testing the DR without interrupting SnapMirror relationship between Source Vserver and Destination Vserver
 	-Instance <instance name> -Vserver <vserver source name> -CloneDR [-DefaultPass] [-RootAggr <default svm rootvol aggregate name>]
 .PARAMETER SplitCloneDR
-	Split a Cloned Vserver
+	Split a Cloned Vserver (not ready yet)
 .PARAMETER DeleteCloneDR
 	Delete a Cloned Vserver
 	-Instance <instance name> -Vserver <vserver source name> -DeleteCloneDR [-CloneName <Vserver Clone DR name>]
@@ -145,6 +145,9 @@
 .PARAMETER DefaultPass
 	Deprecated. Use DefaultLocalUserCredentials argument
 	Force a Default Password for all users inside an SVM DR or Clone SVM
+.PARAMETER ForceClean
+	Optional argument used only during CleanReverse step
+	It allows to forcibly remove and release Reverse SnapMirror relationships
 .PARAMETER ForceActivate
     Mandatory argument in case of disaster in Source site
 	Used only with ActivateDR when source site is unjoinable
@@ -330,7 +333,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : October 23th, 2018
+    Version : October 31th, 2018
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -353,6 +356,8 @@
 		- 0.1.3 : 	Fix create CIFS share during Restore
 					Fix create SYMLINK
 					Fix restore Quota
+		- 0.1.4 :	Simplify and improve ActivateDR and ReActivate behaviour
+					Improve Restore behaviour when restoring Vserver to its original place (Cluster/Vserver)
 
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
@@ -456,7 +461,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
@@ -466,7 +471,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $true, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
@@ -488,17 +493,17 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $true, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $true, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $true, ParameterSetName='CloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='SplitCloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteCloneDR')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
+    [Parameter(Mandatory = $true, ParameterSetName='RemoveDRConf')]
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorSchedule')]
     [Parameter(Mandatory = $true, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $true, ParameterSetName='UpdateReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
+    [Parameter(Mandatory = $true, ParameterSetName='MirrorScheduleReverse')]
+	[Parameter(Mandatory = $true, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $true, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $true, ParameterSetName='Resync')]
     [Parameter(Mandatory = $true, ParameterSetName='DeleteSource')]
@@ -572,6 +577,9 @@ Param (
 	[Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
 	[switch]$ForceDeleteQuota,
 
+	[Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
+	[switch]$ForceClean,
+
 	[Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
 	[switch]$ForceActivate,
 
@@ -619,13 +627,13 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
@@ -648,14 +656,14 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='ShowDR')]
-    [Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
+	[Parameter(Mandatory = $false, ParameterSetName='ActivateDR')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteDR')]
     [Parameter(Mandatory = $false, ParameterSetName='RemoveDRConf')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
@@ -684,7 +692,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
@@ -715,7 +723,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='UpdateReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='DeleteSource')]
@@ -734,7 +742,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName='MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName='ResyncReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='MirrorScheduleReverse')]
-    [Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
+	[Parameter(Mandatory = $false, ParameterSetName='ReActivate')]
     [Parameter(Mandatory = $false, ParameterSetName='CleanReverse')]
     [Parameter(Mandatory = $false, ParameterSetName='Resync')]
     [Parameter(Mandatory = $false, ParameterSetName='Backup')]
@@ -787,13 +795,15 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.3"
+$Global:RELEASE="0.1.4"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
 $Global:STOP_TIMEOUT=360
 $Global:START_TIMEOUT=360
-$Global:SINGLE_CLUSTER = $False
+$Global:SINGLE_CLUSTER=$False
+$Global:SILENT_PERIOD=3 				# SILENT_PERIOD in seconds after which we will test again if Primary site is alive
+$Global:RESTORE_ORIGINAL=$False
 $DebugPreference="SilentlyContinue"
 $VerbosePreference="SilentlyContinue"
 $ErrorActionPreference="Continue"
@@ -812,6 +822,7 @@ $Global:WfaIntegration=$WfaIntegration
 $Global:DefaultLocalUserCredentials=$DefaultLocalUserCredentials
 $Global:ActiveDirectoryCredentials=$ActiveDirectoryCredentials
 $Global:DefaultLDAPCredentials=$DefaultLDAPCredentials
+$Global:ForceClean=$ForceClean
 $Global:BACKUPALLSVM=$False
 $Global:NumberOfLogicalProcessor = (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
 if($Global:NumberOfLogicalProcessor -lt 4){
@@ -1263,7 +1274,15 @@ if ( $Backup ) {
 }
 
 if ( $Restore ) {
-    $Run_Mode="Restore"
+	$Run_Mode="Restore"
+	$Global:RESTORE_SRC_CLUSTER=$Restore
+	$Global:RESTORE_DST_CLUSTER=$Destination
+	if($Global:RESTORE_SRC_CLUSTER -eq $Global:RESTORE_DST_CLUSTER){
+		$Global:RESTORE_ORIGINAL=$True
+		Write-Log "[$Restore] Restore to Origin [$Vserver]"
+	}else{
+		$Global:RESTORE_ORIGINAL=$False	
+	}
     Write-LogOnly "SVMTOOL Run Restore"
     if ((Test-Path $CONFFILE) -eq $True ) {
 		$read_conf = read_config_file $CONFFILE
@@ -1376,12 +1395,14 @@ if ( $Restore ) {
                 [Parameter(Mandatory=$False)][string]$RootAggr,
                 [Parameter(Mandatory=$False)][string]$DataAggr,        
 				[Parameter(Mandatory=$True)][string]$LogLevelConsole,
-                [Parameter(Mandatory=$True)][string]$LogLevelLogFile,
+				[Parameter(Mandatory=$True)][string]$LogLevelLogFile,
+				[Parameter(Mandatory=$True)][string]$RESTORE_ORIGINAL,
                 [boolean]$NonInteractive
 			)
 			$Global:RootAggr=$RootAggr
 			$Global:DataAggr=$DataAggr
-            $Global:ConsoleThreadingRequired=$true
+			$Global:ConsoleThreadingRequired=$true
+			$Global:RESTORE_ORIGINAL=$RESTORE_ORIGINAL
 			$Path=$env:PSModulePath.split(";")
 			if($Path -notcontains $script_path){
 				$Path+=$script_path
@@ -1424,8 +1445,6 @@ if ( $Restore ) {
             add_appender -loggerinstance "logonly_$guid" $masterLogFileAppender
             set_log_level -loggerinstance "logonly_$guid" -level "All"
             $Global:MasterLog = get_logger -name "logonly" 
-
-            $Global:NonInteractive=$NonInteractive
 
 			check_create_dir -FullPath $LOGFILE -Vserver $SourceVserver
 
@@ -1488,6 +1507,7 @@ if ( $Restore ) {
 		[void]$RestoreJob.AddParameter("SecondaryCifsLifMaster",$SecondaryCifsLifMaster)
 		[void]$RestoreJob.AddParameter("RootAggr",$Global:RootAggr)
 		[void]$RestoreJob.AddParameter("DataAggr",$Global:DataAggr)
+		[void]$RestoreJob.AddParameter("RESTORE_ORIGINAL",$Global:RESTORE_ORIGINAL)
 		if($RW -eq $True){
 			[void]$RestoreJob.AddParameter("VOLTYPE","RW")
 		}else{
@@ -1592,7 +1612,7 @@ if ( $SECONDARY_CLUSTER -eq $Null ) {
 
 if ($PRIMARY_CLUSTER -eq $SECONDARY_CLUSTER) 
 { 
-    $SINGLE_CLUSTER = $True
+    $Global:SINGLE_CLUSTER = $True
     Write-LogDebug "Detected SINGLE_CLUSTER Configuration"
 }
 
@@ -1722,6 +1742,9 @@ if ( $ConfigureDR ) {
 	if ( ( $NcSecondaryCtrl =  connect_cluster -myController $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         	clean_and_exit 1
+	}
+	if ( ($ret=Save_Cluster_To_JSON -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl) -ne $True){
+		Write-Warning "FAILED to backup cluster information"
 	}
     $DestVserver=Get-NcVserver -Vserver $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
@@ -2108,18 +2131,15 @@ if ( $UpdateDR ) {
 	if ( ( $ret=create_update_snap_policy_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 		Write-LogError "ERROR: create_update_snap_policy_dr"
 	}
-
 	if ( ( $ret=check_cluster_peer -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl ) -ne $True ) {
 		Write-LogError "ERROR: check_cluster_peer failed"
 		clean_and_exit 1
 	}
-
 	if ( ($ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne $True ) {
 		Write-LogError "ERROR: update_vserver_dr failed" 
 			clean_and_exit 1
 
 	}
-
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
     }
@@ -2178,7 +2198,7 @@ if ( $CloneDR ) {
 		Write-LogDebug "ERROR: create_clonevserver_dr failed"
 		clean_and_exit 1
 	}
-	if ( ( enable_network_protocol_vserver_dr -myController $NcSecondaryCtrl -myVserver $CloneVserverDR ) -ne $True ) {
+	if ( ( enable_network_protocol_vserver_dr -myNcController $NcSecondaryCtrl -myVserver $CloneVserverDR ) -ne $True ) {
 		Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver $mySecondaryVserver $myController"
 		$Return = $False
 	}
@@ -2231,64 +2251,18 @@ if ( $DeleteCloneDR ){
 }
 
 if ( $ActivateDR ) {
-    $Run_Mode="ActivateDR"
+	$Run_Mode="ActivateDR"
 	Write-LogOnly "SVMTOOL ActivateDR"
-	# Connect to the Cluster
-	if ( $ForceActivate -eq $True ) {
-		Write-Log "Force Activate vserver $VserverDR"
-	} 
-    else 
-    {
-
-		$ANS=Read-HostOptions -question "Do you want to disable the primary vserver [$Vserver] from [$PRIMARY_CLUSTER] ?" -options "y/n" -default "y"
-
-		if ( $ANS -eq 'y' ) {
-			$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
-			$tmp_str=$MyCred.UserName
-			Write-LogDebug "Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
-			Write-LogDebug "connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
-			if ( ( $NcPrimaryCtrl =  connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
-				Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]"
-			} else {
-				if ( ( $ret=disable_network_protocol_vserver_dr -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
-					Write-LogError "ERROR: Failed to desactivate all Network Services for $Vserver"
-				}
-			}
-		}
+	if ( test_primary_alive -PrimaryCluster $PRIMARY_CLUSTER -SecondaryCluster $SECONDARY_CLUSTER -PrimaryVserver $Vserver -SecondaryVserver $VserverDR ){
+		$ForceActivate=$False
+		Write-Log "[$PRIMARY_CLUSTER] is alive"
+	}else{
+		$ForceActivate=$True
+		Write-Warning "[$PRIMARY_CLUSTER] is not alive"
 	}
-
-	$myCred=get_local_cDotcred ($SECONDARY_CLUSTER) 
-	Write-LogDebug "connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
-	if ( ( $NcSecondaryCtrl =  connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
-		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
-        	clean_and_exit 1
-	}
-
-	if ( ( $ret=activate_vserver_dr -myController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
+	if ( ( $ret=activate_vserver_dr -currentActiveController $PRIMARY_CLUSTER -currentPassiveController $SECONDARY_CLUSTER -currentActiveVserver $Vserver -currentPassiveVserver $VserverDR -ForceActivate $ForceActivate) -ne $True ) {
 		Write-LogError "ERROR: activate_vserver_dr failed"
 		clean_and_exit 1
-	}
-	# if ( ( update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
-        # Write-Warning "Some CIFS options has not been set on [$VserverDR]"
-    # }
-    # if ( ( update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
-        # Write-LogError "ERROR: update_cifs_usergroup failed"
-		# clean_and_exit 1
-    # }
-    # if ( ( create_update_localuser_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -ne $True ) { 
-        # Write-LogError "ERROR: Failed to create all user"
-        # $Return = $True 
-    # }
-	if ( ( $ret=set_vol_options_from_voldb -myController $NcSecondaryCtrl -myVserver $VserverDR ) -ne $True ) {
-		Write-LogError "ERROR: set_vol_options_from_voldb failed"
-	}
-    #if ( ( $ret=set_shareacl_options_from_shareacldb -myController $NcSecondaryCtrl -myVserver $VserverDR ) -ne $True ) {
-	#	Write-LogError "ERROR: set_shareacl_options_from_shareacldb"
-	#}
-	if ( $AllowQuotaDR -eq "True" ) {
-		if ( ( $ret=create_quota_rules_from_quotadb -myController $NcSecondaryCtrl -myVserver $VserverDR  ) -ne $True ) {
-			Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
-		}
 	}
 	clean_and_exit 0
 }
@@ -2313,7 +2287,7 @@ if ( $ReCreateQuota ) {
     $Run_Mode="ReCreateQuota"
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	Write-LogDebug "connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
-	if ( ( $NcPriamaryCtrl =  connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+	if ( ( $NcPrimaryCtrl =  connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
         	clean_and_exit 1
 	}
@@ -2325,10 +2299,9 @@ if ( $ReCreateQuota ) {
 	clean_and_exit 0
 }
 
-if ( $ReActivate ) {
-    $Run_Mode="ReActivate"
+if ( $ReActivate ){
+	$Run_Mode="ReActivate"
 	Write-LogOnly "SVMTOOL ReActivate"
-	# Connect to the Cluster
 	$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
 	$tmp_str=$MyCred.UserName
 	Write-LogDebug "Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
@@ -2343,42 +2316,89 @@ if ( $ReActivate ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
 		clean_and_exit 1
 	}
-	if ( ( $ret=check_cluster_peer -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl ) -ne $True ) { 
-		Write-LogError "ERROR: check_cluster_peer failed" 
-		clean_and_exit 1
+
+	# start primary vserver
+	if( ( (Get-NcVserver -Vserver $Vserver -controller $NcPrimaryCtrl).State) -ne "running"){
+		Write-Log "[$Vserver] Start Vserver"
+		Write-LogDebug "Start-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl"
+		$ret=Start-NcVserver -Name $Vserver -Controller $NcPrimaryCtrl -ErrorVariable ErrorVar
+		if($? -ne $True){Return=$False; Write-Error "Failed to start Vserver [$Vserver] reason [$ErrorVar]"}
 	}
-	if ( ( $ret=disable_network_protocol_vserver_dr -myController $NcSecondaryCtrl -myVserver $VserverDR ) -ne $True ) { 
-		Write-LogError "ERROR: disable_network_protocol_vserver_dr failed" 
-		clean_and_exit 1
+	# stop secondary cifs server
+	# remove secondary cifs server
+	$NeedCIFS=$False
+	if ( (Get-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar) -ne $null ){
+		Write-Log "[$VserverDR] Remove CIFS server"
+		Write-LogDebug "Stop-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
+		$ret=Stop-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar -Confirm:$False
+		if($? -ne $True){$Return = $False; throw "ERROR: failed to stop secondary CIFS server"}
+		Write-LogDebug "Remove-NcCifsServer -VserverContext $VserverDR -ForceAccountDelete -Controller $NcSecondaryCtrl"
+		$ret=Remove-NcCifsServer -VserverContext $VserverDR -ForceAccountDelete -Controller $NcSecondaryCtrl -Confirm:$False -ErrorVariable ErrorVar
+		if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"}
+		$NeedCIFS=$True	
 	}
-	if ( ( $ret=restart_vserver_dr -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne  $True ) {
-		Write-LogError "ERROR: restart_vserver_dr failed" 
-		clean_and_exit 1
-	}	
-	if ( ( $ret=activate_vserver_dr -myController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne  $True ) {
-		Write-LogError "ERROR: activate_vserver_dr failed" 
-		clean_and_exit 1
+	# restore all secondary LIF address with info previously backed
+	Write-Log "[$VserverDR] Restore LIF with DR configuration"
+	if( ($ret=Set_LIF_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
+		Throw "ERROR: Failed to set IP address on [$VserverDR]"	
 	}
-	if ( ( $ret=resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne  $True ) { 
-		Write-LogError "ERROR: resync_vserver_dr failed" 
-		clean_and_exit 1
+	# register secondary cifs with temporary info previously backed
+	if($NeedCIFS){
+		#add new secondary cifs with primary identity
+		Write-Log "[$VserverDR] Restore CIFS server with DR configuration"
+		if( ($ret=Add_CIFS_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
+			Throw "ERROR: Failed to add new CIFS server on [$VserverDR]"
+		}
+	}
+	Write-Log "[$VserverDR] Disable services"
+	if ( ($ret=disable_network_protocol_vserver_dr -myController $NcSecondaryCtrl -myVserver $VserverDR -ForceDisable) -eq $False){
+		Throw "ERROR: Failed to disable all services on [$VserverDR]"
+	}
+	# restore all primary LIF address with info previously backed
+	Write-Log "[$Vserver] Restore LIF with Primary configuration"
+	if( ($ret=Set_LIF_from_JSON -ToNcController $NcPrimaryCtrl -ToVserver $Vserver -fromSrc) -eq $False ){
+		Throw "ERROR: Failed to set IP address on [$Vserver]"	
+	}
+	# register primary cifs server wit info previously backed
+	if($NeedCIFS){
+		#add primary cifs with primary identity
+		Write-Log "[$Vserver] Restore CIFS server with Primary configuration"
+		if( ($ret=Add_CIFS_from_JSON -ToNcController $NcPrimaryCtrl -ToVserver $Vserver -fromSrc) -eq $False ){
+			Throw "ERROR: Failed to add new CIFS server on [$Vserver]"
+		}
 	}
 
-	if ( ( $ret=check_snapmirror_broken_dr -myPrimaryController $NcSecondary -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
-		Write-LogError "ERROR: Failed snapmirror relations bad status unable to clean" 
+	Write-Log "[$Vserver] Resync data from [$VserverDR]"
+	if ( ( $ret=resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
+		Write-LogError "ERROR: Resync Reverse error"
 		clean_and_exit 1
 	}
-
+	if ( ( $ret=wait_snapmirror_dr -NoInteractive -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
+		Write-Error "wait_snapmirror_dr failed"  
+	}
+	# if ( ( $ret=check_snapmirror_broken_dr -myPrimaryController $NcSecondary -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
+	# 	Write-LogError "ERROR: Failed snapmirror relations bad status unable to clean" 
+	# 	clean_and_exit 1
+	# }
 	if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver	 ) -ne $True ) { 
 		Write-LogError "ERROR: remove_snapmirror_dr failed" 
+		clean_and_exit 1
+	}
+	Write-Log "[$Vserver] Restore original SnapMirror relationship to [$VserverDR]"
+	if ( ( $ret=resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne  $True ) { 
+		Write-LogError "ERROR: Resync failed" 
 		clean_and_exit 1
 	}
 	if ( ( $ret=set_vol_options_from_voldb -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
 		Write-LogError "ERROR: set_vol_options_from_voldb failed"
 	}
-    #if ( ( $ret=set_shareacl_options_from_shareacldb -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
-	#	Write-LogError "ERROR: set_shareacl_options_from_shareacldb"
-	#}
+
+	# enable service on Primary
+	if ( ( $ret=enable_network_protocol_vserver_dr -myNcController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
+		Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver [$Vserver] on [$NcPrimaryCtrl]"
+		$Return = $False
+    }
+
 	if ( $AllowQuotaDR -eq "True" ) {
 		if ( ( $ret=create_quota_rules_from_quotadb -myController $NcPrimaryCtrl -myVserver $Vserver  ) -ne $True ) {
 			Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
@@ -2405,11 +2425,13 @@ if ( $CleanReverse ) {
 		Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
 		clean_and_exit 1
 	}
-	if ( ( $ret=check_snapmirror_broken_dr -myPrimaryController $NcSecondary -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
-		Write-LogError "ERROR: Failed snapmirror relations bad status unable to clean" 
-		clean_and_exit 1
+	if($Global:ForceClean -eq $False){
+		if ( ( $ret=check_snapmirror_broken_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
+			Write-LogError "ERROR: Failed snapmirror relations bad status unable to clean" 
+			clean_and_exit 1
+		}
 	}
-	if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver	 ) -ne $True ) { 
+	if ( ( $ret=remove_snapmirror_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) { 
 		Write-LogError "ERROR: remove_snapmirror_dr failed" 
 		clean_and_exit 1
 	}
