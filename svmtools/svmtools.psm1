@@ -4847,7 +4847,7 @@ Try {
         if( $Global:SelectVolume -eq $True )
         {
             $volsizeGB=[math]::round($DestVolSize/1024/1024,2)
-            $ANS=Read-HostOptions "Does volume [$DestVolName  $($volsizeGB) GB  $DestVolJunctionPath] need to be cloned on [$mySecondaryVserver] ?" "y/n"
+            $ANS=Read-HostOptions "[$mySecondaryVserver] Does volume [$DestVolName  $($volsizeGB) GB  $DestVolJunctionPath] need to be cloned ?" "y/n"
             if ( $ANS -eq 'n' ) {
                 Write-LogDebug "SelectVolume volume [$DestVolName] excluded"
                 continue 
@@ -5005,13 +5005,13 @@ Try {
                     if( $Global:SelectVolume -eq $True -and $Global:NonInteractive -eq $False )
                     {
                         $volsizeGB=[math]::round($PrimaryVolSize/1024/1024,2)
-                        $ANS=Read-HostOptions -question "Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ?" -options "y/n"
+                        $ANS=Read-HostOptions -question "[$workOn] Does volume [$PrimaryVolName  $($volsizeGB) GB  $PrimaryVolJunctionPath] need to be replicated on destination ?" -options "y/n"
 
                         if ( $ANS -eq 'n' ) {
                             Write-LogDebug "SelectVolume volume [$PrimaryVolName] excluded"
                             if($PreviousSelectVolumes.contains($PrimaryVolName)){
                                 Write-Log "[$workOn] [$PrimaryVolName] was previously selected for replication"
-                                $ANS=Read-HostOptions -question "Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship on [$mySecondaryVserver]?" -options "y/n"
+                                $ANS=Read-HostOptions -question "[$mySecondaryVserver] Do you want to remove destination volume [$PrimaryVolName] and associated Snapmirror Relationship ?" -options "y/n"
                                 if($ANS -eq 'y'){
                                     if((delete_snapmirror_relationship $myPrimaryController $mySecondaryController $myPrimaryVserver $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: delete_snapmirror_relationship failed";return $false}
                                     if((umount_volume $mySecondaryController $mySecondaryVserver $PrimaryVolName) -ne $True){Write-LogError "ERROR: umount_volume failed";return $false}
@@ -5806,6 +5806,12 @@ Try {
     Write-LogDebug "check_create_cluster_peer [$clustername]: start"
     $PeerClusterName=$PeerController.Name
     $SourceClusterName=$SourceController.Name
+    if( ($Global:SINGLE_CLUSTER -eq $True) -or ($PeerClusterName -eq $SourceClusterName )){
+        Write-Log "Single Cluster detected"
+        $Global:SINGLE_CLUSTER=$True
+        Write-LogDebug "check_create_cluster_peer[$clustername]: end"
+        return $True
+    }
     Write-LogDebug "Get-NcClusterPeer -Name $PeerClusterName -Controller $SourceController"
     $ret=Get-NcClusterPeer -Name $PeerClusterName -Controller $SourceController -ErrorVariable ErrorVar 
     if ( $? -ne $True ) { Write-LogDebug "ERROR: Get-NcClusterPeer failed [$ErrorVar]"; return $False }
@@ -9287,7 +9293,7 @@ Function show_vserver_dr (
         Format-ColorBrackets "--------------"
 
         if($SelectVolumeConf){
-            Write-LogWarn "Warning : This configuration does not replicate all volumes (SelectVolume mode)"
+            Write-Warning "This configuration does not replicate all volumes (SelectVolume mode)"
         }
         if ( $PrimaryVserver -ne $null ) 
         {
@@ -10000,8 +10006,8 @@ Try {
                 $relation=New-NcSnapmirror -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                 if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
             }else{
-                Write-LogDebug "New-NcSnapmirror -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Schedule hourly -type vault -policy $XDPPolicy -Controller $mySecondaryController "
-                $relation=New-NcSnapmirror -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Schedule hourly -type vault -policy $XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                Write-LogDebug "New-NcSnapmirror -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
+                $relation=New-NcSnapmirror -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                 if ( $? -ne $True ) { $Return = $False ; Write-LogError "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
             }
             Write-LogDebug "Invoke-NcSnapmirrorResync -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -SourceVolume $VolName -Controller $mySecondaryController"
@@ -11686,8 +11692,8 @@ Function resync_reverse_vserver_dr (
                     if($RelationshipType -eq "extended_data_protection")
                     {
                         Write-Log "[$SourceVserver] Create Reverse VF SnapMirror [${DestinationCluster}:${DestinationVserver}/$DestinationVolume] ---> [${SourceCluster}:${SourceVserver}/$SourceVolume]"
-                        Write-LogDebug "New-NcSnapmirror -Type XDP -policy $XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController "
-        			    $relation=New-NcSnapmirror -Type vault -policy $XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController  -ErrorVariable ErrorVar 
+                        Write-LogDebug "New-NcSnapmirror -Type XDP -policy $Global:XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController "
+        			    $relation=New-NcSnapmirror -Type vault -policy $Global:XDPPolicy -Schedule hourly -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController  -ErrorVariable ErrorVar 
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         #Write-Log "Reverse resync [${DestinationCluster}://${DestinationVserver}/$DestinationVolume] -> [${SourceCluster}://${SourceVserver}/$SourceVolume]"
                         Write-LogDebug "Invoke-NcSnapmirrorResync -Source $DestinationLocation -Destination $SourceLocation  -Controller $myPrimaryController"
@@ -12151,7 +12157,7 @@ Function remove_volume (
 Try {
         $Return = $True 
         Write-logDebug "remove_volume: start"
-        Write-Log "Remove volume [$myVolumeName] from [$myVserver]"
+        Write-Log "[$myVserver] Remove volume [$myVolumeName]"
         Write-logDebug "Get-NcVol -Controller $myController -Vserver $myVserver -Name $myVolumeName"
         $SecondaryVol=Get-NcVol -Controller $myController -Vserver $myVserver -Name $myVolumeName -ErrorVariable ErrorVar 
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
