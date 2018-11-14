@@ -333,7 +333,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : October 31th, 2018
+    Version : November 14th, 2018
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -358,6 +358,7 @@
 					Fix restore Quota
 		- 0.1.4 :	Simplify and improve ActivateDR and ReActivate behaviour
 					Improve Restore behaviour when restoring Vserver to its original place (Cluster/Vserver)
+		- 0.1.5 :	Fix ActivateDR and ReActivate to keep CIFS shares on the active SVM
 
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
@@ -795,7 +796,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.4"
+$Global:RELEASE="0.1.5"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -2328,13 +2329,13 @@ if ( $ReActivate ){
 	# remove secondary cifs server
 	$NeedCIFS=$False
 	if ( (Get-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar) -ne $null ){
-		Write-Log "[$VserverDR] Remove CIFS server"
+		<# Write-Log "[$VserverDR] Remove CIFS server"
 		Write-LogDebug "Stop-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
 		$ret=Stop-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar -Confirm:$False
 		if($? -ne $True){$Return = $False; throw "ERROR: failed to stop secondary CIFS server"}
 		Write-LogDebug "Remove-NcCifsServer -VserverContext $VserverDR -ForceAccountDelete -Controller $NcSecondaryCtrl"
 		$ret=Remove-NcCifsServer -VserverContext $VserverDR -ForceAccountDelete -Controller $NcSecondaryCtrl -Confirm:$False -ErrorVariable ErrorVar
-		if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"}
+		if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"} #>
 		$NeedCIFS=$True	
 	}
 	# restore all secondary LIF address with info previously backed
@@ -2346,7 +2347,7 @@ if ( $ReActivate ){
 	if($NeedCIFS){
 		#add new secondary cifs with primary identity
 		Write-Log "[$VserverDR] Restore CIFS server with DR configuration"
-		if( ($ret=Add_CIFS_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
+		if( ($ret=Set_CIFS_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
 			Throw "ERROR: Failed to add new CIFS server on [$VserverDR]"
 		}
 	}
@@ -2367,7 +2368,6 @@ if ( $ReActivate ){
 			Throw "ERROR: Failed to add new CIFS server on [$Vserver]"
 		}
 	}
-
 	Write-Log "[$Vserver] Resync data from [$VserverDR]"
 	if ( ( $ret=resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
 		Write-LogError "ERROR: Resync Reverse error"
@@ -2392,13 +2392,21 @@ if ( $ReActivate ){
 	if ( ( $ret=set_vol_options_from_voldb -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
 		Write-LogError "ERROR: set_vol_options_from_voldb failed"
 	}
-
 	# enable service on Primary
 	if ( ( $ret=enable_network_protocol_vserver_dr -myNcController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
 		Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver [$Vserver] on [$NcPrimaryCtrl]"
 		$Return = $False
-    }
+	}
+	$Global:NonInteractive=$true
+	if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
+		Write-LogError "ERROR: update_vserver_dr" 
+		clean_and_exit 1 
 
+	}
+
+    if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) {
+        Write-Warning "Some CIFS options has not been set on [$Vserver]"
+    }
 	if ( $AllowQuotaDR -eq "True" ) {
 		if ( ( $ret=create_quota_rules_from_quotadb -myController $NcPrimaryCtrl -myVserver $Vserver  ) -ne $True ) {
 			Write-LogError "ERROR: create_quota_rules_from_quotadb failed"

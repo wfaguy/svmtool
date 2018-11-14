@@ -1360,7 +1360,7 @@ Function create_update_vscan_dr (
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanScannerPool failed on [$myPrimaryController] [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcVscanScannerPool.json")){
-                $PrimaryScannerPoolList=Get-Content $($Global:JsonPath+"Get-NcVscanScannerPool.json") | ConvertFrom-Json
+                $PrimaryScannerPoolList=Get-Content $($Global:JsonPath+"Get-NcVscanScannerPool.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcVscanScannerPool.json")
@@ -1401,8 +1401,8 @@ Function create_update_vscan_dr (
                     $SecondaryScannerPoolSesSetupTimeout=$SecondaryScannerPool.SessionSetupTimeout
                     $SecondaryScannerPoolSesTeardTimeout=$SecondaryScannerPool.SessionTeardownTimeout
                     $SecondaryScannerPoolMaxSesSetupRetry=$SecondaryScannerPool.MaxSessionSetupRetries
-                    if ( (($PrimaryScannerPoolPrivUser -ne $SecondaryScannerPoolPrivUser) `
-                        -or ($PrimaryScannerPoolReqTimeout -ne $SecondaryScannerPoolReqTimeout) `
+                    #if ( (($PrimaryScannerPoolPrivUser -ne $SecondaryScannerPoolPrivUser) `
+                    if ( (($PrimaryScannerPoolReqTimeout -ne $SecondaryScannerPoolReqTimeout) `
                         -or ($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy) `
                         -or ($PrimaryScannerPoolScanQueueTimeout -ne $SecondaryScannerPoolScanQueueTimeout) `
                         -or ($PrimaryScannerPoolSesSetupTimeout -ne $SecondaryScannerPoolSesSetupTimeout) `
@@ -1412,7 +1412,6 @@ Function create_update_vscan_dr (
                         Write-Log "[$workOn] Modify Vscan Scanner Pool [$PrimaryScannerPoolName]"
                         if($fromConfigureDR -eq $True)
                         {
-
                             Write-Log "[$workOn] Enter IP Address of a Vscan Server"
                             $ANS='y'
                             $num=(($SecondaryScannerPoolVscanServers.count)-1)
@@ -1424,17 +1423,27 @@ Function create_update_vscan_dr (
                             {
                                 $myScannerPoolVscanServers=$PrimaryScannerPoolVscanServers    
                             }
+                            $myNewSecondaryScannerPoolVscanServers=@()
                             while($ANS -ne 'n')
                             {
-                                $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
+                                $myNewSecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
                                 $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
                             }
-                            Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                            $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VscanServer $SecondaryScannerPoolVscanServers -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
-                            if ( $? -ne $True ) { $Return = $False ;   ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
-                             
-
+                            if ((Compare-Object -ReferenceObject $myNewSecondaryScannerPoolVscanServers -DifferenceObject $SecondaryScannerPoolVscanServers -PassThru).count -ne 0){
+                                Write-Log "[$workOn] Modify ScannerPool Servers for [$PrimaryScannerPoolName]"
+                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }    
+                            }
+                            if($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy){
+                                Write-Log "[$workOn] Modify ScannerPool Policy for [$PrimaryScannerPoolName]"
+                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
+                            }
+                            Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                            $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
                         }
                         else
                         {
@@ -1460,10 +1469,10 @@ Function create_update_vscan_dr (
                     Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
 
-                    if ( $? -ne $True ) { $Return = $False ; ; throw "ERROR: New-NcVscanScannerPool failed [$ErrorVar]" }
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVscanScannerPool failed [$ErrorVar]" }
                     Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                     $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                    if ( $? -ne $True ) { $Return = $False ; ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
 
                 }
             }
@@ -1477,7 +1486,7 @@ Function create_update_vscan_dr (
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanOnAccessPolicy failed on [$myPrimaryController] [$ErrorVar]" }
             }else{
                 if(Test-Path $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json")){
-                    $PrimaryOnAccessPolicyList=Get-Content $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") | ConvertFrom-Json
+                    $PrimaryOnAccessPolicyList=Get-Content $($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcVscanOnAccessPolicy.json")
@@ -1598,7 +1607,7 @@ Function create_update_vscan_dr (
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanStatus failed [$ErrorVar]" }
             }else{
                 if(Test-Path $($Global:JsonPath+"Get-NcVscanStatus.json")){
-                    $PrimaryVscan=Get-Content $($Global:JsonPath+"Get-NcVscanStatus.json") | ConvertFrom-Json
+                    $PrimaryVscan=Get-Content $($Global:JsonPath+"Get-NcVscanStatus.json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcVscanStatus.json")
@@ -1674,7 +1683,7 @@ Function create_update_firewallpolicy_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetFirewallPolicy failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcNetFirewallPolicy.json")){
-                $PrimaryFirewallPolicies=Get-Content $($Global:JsonPath+"Get-NcNetFirewallPolicy.json") | ConvertFrom-Json
+                $PrimaryFirewallPolicies=Get-Content $($Global:JsonPath+"Get-NcNetFirewallPolicy.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcNetFirewallPolicy.json")
@@ -1793,7 +1802,7 @@ Function create_update_usermapping_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNameMapping failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcNameMapping.json")){
-                $PrimaryMapping=Get-Content $($Global:JsonPath+"Get-NcNameMapping.json") | ConvertFrom-Json
+                $PrimaryMapping=Get-Content $($Global:JsonPath+"Get-NcNameMapping.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcNameMapping.json")
@@ -1884,7 +1893,7 @@ Function create_update_localuser_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR : Get-NcUser failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcUser.json")){
-                $PrimaryUsers=Get-Content $($Global:JsonPath+"Get-NcUser.json") | ConvertFrom-Json
+                $PrimaryUsers=Get-Content $($Global:JsonPath+"Get-NcUser.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcUser.json")
@@ -2082,7 +2091,7 @@ Function create_update_localunixgroupanduser_dr(
             $PrimaryUserList=Get-NcNameMappingUnixUser -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcNameMappingUnixUser.json")){
-                $PrimaryUserList=Get-Content $($Global:JsonPath+"Get-NcNameMappingUnixUser.json") | ConvertFrom-Json
+                $PrimaryUserList=Get-Content $($Global:JsonPath+"Get-NcNameMappingUnixUser.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcNameMappingUnixUser.json")
@@ -2131,7 +2140,7 @@ Function create_update_localunixgroupanduser_dr(
             $PrimaryGroupList=Get-NcNameMappingUnixGroup -VserverContext $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json")){
-                $PrimaryGroupList=Get-Content $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") | ConvertFrom-Json
+                $PrimaryGroupList=Get-Content $($Global:JsonPath+"Get-NcNameMappingUnixGroup.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcNameMappingUnixGroup.json")
@@ -2246,7 +2255,7 @@ Function create_update_role_dr(
             if ( $? -ne $True ) { $Return=$false; throw "ERROR: Get-NcRole [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcRole.json")){
-                $source_roles=Get-Content $($Global:JsonPath+"Get-NcRole.json") | ConvertFrom-Json
+                $source_roles=Get-Content $($Global:JsonPath+"Get-NcRole.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcRole.json")
@@ -2305,7 +2314,7 @@ Function create_update_role_dr(
                 $PrimaryRoleConfig=Get-NcRoleConfig -Role $role -Vserver $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
             }else{
                 if(Test-Path $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json")){
-                    $PrimaryRoleConfig=Get-Content $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") | ConvertFrom-Json
+                    $PrimaryRoleConfig=Get-Content $($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcRoleConfig-"+$role+".json")
@@ -2400,7 +2409,7 @@ Function create_update_fpolicy_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyExternalEngine failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json")){
-                $PrimaryFpolicyEngineList=Get-Content $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") | ConvertFrom-Json
+                $PrimaryFpolicyEngineList=Get-Content $($Global:JsonPath+"Get-NcFpolicyExternalEngine.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcFpolicyExternalEngine.json")
@@ -2681,7 +2690,7 @@ Function create_update_fpolicy_dr(
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyEvent failed [$ErrorVar]" }
             }else{
                 if(Test-Path $($Global:JsonPath+"Get-NcFpolicyEvent.json")){
-                    $PrimaryFpolEvtList=Get-Content $($Global:JsonPath+"Get-NcFpolicyEvent.json") | ConvertFrom-Json
+                    $PrimaryFpolEvtList=Get-Content $($Global:JsonPath+"Get-NcFpolicyEvent.json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcFpolicyEvent.json")
@@ -2877,7 +2886,7 @@ Function create_update_fpolicy_dr(
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyScope failed [$ErrorVar]" }
                 }else{
                     if(Test-Path $($Global:JsonPath+"Get-NcFpolicyScope.json")){
-                        $PrimaryFpolScope=Get-Content $($Global:JsonPath+"Get-NcFpolicyScope.json") | ConvertFrom-Json
+                        $PrimaryFpolScope=Get-Content $($Global:JsonPath+"Get-NcFpolicyScope.json") -Raw | ConvertFrom-Json
                     }else{
                         $Return=$False
                         $filepath=$($Global:JsonPath+"Get-NcFpolicyScope.json")
@@ -2990,7 +2999,7 @@ Function create_update_fpolicy_dr(
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyScope failed [$ErrorVar]" }
                 }else{
                     if(Test-Path $($Global:JsonPath+"Get-NcFpolicyStatus.json")){
-                        $PrimaryFpolStatus=Get-Content $($Global:JsonPath+"Get-NcFpolicyStatus.json") | ConvertFrom-Json
+                        $PrimaryFpolStatus=Get-Content $($Global:JsonPath+"Get-NcFpolicyStatus.json") -Raw | ConvertFrom-Json
                     }else{
                         $Return=$False
                         $filepath=$($Global:JsonPath+"Get-NcFpolicyStatus.json")
@@ -3075,7 +3084,7 @@ Function create_update_qospolicy_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQosPolicyGroup failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcQosPolicyGroup.json")){
-                $PrimaryQosGroupList=Get-Content $($Global:JsonPath+"Get-NcQosPolicyGroup.json") | ConvertFrom-Json
+                $PrimaryQosGroupList=Get-Content $($Global:JsonPath+"Get-NcQosPolicyGroup.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcQosPolicyGroup.json")
@@ -3162,7 +3171,7 @@ Function create_update_qospolicy_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-                $PrimaryQosPolicyGroupOnSVM=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+                $PrimaryQosPolicyGroupOnSVM=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
                 $PrimaryQosPolicyGroupOnSVM=$PrimaryQosPolicyGroupOnSVM.QosPolicyGroup
             }else{
                 $Return=$False
@@ -3226,7 +3235,7 @@ Function create_update_qospolicy_dr(
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" } 
                 }else{
                     if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-                        $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+                        $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
                     }else{
                         $Return=$False
                         $filepath=$($Global:JsonPath+"Get-NcVol.json")
@@ -3346,7 +3355,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcJobCronSchedule failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcJobCronSchedule.json")){
-            $PrimaryCronList=Get-Content $($Global:JsonPath+"Get-NcJobCronSchedule.json") | ConvertFrom-Json
+            $PrimaryCronList=Get-Content $($Global:JsonPath+"Get-NcJobCronSchedule.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcJobCronSchedule.json")
@@ -3442,7 +3451,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }  
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-                $SnapShotPolicyListPerVol=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+                $SnapShotPolicyListPerVol=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcVol.json")
@@ -3465,7 +3474,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapshotPolicy failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcSnapshotPolicy.json")){
-                $snapShotPolicy=Get-Content $($Global:JsonPath+"Get-NcSnapshotPolicy.json") | ConvertFrom-Json
+                $snapShotPolicy=Get-Content $($Global:JsonPath+"Get-NcSnapshotPolicy.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcSnapshotPolicy.json")
@@ -3625,7 +3634,7 @@ Function create_update_efficiency_policy_dr(
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSisPolicy failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcSisPolicy.json")){
-                $SisPolicyList=Get-Content $($Global:JsonPath+"Get-NcSisPolicy.json") | ConvertFrom-Json
+                $SisPolicyList=Get-Content $($Global:JsonPath+"Get-NcSisPolicy.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcSisPolicy.json")
@@ -3686,7 +3695,7 @@ Function create_update_efficiency_policy_dr(
                     if($PrimaryPolicyName -eq "auto" -and $PrimaryPolicySchedule -eq $null -and $PrimaryPolicyQosPolicy -eq $null){
                         if($Restore -eq $True){
                             if(Test-Path $($Global:JsonPath+"Get-NcSystemVersionInfo.json")){
-                                $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") | ConvertFrom-Json
+                                $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") -Raw | ConvertFrom-Json
                             }else{
                                 $Return=$False
                                 $filepath=$($Global:JsonPath+"Get-NcSystemVersionInfo.json")
@@ -3780,7 +3789,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcExportPolicy failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcExportPolicy.json")){
-            $ExportPolicyList=Get-Content $($Global:JsonPath+"Get-NcExportPolicy.json") | ConvertFrom-Json
+            $ExportPolicyList=Get-Content $($Global:JsonPath+"Get-NcExportPolicy.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcExportPolicy.json")
@@ -3816,7 +3825,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcExportRule failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json")){
-                $ExportPolicyRulesList=Get-Content $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") | ConvertFrom-Json
+                $ExportPolicyRulesList=Get-Content $($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcExportRule-"+$PolicyName+".json")
@@ -3909,7 +3918,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcIgroup failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcIgroup.json")){
-            $PrimaryIgroupList=Get-Content $($Global:JsonPath+"Get-NcIgroup.json") | ConvertFrom-Json
+            $PrimaryIgroupList=Get-Content $($Global:JsonPath+"Get-NcIgroup.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcIgroup.json")
@@ -4038,7 +4047,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLun failed [$ErrorVar]" } 
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcLun.json")){
-                $PrimaryLunList=Get-Content $($Global:JsonPath+"Get-NcLun.json") | ConvertFrom-Json
+                $PrimaryLunList=Get-Content $($Global:JsonPath+"Get-NcLun.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcLun.json")
@@ -4065,7 +4074,7 @@ Try {
             }else{
                 $PrimaryLunPath_string=$PrimaryLunPath -replace "/","@"
                 if(Test-Path $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json")){
-                    $PrimaryLunMapList=Get-Content $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") | ConvertFrom-Json
+                    $PrimaryLunMapList=Get-Content $($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcLunMap_"+$PrimaryLunPath_string+".json")
@@ -4211,7 +4220,7 @@ Function set_serial_lundr (
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLun failed [$ErrorVar]" } 
             }else{
                 if(Test-Path $($Global:JsonPath+"Get-NcLun.json")){
-                    $PrimaryLunList=Get-Content $($Global:JsonPath+"Get-NcLun.json") | ConvertFrom-Json
+                    $PrimaryLunList=Get-Content $($Global:JsonPath+"Get-NcLun.json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcLun.json")
@@ -4414,7 +4423,7 @@ Try {
         if ( $PrimaryVserver -eq $null ) { $Return = $False ; throw "ERROR: Get-NcVserver failed for $myPrimaryVserver [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcVserver.json")
@@ -4469,7 +4478,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNameService failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json")){
-            $PrimaryNameServiceList=Get-Content $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") | ConvertFrom-Json
+            $PrimaryNameServiceList=Get-Content $($Global:JsonPath+"Get-NcNameServiceNsSwitch.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNameServiceNsSwitch.json")
@@ -4525,7 +4534,7 @@ Catch {
     }
     if($Restore -eq $True){
         if(Test-Path $($Global:JsonPath+"Get-NcNetInterface.json")){
-            $lifssource=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") | ConvertFrom-Json
+            $lifssource=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") -Raw | ConvertFrom-Json
             if($lifssource -eq $null){
                 Write-LogDebug "No Lif on source vserver"
                 return $True
@@ -4605,7 +4614,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed to get RootVolume [$ErrorVar]" }    
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-            $PrimaryRootVolumeName=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+            $PrimaryRootVolumeName=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
             $PrimaryRootVolumeName=$PrimaryRootVolumeName.RootVolume
         }else{
             $Return=$False
@@ -4624,7 +4633,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed to get RootVolume [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-            $PrimaryRootVolume=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+            $PrimaryRootVolume=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
             $PrimaryRootVolume=$PrimaryRootVolume | Where-Object {$_.Name -eq $PrimaryRootVolumeName}
         }else{
             $Return=$False
@@ -4688,7 +4697,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" } 
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-                $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+                $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcVol.json")
@@ -4935,7 +4944,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVol failed [$ErrorVar]" }
      }else{
         if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-            $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+            $PrimaryVolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcVol.json")
@@ -5495,7 +5504,7 @@ Try {
         if ($ret -ne $True){$Return=$False;Throw "ERROR : Failed to analyse_junction_path"}
     }else{
         if(Test-Path $($Global:JsonPath+"vol_junction.json")){
-            $script:vol_junction=Get-Content $($Global:JsonPath+"vol_junction.json") | ConvertFrom-Json
+            $script:vol_junction=Get-Content $($Global:JsonPath+"vol_junction.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"vol_junction.json")
@@ -5562,7 +5571,7 @@ Try {
             }
             if($Restore -eq $True){
                 if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-                    $relationList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+                    $relationList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
                     $relationList = $relationList | Where-Object {$_.VolumeStateAttributes.IsVserverRoot -ne $True}
                 }else{
                     $Return=$False
@@ -5890,7 +5899,7 @@ Try {
     }
     if($Restore -eq $True){
         if(Test-Path $($Global:JsonPath+"Get-NcVserverPeer.json")){
-            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserverPeer.json") | ConvertFrom-Json
+            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserverPeer.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcVserverPeer.json")
@@ -6470,14 +6479,14 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNetInterface.json")){
-            $PrimaryInterfaceList=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") | ConvertFrom-Json
+            $PrimaryInterfaceList=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetInterface.json")
             Throw "ERROR: failed to read $filepath"
         }
         if(Test-Path $($Global:JsonPath+"Get-NcNetPort.json")){
-            $PrimaryNetPortList=Get-Content $($Global:JsonPath+"Get-NcNetPort.json") | ConvertFrom-Json
+            $PrimaryNetPortList=Get-Content $($Global:JsonPath+"Get-NcNetPort.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetPort.json")
@@ -6552,10 +6561,10 @@ Try {
             }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcNetRoute.json")){
-                $PrimaryDefaultRoute=Get-Content $($Global:JsonPath+"Get-NcNetRoute.json") | ConvertFrom-Json
+                $PrimaryDefaultRoute=Get-Content $($Global:JsonPath+"Get-NcNetRoute.json") -Raw | ConvertFrom-Json
                 $PrimaryGateway=$PrimaryDefaultRoute.Gateway
             }elseif(Test-Path $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json")){
-                $PrimaryDefaultRoute=Get-Content $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") | ConvertFrom-Json
+                $PrimaryDefaultRoute=Get-Content $($Global:JsonPath+"Get-NcNetRoutingGroupRoute.json") -Raw | ConvertFrom-Json
                 $PrimaryGateway=$PrimaryDefaultRoute.GatewayAddress
             }else{
                 $Return=$False
@@ -6760,7 +6769,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetDns failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNetDns.json")){
-            $PrimaryDNS=Get-Content $($Global:JsonPath+"Get-NcNetDns.json") | ConvertFrom-Json
+            $PrimaryDNS=Get-Content $($Global:JsonPath+"Get-NcNetDns.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetDns.json")
@@ -6881,14 +6890,14 @@ Try {
         $PrimaryCifs = $PrimaryCifs.CifsServer
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsSymlink.json")){
-            $PrimaryCifsSymlinks=Get-Content $($Global:JsonPath+"Get-NcCifsSymlink.json") | ConvertFrom-Json
+            $PrimaryCifsSymlinks=Get-Content $($Global:JsonPath+"Get-NcCifsSymlink.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsSymlink.json")
             Throw "ERROR: failed to read $filepath"
         }
         if(Test-Path $($Global:JsonPath+"Get-NcCifsServer.json")){
-            $PrimaryCifs=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") | ConvertFrom-Json
+            $PrimaryCifs=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsServer.json")
@@ -6979,7 +6988,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNIS failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNIS.json")){
-            $PrimaryNisList=Get-Content $($Global:JsonPath+"Get-NcNIS.json") | ConvertFrom-Json
+            $PrimaryNisList=Get-Content $($Global:JsonPath+"Get-NcNIS.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNIS.json")
@@ -7189,7 +7198,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNfsService failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcNfsService.json")){
-            $PrimaryNfsService=Get-Content $($Global:JsonPath+"Get-NcNfsService.json") | ConvertFrom-Json
+            $PrimaryNfsService=Get-Content $($Global:JsonPath+"Get-NcNfsService.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNfsService.json")
@@ -7342,14 +7351,14 @@ Try {
         if($? -ne $True){Throw "ERROR: Failed to get CIFS security for [$myPrimaryVserver] reason [$ErrorVar]"}
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsOption.json")){
-            $primaryOptions=Get-Content $($Global:JsonPath+"Get-NcCifsOption.json") | ConvertFrom-Json
+            $primaryOptions=Get-Content $($Global:JsonPath+"Get-NcCifsOption.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsOption.json")
             Throw "ERROR: failed to read $filepath"
         }
         if(Test-Path $($Global:JsonPath+"Get-NcSystemVersionInfo.json")){
-            $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") | ConvertFrom-Json
+            $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcSystemVersionInfo.json")
@@ -7357,7 +7366,7 @@ Try {
         }
         $PrimaryVersion=$PrimaryVersion.VersionTupleV
         if(Test-Path $($Global:JsonPath+"Get-NcCifsSecurity.json")){
-            $PrimaryCIFSsecurity=Get-Content $($Global:JsonPath+"Get-NcCifsSecurity.json") | ConvertFrom-Json
+            $PrimaryCIFSsecurity=Get-Content $($Global:JsonPath+"Get-NcCifsSecurity.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsSecurity.json")
@@ -7515,7 +7524,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQtree failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcQtree.json")){
-            $PrimaryQtrees=Get-Content $($Global:JsonPath+"Get-NcQtree.json") | ConvertFrom-Json
+            $PrimaryQtrees=Get-Content $($Global:JsonPath+"Get-NcQtree.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcQtree.json")
@@ -7600,7 +7609,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcQtree failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcQtree.json")){
-            $PrimaryQtrees=Get-Content $($Global:JsonPath+"Get-NcQtree.json") | ConvertFrom-Json
+            $PrimaryQtrees=Get-Content $($Global:JsonPath+"Get-NcQtree.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcQtree.json")
@@ -7669,7 +7678,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLdapConfig failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcLdapConfig.json")){
-            $PrimaryLDAP=Get-Content $($Global:JsonPath+"Get-NcLdapConfig.json") | ConvertFrom-Json
+            $PrimaryLDAP=Get-Content $($Global:JsonPath+"Get-NcLdapConfig.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcLdapConfig.json")
@@ -7695,7 +7704,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLdapClient failed [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcLdapClient.json")){
-                $PrimaryLDAPclient=Get-Content $($Global:JsonPath+"Get-NcLdapClient.json") | ConvertFrom-Json
+                $PrimaryLDAPclient=Get-Content $($Global:JsonPath+"Get-NcLdapClient.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcLdapClient.json")
@@ -7723,7 +7732,7 @@ Try {
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcLdapClientSchema [$ErrorVar]" }
         }else{
             if(Test-Path $($Global:JsonPath+"Get-NcLdapClientSchema.json")){
-                $PrimarySchema=Get-Content $($Global:JsonPath+"Get-NcLdapClientSchema.json") | ConvertFrom-Json
+                $PrimarySchema=Get-Content $($Global:JsonPath+"Get-NcLdapClientSchema.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcLdapClientSchema.json")
@@ -8122,21 +8131,21 @@ Try {
         if($? -ne $True){Throw "ERROR: Failed to get CIFS security for [$myPrimaryVserver] reason [$ErrorVar]"}
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsServer.json")){
-            $PrimaryCifsServerInfos=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") | ConvertFrom-Json
+            $PrimaryCifsServerInfos=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsServer.json")
             Throw "ERROR: failed to read $filepath"
         }   
         if(Test-Path $($Global:JsonPath+"Get-NcNetInterface.json")){
-            $PrimaryInterfaceList=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") | ConvertFrom-Json
+            $PrimaryInterfaceList=Get-Content $($Global:JsonPath+"Get-NcNetInterface.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcNetInterface.json")
             Throw "ERROR: failed to read $filepath"
         }
         if(Test-Path $($Global:JsonPath+"Get-NcCifsSecurity.json")){
-            $PrimaryCIFSsecurity=Get-Content $($Global:JsonPath+"Get-NcCifsSecurity.json") | ConvertFrom-Json
+            $PrimaryCIFSsecurity=Get-Content $($Global:JsonPath+"Get-NcCifsSecurity.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsSecurity.json")
@@ -8426,7 +8435,7 @@ Try {
         $PrimaryVersion=(Get-NcSystemVersionInfo -Controller $myPrimaryController).VersionTupleV
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcSystemVersionInfo.json")){
-            $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") | ConvertFrom-Json
+            $PrimaryVersion=Get-Content $($Global:JsonPath+"Get-NcSystemVersionInfo.json") -Raw | ConvertFrom-Json
             $PrimaryVersion=$PrimaryVersion.VersionTupleV
         }else{
             $Return=$False
@@ -8478,7 +8487,7 @@ Try {
         $PrimaryServer=$PrimaryCifsServerInfos.CifsServer
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsServer.json")){
-            $PrimaryCifsServerInfos=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") | ConvertFrom-Json
+            $PrimaryCifsServerInfos=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsServer.json")
@@ -8533,7 +8542,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsHomeDirectorySearchPath failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json")){
-            $CifsHomeSearchList=Get-Content $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") | ConvertFrom-Json
+            $CifsHomeSearchList=Get-Content $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json")
@@ -8565,7 +8574,7 @@ Try {
             }
             # Recreate All Cifs Home Search Dir
             if($Restore -eq $True){
-                $CifsHomeSearchList=Get-Content $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") | ConvertFrom-Json
+                $CifsHomeSearchList=Get-Content $($Global:JsonPath+"Get-NcCifsHomeDirectorySearchPath.json") -Raw | ConvertFrom-Json
             }else{
                 $CifsHomeSearchList=Get-NcCifsHomeDirectorySearchPath -Controller $myPrimaryController -VserverContext $myPrimaryVserver  -ErrorVariable ErrorVar 
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsHomeDirectorySearchPath failed [$ErrorVar]" }
@@ -8589,14 +8598,14 @@ Try {
         $PrimaryAllAclList=Get-NcCifsShareAcl -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErroVar
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsShare.json")){
-            $SharesListSource=Get-Content $($Global:JsonPath+"Get-NcCifsShare.json") | ConvertFrom-Json
+            $SharesListSource=Get-Content $($Global:JsonPath+"Get-NcCifsShare.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsShare.json")
             Throw "ERROR: failed to read $filepath"
         }
         if(Test-Path $($Global:JsonPath+"Get-NcCifsShareAcl.json")){
-            $PrimaryAllAclList=Get-Content $($Global:JsonPath+"Get-NcCifsShareAcl.json") | ConvertFrom-Json
+            $PrimaryAllAclList=Get-Content $($Global:JsonPath+"Get-NcCifsShareAcl.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsShareAcl.json")
@@ -8623,6 +8632,19 @@ Try {
         $SharesListDest=Get-NcCifsShare -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
         if($SharesListSource -ne $null -and $SharesListDest -ne $null){
             Write-LogDebug "Check CIFS shares list"
+            # if selectvolume.db exist filter list of source cifs share to create with selected volume list
+            $NcCluster = Get-NcCluster -Controller $mySecondaryController
+            $DestinationCluster = $NcCluster.ClusterName
+            $SVMTOOL_DB_DST_CLUSTER=$Global:SVMTOOL_DB + '\' + $DestinationCluster + '.cluster'
+            $SVMTOOL_DB_DST_VSERVER=$SVMTOOL_DB_DST_CLUSTER + '\' +$mySecondaryVserver + '.vserver'
+            $SELECTVOL_DB_DST_FILE=$SVMTOOL_DB_DST_VSERVER + '\selectvolume.db' 
+            if( ( Test-Path $SELECTVOL_DB_DST_FILE ) -eq $true ) {
+                Write-LogDebug "Filter source CIFS share from selected volume available on Destination"
+                $SelectedVolumes=Get-Content $SELECTVOL_DB_DST_FILE 
+                if($SelectedVolumes.count -gt 1){
+                    $SharesListSource=$SharesListSource | Where-Object {$_.Volume -in $SelectedVolumes}
+                }
+            }
             $diff=Compare-Object -ReferenceObject $SharesListSource -DifferenceObject $SharesListDest `
             -Property Acl,AttributeCacheTtl,Comment,DirUmask,FileUmask,ForceGroupForCreate,MaxConnectionPerShare,OfflineFilesMode,Path,ShareName,ShareProperties,SymlinkProperties,Volume,VscanFileopProfile `
             -SyncWindow 20000 -CaseSensitive -PassThru | Sort-Object -Property SideIndicator -Descending
@@ -8923,7 +8945,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcIscsiService failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcIscsiService.json")){
-            $PrimaryIscsiService=Get-Content $($Global:JsonPath+"Get-NcIscsiService.json") | ConvertFrom-Json
+            $PrimaryIscsiService=Get-Content $($Global:JsonPath+"Get-NcIscsiService.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcIscsiService.json")
@@ -9719,7 +9741,7 @@ Try {
     else{
         # Read JSON file for this SVM
         if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+            $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcVserver.json")
@@ -10718,7 +10740,7 @@ try{
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsServer.json")){
-            $PrimaryCifs=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") | ConvertFrom-Json
+            $PrimaryCifs=Get-Content $($Global:JsonPath+"Get-NcCifsServer.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsServer.json")
@@ -10770,7 +10792,7 @@ try{
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalUser failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsLocalUser.json")){
-            $PrimaryUserList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalUser.json") | ConvertFrom-Json
+            $PrimaryUserList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalUser.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsLocalUser.json")
@@ -10901,7 +10923,7 @@ try{
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsLocalGroup failed [$ErrorVar]" }
     }else{
         if(Test-Path $($Global:JsonPath+"Get-NcCifsLocalGroup.json")){
-            $PrimaryGroupList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalGroup.json") | ConvertFrom-Json
+            $PrimaryGroupList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalGroup.json") -Raw | ConvertFrom-Json
         }else{
             $Return=$False
             $filepath=$($Global:JsonPath+"Get-NcCifsLocalGroup.json")
@@ -10965,7 +10987,7 @@ try{
             }else{
                 $PrimaryGroupName_string=$PrimaryGroupName -replace "\\","_"
                 if(Test-Path $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json")){
-                    $PrimaryMemberList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") | ConvertFrom-Json
+                    $PrimaryMemberList=Get-Content $($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json") -Raw | ConvertFrom-Json
                 }else{
                     $Return=$False
                     $filepath=$($Global:JsonPath+"Get-NcCifsLocalGroupMember-"+$PrimaryGroupName_string+".json")
@@ -11412,7 +11434,7 @@ Function test_primary_alive (
     if( ( Test-Path $CLUSTERINFO_SRC_FILE ) -eq $false){
         throw "ERROR: Unable to read [$CLUSTERINFO_SRC_FILE]"
     }
-    $myClusterSrc=Get-Content $CLUSTERINFO_SRC_FILE | ConvertFrom-Json
+    $myClusterSrc=Get-Content $CLUSTERINFO_SRC_FILE -Raw | ConvertFrom-Json
     $myClusterSrcName=$myClusterSrc.ClusterName
     if ( ( (Ping-NcClusterPeer -Controller $NcSecondaryCtrl -Name $myClusterSrcName).PingStatus) -eq "interface_reachable" ){
         $ThirdTest=$True
@@ -11487,14 +11509,15 @@ Function activate_vserver_dr (
         }
 		$NeedCIFS=$False
         # remove dest CIFS server
+        # rename dest CIFS server
 		if ( (Get-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl -ErrorVariable ErrorVar) -ne $null ){
-            Write-Log "[$currentPassiveVserver] Remove CIFS server"
+            <# Write-Log "[$currentPassiveVserver] Remove CIFS server"
 			Write-LogDebug "Stop-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl"
 			$ret=Stop-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl -ErrorVariable ErrorVar -Confirm:$False
 			if($? -ne $True){$Return = $False; throw "ERROR: failed to stop secondary CIFS server"}
 			Write-LogDebug "Remove-NcCifsServer -VserverContext $currentPassiveVserver -ForceAccountDelete -Controller $NcCurrentPassiveCtrl"
 			$ret=Remove-NcCifsServer -VserverContext $currentPassiveVserver -ForceAccountDelete -Controller $NcCurrentPassiveCtrl -Confirm:$False -ErrorVariable ErrorVar
-			if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"}	
+			if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"}	 #>
 			$NeedCIFS=$True
 		}
         # modify active LIF with primary settings
@@ -11505,11 +11528,13 @@ Function activate_vserver_dr (
 		if($NeedCIFS){
             #add new cifs server with primary identity on active
             Write-Log "[$currentPassiveVserver] Register new CIFS server"
-			if( ($ret=Add_CIFS_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
+			<# if( ($ret=Add_CIFS_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
 				Throw "ERROR: Failed to add new CIFS server on [$currentPassiveVserver]"
+            } #>
+            if( ($ret=Set_CIFS_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
+				Throw "ERROR: Failed to set new CIFS server on [$currentPassiveVserver]"
             }
         }
-
         # enable services on secondary
         if ( ( $ret=enable_network_protocol_vserver_dr -myNcController $NcCurrentPassiveCtrl -myVserver $currentPassiveVserver ) -ne $True ) {
             Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver [$currentPassiveVserver] on [$NcCurrentPassiveCtrl]"
@@ -11560,9 +11585,9 @@ Function activate_vserver_dr (
         Write-Log "[$currentActiveVserver] stop Vserver"
 		Write-LogDebug "Stop-NcVserver -Name $currentActiveVserver -Controller $NcCurrentActiveCtrl"
 		$ret=Stop-NcVserver -Name $currentActiveVserver -Controller $NcCurrentActiveCtrl -Confirm:$False
-		if($? -ne $True){Thow "ERROR: Failed to stop Vserver [$currentActiveVserver]"}
+		if($? -ne $True){Throw "ERROR: Failed to stop Vserver [$currentActiveVserver]"}
 		# remove secondary CIFS server
-		if ( (Get-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl -ErrorVariable ErrorVar) -ne $null ){
+		<# if ( (Get-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl -ErrorVariable ErrorVar) -ne $null ){
             Write-Log "[$currentPassiveVserver] Remove CIFS server"
 			Write-LogDebug "Stop-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl"
 			$ret=Stop-NcCifsServer -VserverContext $currentPassiveVserver -Controller $NcCurrentPassiveCtrl -ErrorVariable ErrorVar -Confirm:$False
@@ -11570,7 +11595,7 @@ Function activate_vserver_dr (
 			Write-LogDebug "Remove-NcCifsServer -VserverContext $currentPassiveVserver -ForceAccountDelete -Controller $NcCurrentPassiveCtrl"
 			$ret=Remove-NcCifsServer -VserverContext $currentPassiveVserver -ForceAccountDelete -Controller $NcCurrentPassiveCtrl -Confirm:$False -ErrorVariable ErrorVar
 			if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"}	
-		}
+		} #>
         # modify secondary LIF with primary settings
         Write-Log "[$currentPassiveVserver] Modify LIF"
 		if( ($ret=Set_LIF_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
@@ -11579,7 +11604,7 @@ Function activate_vserver_dr (
 		if($NeedCIFS){
             #add new secondary cifs with primary identity
             Write-Log "[$currentPassiveVserver] Register new CIFS server"
-			if( ($ret=Add_CIFS_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
+			if( ($ret=Set_CIFS_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
 				Throw "ERROR: Failed to add new CIFS server on [$currentPassiveVserver]"
 			}
 		}
@@ -11942,7 +11967,7 @@ Function create_subdir (
                     $PrimDirDetails=Read-NcDirectory -Path $searchPath -VserverContext $myPrimaryVserver -Controller $myPrimaryController | Where-Object {$_.Name -eq $dir}
                 }else{
                     if(Test-Path $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json")){
-                        $PrimDirDetails=Get-Content $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") | ConvertFrom-Json
+                        $PrimDirDetails=Get-Content $($Global:JsonPath+"Read-NcDirectory-"+$dir+".json") -Raw | ConvertFrom-Json
                     }else{
                         $Return=$False
                         $filepath=$($Global:JsonPath+"Read-NcDirectory-"+$dir+".json")
@@ -12238,7 +12263,7 @@ Try {
             $DestinationLocation=$relation.DestinationLocation
             $RelationshipId=$relation.RelationshipId
             
-            Write-Log "[$mySecondaryVserver] Release Relationship [$SourceLocation] [$DestinationLocation]"
+            Write-Log "[$mySecondaryVserver] Release Relationship [$SourceLocation] ---> [$DestinationLocation]"
             Write-LogDebug "Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController -Confirm:$False"
             $out = Invoke-NcSnapmirrorRelease -DestinationCluster  $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -SourceCluster  $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $SourceVolume  -RelationshipId $RelationshipId -Controller $myPrimaryController  -ErrorVariable ErrorVar -Confirm:$False
             if ( $? -ne $True ) {
@@ -12771,6 +12796,60 @@ Function Save_CIFS_To_JSON (
 }
 
 #############################################################################################
+Function Set_CIFS_from_JSON (
+    [NetApp.Ontapi.Filer.C.NcController] $ToNcController,
+    [string] $ToVserver,
+    [switch] $fromSrc)
+{
+    try{
+        $Return=$True
+        Write-LogDebug "Set_CIFS_from_JSON: start"
+        $NcCluster = Get-NcCluster -Controller $ToNcController
+        $Cluster = $NcCluster.ClusterName
+        $SVMTOOL_DB_CLUSTER=$Global:SVMTOOL_DB + '\' + $Cluster + '.cluster'
+        $SVMTOOL_DB_VSERVER=$SVMTOOL_DB_CLUSTER + '\' + $ToVserver + '.vserver'
+        if($fromSrc){
+            $CIFSINFO_FILE=$SVMTOOL_DB_VSERVER + '\cifssrcinfo.json'
+        }else{
+            $CIFSINFO_FILE=$SVMTOOL_DB_VSERVER + '\cifsdstinfo.json'    
+        }
+        
+        #$CIFSINFO_DST_FILE=$SVMTOOL_DB_SRC_VSERVER + '\cifsdstinfo.json'
+        if( ( Test-Path $CIFSINFO_FILE ) -eq $false){
+            throw "ERROR: Unable to read [$CIFSINFO_FILE]"
+        }
+        $oldCIFS=Get-NcCifsServer -VserverContext $ToVserver -Controller $ToNcController -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+        $oldCIFSNetbiosAliases=$oldCIFS.NetbiosAliases
+        $oldCIFSState=$oldCIFS.AdministrativeStatus
+        if($oldCIFSState -eq "up"){
+            Write-LogDebug "Stop-NcCifsServer -VserverContext $ToVserver -controller $ToNcController"
+            $out=Stop-NcCifsServer -VserverContext $ToVserver -controller $ToNcController -ErrorVariable ErrorVar -Confirm:$False
+            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Stop-NcCifsServer failed [$ErrorVar]" }
+        }
+        $newCIFS=Get-Content $CIFSINFO_FILE -Raw | ConvertFrom-Json
+        $newCIFSName=$newCIFS.CifsServer
+        $newCIFSOU=$newCIFS.OrganizationalUnit
+        $newCIFSNetbiosAliases=$newCIFS.NetbiosAliases
+        $newCIFSDomain=$newCIFS.Domain
+        $newCIFSDefaultSite=$newCIFS.DefaultSite
+        $ADCred = get_local_cred ($newCIFSDomain)
+        Write-Log "[$ToVserver] Set CIFS server up with identity [$newCIFSName]"
+        if ($oldCIFSNetbiosAliases -eq $newCIFSNetbiosAliases){
+            $oldCIFSNetbiosAliases=""
+        }
+        Write-LogDebug "Set-NcCifsServer -AdministrativeStatus up -ForceAccountOverwrite -CifsServer $newCIFSName -Ou $newCIFSOU -AddNetbiosAlias $newCIFSNetbiosAliases -RemoveNetbiosAlias $oldCIFSNetbiosAliases -DefaultSite $newCIFSDefaultSite -Domain $newCIFSDomain -AdminCredential $ADCred -VserverContext $ToVserver -controller $ToNcController"
+        $out=Set-NcCifsServer -AdministrativeStatus up -ForceAccountOverwrite -CifsServer $newCIFSName -Ou $newCIFSOU -AddNetbiosAlias $newCIFSNetbiosAliases -RemoveNetbiosAlias $oldCIFSNetbiosAliases -DefaultSite $newCIFSDefaultSite -Domain $newCIFSDomain -AdminCredential $ADCred -VserverContext $ToVserver -controller $ToNcController  -ErrorVariable ErrorVar  -Confirm:$False
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcCifsServer failed [$ErrorVar]" }
+        Write-LogDebug "Set_CIFS_from_JSON: end"
+        return $True
+    }catch{
+        handle_error $_ $ToVserver
+    	return $Return    
+    }
+}
+
+#############################################################################################
 Function Add_CIFS_from_JSON (
     [NetApp.Ontapi.Filer.C.NcController] $ToNcController,
     [string] $ToVserver,
@@ -12793,7 +12872,7 @@ Function Add_CIFS_from_JSON (
         if( ( Test-Path $CIFSINFO_FILE ) -eq $false){
             throw "ERROR: Unable to read [$CIFSINFO_FILE]"
         }
-        $CIFS=Get-Content $CIFSINFO_FILE | ConvertFrom-Json
+        $CIFS=Get-Content $CIFSINFO_FILE -Raw | ConvertFrom-Json
         $CIFSName=$CIFS.CifsServer
         $CIFSOU=$CIFS.OrganizationalUnit
         $CIFSNetbiosAliases=$CIFS.NetbiosAliases
@@ -12834,7 +12913,7 @@ Function Set_LIF_from_JSON (
         if( ( Test-Path $LIFINFO_FILE ) -eq $false){
             throw "ERROR: Unable to read [$LIFINFO_FILE]"
         }
-        $NetList=Get-Content $LIFINFO_FILE | ConvertFrom-Json
+        $NetList=Get-Content $LIFINFO_FILE -Raw | ConvertFrom-Json
         $availableLIF=Get-NcNetInterface -VserverContext $ToVserver -Controller $ToNcController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) 
         {
@@ -13181,21 +13260,21 @@ Function set_vol_options_from_voldb (
         Write-logDebug "set_vol_options_from_voldb: start"
         if($Restore.IsPresent -or $Restore -eq $True){
             if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-                $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+                $PrimaryVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcVserver.json")
                 Throw "ERROR: failed to read $filepath"
             }
             if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-                $PrimaryVolumes=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+                $PrimaryVolumes=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcVol.json")
                 Throw "ERROR: failed to read $filepath"
             }
             if(Test-Path $($Global:JsonPath+"Get-NcSis.json")){
-                $PrimarySis=Get-Content $($Global:JsonPath+"Get-NcSis.json") | ConvertFrom-Json
+                $PrimarySis=Get-Content $($Global:JsonPath+"Get-NcSis.json") -Raw | ConvertFrom-Json
             }else{
                 $Return=$False
                 $filepath=$($Global:JsonPath+"Get-NcSis.json")
@@ -13953,28 +14032,28 @@ Function restore_quota (
         Write-LogDebug "restore_quota: start"
         $VolumeListToRestartQuota= @()
         if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
-            $VolumeList=Get-Content $($Global:JsonPath+"Get-NcVol.json") | ConvertFrom-Json
+            $VolumeList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
         }else{
             $filepath=$($Global:JsonPath+"Get-NcVol.json")
             Write-LogDebug "ERROR: failed to read $filepath"
             return $False
         }
         if(Test-Path $($Global:JsonPath+"Get-NcQuotaPolicy.json")){
-            $QuotaPolicyList=Get-Content $($Global:JsonPath+"Get-NcQuotaPolicy.json") | ConvertFrom-Json
+            $QuotaPolicyList=Get-Content $($Global:JsonPath+"Get-NcQuotaPolicy.json") -Raw | ConvertFrom-Json
         }else{
             $filepath=$($Global:JsonPath+"Get-NcQuotaPolicy.json")
             Write-LogDebug "ERROR: failed to read $filepath"
             return $False
         }
         if(Test-Path $($Global:JsonPath+"Get-NcQuota.json")){
-            $QuotaRulesList=Get-Content $($Global:JsonPath+"Get-NcQuota.json") | ConvertFrom-Json
+            $QuotaRulesList=Get-Content $($Global:JsonPath+"Get-NcQuota.json") -Raw | ConvertFrom-Json
         }else{
             $filepath=$($Global:JsonPath+"Get-NcQuota.json")
             Write-LogDebug "ERROR: failed to read $filepath"
             return $False
         }
         if(Test-Path $($Global:JsonPath+"Get-NcVserver.json")){
-            $SourceVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") | ConvertFrom-Json
+            $SourceVserver=Get-Content $($Global:JsonPath+"Get-NcVserver.json") -Raw | ConvertFrom-Json
         }else{
             $filepath=$($Global:JsonPath+"Get-NcVserver.json")
             Write-LogDebug "ERROR: failed to read $filepath"
