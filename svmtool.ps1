@@ -894,11 +894,16 @@ if(!($env:PSModulePath -match "NetApp PowerShell Toolkit")){
     $env:PSModulePath=$($env:PSModulePath+";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
 }
 if(-not $WfaIntegration){
-    $module=import-module -Name DataONTAP -PassThru
-    if ( $module -eq $null ) {
-            Write-Error "ERROR: DataONTAP module not found" 
-            clean_and_exit 1
-    }
+	$module=Get-Module DataONTAP
+	if($module -eq $null){
+		$module=import-module -Name DataONTAP -PassThru
+		if ( $module -eq $null ) {
+				Write-Error "ERROR: DataONTAP module not found" 
+				clean_and_exit 1
+		}
+	}else{
+		# dataontap was loaded externally
+	}
 }else{
     $module=import-module "$PSScriptRoot\..\DataOntap" -PassThru
 }

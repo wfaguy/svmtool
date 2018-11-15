@@ -1303,6 +1303,9 @@ function Invoke-SvmDrRecoverFromDr{
         # Enables the force-recreation of snapmirror relations
         [switch]$ForceRecreate,
 
+        # Enables the force-restart of the source svm (in case it's stopped)
+        [switch]$ForceRestart,        
+
         # Enables Snapshot Policy Update
         # The source will inherit the snapshot policies from the destination
         [switch]$ForceUpdateSnapPolicy,
