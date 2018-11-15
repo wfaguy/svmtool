@@ -8641,7 +8641,7 @@ Try {
             if( ( Test-Path $SELECTVOL_DB_DST_FILE ) -eq $true ) {
                 Write-LogDebug "Filter source CIFS share from selected volume available on Destination"
                 $SelectedVolumes=Get-Content $SELECTVOL_DB_DST_FILE 
-                if($SelectedVolumes.count -gt 1){
+                if($SelectedVolumes.count -ge 1){
                     $SharesListSource=$SharesListSource | Where-Object {$_.Volume -in $SelectedVolumes}
                 }
             }
