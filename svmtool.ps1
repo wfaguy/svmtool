@@ -359,6 +359,7 @@
 		- 0.1.4 :	Simplify and improve ActivateDR and ReActivate behaviour
 					Improve Restore behaviour when restoring Vserver to its original place (Cluster/Vserver)
 		- 0.1.5 :	Fix ActivateDR and ReActivate to keep CIFS shares on the active SVM
+		- 0.1.6 :   Fix restart services during ReActivate
 
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
@@ -796,7 +797,7 @@ $Global:MIN_MINOR = 3
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.5"
+$Global:RELEASE="0.1.6"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -2403,12 +2404,12 @@ if ( $ReActivate ){
 		$Return = $False
 	}
 	$Global:NonInteractive=$true
-	if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex) -ne  $True ) { 
+	if ( ( $ret=update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -FromReactivate) -ne  $True ) { 
 		Write-LogError "ERROR: update_vserver_dr" 
 		clean_and_exit 1 
 
 	}
-
+	
     if ( ( $ret=update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$Vserver]"
     }

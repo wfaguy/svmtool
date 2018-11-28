@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : October 30th, 2018
+    Release : November 28th, 2018
 
 #>
 
@@ -1377,104 +1377,108 @@ Function create_update_vscan_dr (
             }
         }
         if($Backup -eq $False){
-            foreach ( $PrimaryScannerPool in ( $PrimaryScannerPoolList | Skip-Null ) ) {
-                $PrimaryScannerPoolName=$PrimaryScannerPool.ScannerPool
-                $PrimaryScannerPoolPolicy=$PrimaryScannerPool.ScannerPolicy
-                $PrimaryScannerPoolVscanServers=$PrimaryScannerPool.Servers
-                $PrimaryScannerPoolPrivUser=$PrimaryScannerPool.PrivilegedUsers
-                $PrimaryScannerPoolReqTimeout=$PrimaryScannerPool.RequestTimeout
-                $PrimaryScannerPoolScanQueueTimeout=$PrimaryScannerPool.ScanQueueTimeout
-                $PrimaryScannerPoolSesSetupTimeout=$PrimaryScannerPool.SessionSetupTimeout
-                $PrimaryScannerPoolSesTeardTimeout=$PrimaryScannerPool.SessionTeardownTimeout
-                $PrimaryScannerPoolMaxSesSetupRetry=$PrimaryScannerPool.MaxSessionSetupRetries
-                
-                Write-logDebug "Get-NcVscanScannerPool -Name $PrimaryScannerPoolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                $SecondaryScannerPool = Get-NcVscanScannerPool -Name $PrimaryScannerPoolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanScannerPool failed on [$mySecondaryController] [$ErrorVar]" }
-                if ( $SecondaryScannerPool -ne $null ) 
-                {
-                    $SecondaryScannerPoolVscanServers=$SecondaryScannerPool.Servers
-                    $SecondaryScannerPoolPolicy=$SecondaryScannerPool.ScannerPolicy
-                    $SecondaryScannerPoolPrivUser=$SecondaryScannerPool.PrivilegedUsers
-                    $SecondaryScannerPoolReqTimeout=$SecondaryScannerPool.RequestTimeout
-                    $SecondaryScannerPoolScanQueueTimeout=$SecondaryScannerPool.ScanQueueTimeout
-                    $SecondaryScannerPoolSesSetupTimeout=$SecondaryScannerPool.SessionSetupTimeout
-                    $SecondaryScannerPoolSesTeardTimeout=$SecondaryScannerPool.SessionTeardownTimeout
-                    $SecondaryScannerPoolMaxSesSetupRetry=$SecondaryScannerPool.MaxSessionSetupRetries
-                    #if ( (($PrimaryScannerPoolPrivUser -ne $SecondaryScannerPoolPrivUser) `
-                    if ( (($PrimaryScannerPoolReqTimeout -ne $SecondaryScannerPoolReqTimeout) `
-                        -or ($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy) `
-                        -or ($PrimaryScannerPoolScanQueueTimeout -ne $SecondaryScannerPoolScanQueueTimeout) `
-                        -or ($PrimaryScannerPoolSesSetupTimeout -ne $SecondaryScannerPoolSesSetupTimeout) `
-                        -or ($PrimaryScannerPoolSesTeardTimeout -ne $SecondaryScannerPoolSesTeardTimeout) `
-                        -or ($PrimaryScannerPoolMaxSesSetupRetry -ne $SecondaryScannerPoolMaxSesSetupRetry)) ) 
+            if(-not $Global:NonInteractive){
+                foreach ( $PrimaryScannerPool in ( $PrimaryScannerPoolList | Skip-Null ) ) {
+                    $PrimaryScannerPoolName=$PrimaryScannerPool.ScannerPool
+                    $PrimaryScannerPoolPolicy=$PrimaryScannerPool.ScannerPolicy
+                    $PrimaryScannerPoolVscanServers=$PrimaryScannerPool.Servers
+                    $PrimaryScannerPoolPrivUser=$PrimaryScannerPool.PrivilegedUsers
+                    $PrimaryScannerPoolReqTimeout=$PrimaryScannerPool.RequestTimeout
+                    $PrimaryScannerPoolScanQueueTimeout=$PrimaryScannerPool.ScanQueueTimeout
+                    $PrimaryScannerPoolSesSetupTimeout=$PrimaryScannerPool.SessionSetupTimeout
+                    $PrimaryScannerPoolSesTeardTimeout=$PrimaryScannerPool.SessionTeardownTimeout
+                    $PrimaryScannerPoolMaxSesSetupRetry=$PrimaryScannerPool.MaxSessionSetupRetries
+                    
+                    Write-logDebug "Get-NcVscanScannerPool -Name $PrimaryScannerPoolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                    $SecondaryScannerPool = Get-NcVscanScannerPool -Name $PrimaryScannerPoolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanScannerPool failed on [$mySecondaryController] [$ErrorVar]" }
+                    if ( $SecondaryScannerPool -ne $null ) 
                     {
-                        Write-Log "[$workOn] Modify Vscan Scanner Pool [$PrimaryScannerPoolName]"
-                        if($fromConfigureDR -eq $True)
+                        $SecondaryScannerPoolVscanServers=$SecondaryScannerPool.Servers
+                        $SecondaryScannerPoolPolicy=$SecondaryScannerPool.ScannerPolicy
+                        $SecondaryScannerPoolPrivUser=$SecondaryScannerPool.PrivilegedUsers
+                        $SecondaryScannerPoolReqTimeout=$SecondaryScannerPool.RequestTimeout
+                        $SecondaryScannerPoolScanQueueTimeout=$SecondaryScannerPool.ScanQueueTimeout
+                        $SecondaryScannerPoolSesSetupTimeout=$SecondaryScannerPool.SessionSetupTimeout
+                        $SecondaryScannerPoolSesTeardTimeout=$SecondaryScannerPool.SessionTeardownTimeout
+                        $SecondaryScannerPoolMaxSesSetupRetry=$SecondaryScannerPool.MaxSessionSetupRetries
+                        #if ( (($PrimaryScannerPoolPrivUser -ne $SecondaryScannerPoolPrivUser) `
+                        if ( (($PrimaryScannerPoolReqTimeout -ne $SecondaryScannerPoolReqTimeout) `
+                            -or ($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy) `
+                            -or ($PrimaryScannerPoolScanQueueTimeout -ne $SecondaryScannerPoolScanQueueTimeout) `
+                            -or ($PrimaryScannerPoolSesSetupTimeout -ne $SecondaryScannerPoolSesSetupTimeout) `
+                            -or ($PrimaryScannerPoolSesTeardTimeout -ne $SecondaryScannerPoolSesTeardTimeout) `
+                            -or ($PrimaryScannerPoolMaxSesSetupRetry -ne $SecondaryScannerPoolMaxSesSetupRetry)) ) 
                         {
-                            Write-Log "[$workOn] Enter IP Address of a Vscan Server"
-                            $ANS='y'
-                            $num=(($SecondaryScannerPoolVscanServers.count)-1)
-                            if($num -ge 0)
+                            Write-Log "[$workOn] Modify Vscan Scanner Pool [$PrimaryScannerPoolName]"
+                            if($fromConfigureDR -eq $True)
                             {
-                                $myScannerPoolVscanServers=$SecondaryScannerPoolVscanServers   
+                                Write-Log "[$workOn] Enter IP Address of a Vscan Server"
+                                $ANS='y'
+                                $num=(($SecondaryScannerPoolVscanServers.count)-1)
+                                if($num -ge 0)
+                                {
+                                    $myScannerPoolVscanServers=$SecondaryScannerPoolVscanServers   
+                                }
+                                else
+                                {
+                                    $myScannerPoolVscanServers=$PrimaryScannerPoolVscanServers    
+                                }
+                                $myNewSecondaryScannerPoolVscanServers=@()
+                                while($ANS -ne 'n')
+                                {
+                                    $myNewSecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
+                                    $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
+                                }
+                                if ((Compare-Object -ReferenceObject $myNewSecondaryScannerPoolVscanServers -DifferenceObject $SecondaryScannerPoolVscanServers -PassThru).count -ne 0){
+                                    Write-Log "[$workOn] Modify ScannerPool Servers for [$PrimaryScannerPoolName]"
+                                    Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                    $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }    
+                                }
+                                if($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy){
+                                    Write-Log "[$workOn] Modify ScannerPool Policy for [$PrimaryScannerPoolName]"
+                                    Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                    $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
+                                }
+                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
                             }
                             else
                             {
-                                $myScannerPoolVscanServers=$PrimaryScannerPoolVscanServers    
-                            }
-                            $myNewSecondaryScannerPoolVscanServers=@()
-                            while($ANS -ne 'n')
-                            {
-                                $myNewSecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $myScannerPoolVscanServers[$num++] -workOn $workOn
-                                $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
-                            }
-                            if ((Compare-Object -ReferenceObject $myNewSecondaryScannerPoolVscanServers -DifferenceObject $SecondaryScannerPoolVscanServers -PassThru).count -ne 0){
-                                Write-Log "[$workOn] Modify ScannerPool Servers for [$PrimaryScannerPoolName]"
-                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -VscanServer $myNewSecondaryScannerPoolVscanServers -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }    
-                            }
-                            if($PrimaryScannerPoolPolicy -ne $SecondaryScannerPoolPolicy){
-                                Write-Log "[$workOn] Modify ScannerPool Policy for [$PrimaryScannerPoolName]"
-                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
                             }
-                            Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                            $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
                         }
-                        else
-                        {
-                            Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                            $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
-                        }
-                    }
-                } 
-                else 
-                {
-
-                    Write-Log "[$workOn] Create Vscan Scanner Pool [$PrimaryScannerPoolName]"
-                    Write-Log "[$workOn] Enter IP Address of a Vscan Server"
-                    $ANS='y'
-                    $SecondaryScannerPoolVscanServers=@()
-                    $num=0
-                    while($ANS -ne 'n')
+                    } 
+                    else 
                     {
-                        $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
-                        $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
+
+                        Write-Log "[$workOn] Create Vscan Scanner Pool [$PrimaryScannerPoolName]"
+                        Write-Log "[$workOn] Enter IP Address of a Vscan Server"
+                        $ANS='y'
+                        $SecondaryScannerPoolVscanServers=@()
+                        $num=0
+                        while($ANS -ne 'n')
+                        {
+                            $SecondaryScannerPoolVscanServers+=ask_IpAddr_from_cli -myIpAddr $PrimaryScannerPoolVscanServers[$num++] -workOn $workOn
+                            $ANS=Read-HostOptions -question "[$workOn] Do you want to add another Scan Server ?" -options "y/n" -default "n"
+                        }
+                        Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                        $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVscanScannerPool failed [$ErrorVar]" }
+                        Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                        $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
+
                     }
-                    Write-LogDebug "New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                    $out=New-NcVscanScannerPool -Name $PrimaryScannerPoolName -RequestTimeout $PrimaryScannerPoolReqTimeout -ScanQueueTimeout $PrimaryScannerPoolScanQueueTimeout -SessionSetupTimeout $PrimaryScannerPoolSesSetupTimeout -SessionTeardownTimeout $PrimaryScannerPoolSesTeardTimeout -MaxSessionSetupRetries $PrimaryScannerPoolMaxSesSetupRetry -VscanServer $SecondaryScannerPoolVscanServers -PrivilegedUser $PrimaryScannerPoolPrivUser -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-
-                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVscanScannerPool failed [$ErrorVar]" }
-                    Write-LogDebug "Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                    $out=Set-NcVscanScannerPool -Name $PrimaryScannerPoolName -ScannerPolicy $PrimaryScannerPoolPolicy -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcVscanScannerPool failed [$ErrorVar]" }
-
                 }
+            }else{
+                Write-LogWarn "SKIPPING vscan scanner pool in non-interactive mode"    
             }
         }
         if($PrimaryScannerPoolList -ne $Null)
@@ -2426,262 +2430,264 @@ Function create_update_fpolicy_dr(
             }
         }
         foreach ( $PrimaryFpolicyEngine in ( $PrimaryFpolicyEngineList | Skip-Null ) ) {
-            if($Backup -eq $False){
-                $PrimaryFpolicyEngineName=$PrimaryFpolicyEngine.EngineName
-                $PrimaryFpolicyEnginePort=$PrimaryFpolicyEngine.PortNumber
-                $PrimaryFpolicyEnginePrimaryServers=$PrimaryFpolicyEngine.PrimaryServers
-                $PrimaryFpolicyEnginePrimaryServers_str=[string]$PrimaryFpolicyEnginePrimaryServers
-                $PrimaryFpolicyEngineSecondaryServers=$PrimaryFpolicyEngine.SecondaryServers
-                $PrimaryFpolicyEngineSecondaryServers_str=[string]$PrimaryFpolicyEngineSecondaryServers
-                $PrimaryFpolicyEngineSslOption=$PrimaryFpolicyEngine.SslOption
-                $PrimaryFpolicyEngineExternEngineType=$PrimaryFpolicyEngine.ExternEngineType
-                $PrimaryFpolicyEngineRequestCancelTimeout=$PrimaryFpolicyEngine.RequestCancelTimeout
-                $PrimaryFpolicyEngineRequestAbortTimeout=$PrimaryFpolicyEngine.RequestAbortTimeout
-                $PrimaryFpolicyEngineStatusRequestInterval=$PrimaryFpolicyEngine.StatusRequestInterval
-                $PrimaryFpolicyEngineMaxConnectionRetries=$PrimaryFpolicyEngine.MaxConnectionRetries
-                $PrimaryFpolicyEngineMaxServerRequests=$PrimaryFpolicyEngine.MaxServerRequests
-                $PrimaryFpolicyEngineServerProgressTimeout=$PrimaryFpolicyEngine.ServerProgressTimeout
-                $PrimaryFpolicyEngineKeepAliveInterval=$PrimaryFpolicyEngine.KeepAliveInterval
-                $PrimaryFpolicyEngineCertificateCommonName=$PrimaryFpolicyEngine.CertificateCommonName
-                $PrimaryFpolicyEngineCertificateSerial=$PrimaryFpolicyEngine.CertificateSerial
-                $PrimaryFpolicyEngineCertificateCa=$PrimaryFpolicyEngine.CertificateCa
-
-                Write-LogDebug "Get-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -Vserver $mySecondaryVserver -controller $mySecondaryController"
-                $SecondaryFpolicyEngine=Get-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -Vserver $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyExternalEngine failed [$ErrorVar]" }
-                if($SecondaryFpolicyEngine -ne $null)
-                {
-                    $SecondaryFpolicyEnginePort=$SecondaryFpolicyEngine.PortNumber
-                    $SecondaryFpolicyEnginePrimaryServers=$SecondaryFpolicyEngine.PrimaryServers
-                    $SecondaryFpolicyEnginePrimaryServers_str=[string]$SecondaryFpolicyEnginePrimaryServers
-                    $SecondaryFpolicyEngineSecondaryServers=$SecondaryFpolicyEngine.SecondaryServers
-                    $SecondaryFpolicyEngineSecondaryServers_str=[string]$SecondaryFpolicyEngineSecondaryServers
-                    $SecondaryFpolicyEngineSslOption=$SecondaryFpolicyEngine.SslOption
-                    $SecondaryFpolicyEngineExternEngineType=$SecondaryFpolicyEngine.ExternEngineType
-                    $SecondaryFpolicyEngineRequestCancelTimeout=$SecondaryFpolicyEngine.RequestCancelTimeout
-                    $SecondaryFpolicyEngineRequestAbortTimeout=$SecondaryFpolicyEngine.RequestAbortTimeout
-                    $SecondaryFpolicyEngineStatusRequestInterval=$SecondaryFpolicyEngine.StatusRequestInterval
-                    $SecondaryFpolicyEngineMaxConnectionRetries=$SecondaryFpolicyEngine.MaxConnectionRetries
-                    $SecondaryFpolicyEngineMaxServerRequests=$SecondaryFpolicyEngine.MaxServerRequests
-                    $SecondaryFpolicyEngineServerProgressTimeout=$SecondaryFpolicyEngine.ServerProgressTimeout
-                    $SecondaryFpolicyEngineKeepAliveInterval=$SecondaryFpolicyEngine.KeepAliveInterval
-                    $SecondaryFpolicyEngineCertificateCommonName=$SecondaryFpolicyEngine.CertificateCommonName
-                    $SecondaryFpolicyEngineCertificateSerial=$SecondaryFpolicyEngine.CertificateSerial
-                    $SecondaryFpolicyEngineCertificateCa=$SecondaryFpolicyEngine.CertificateCa
-
-                    #if ( (($PrimaryFpolicyEnginePrimaryServers_str -ne $SecondaryFpolicyEnginePrimaryServers_str) `
-                    #    -and (($PrimaryFpolicyEnginePrimaryServers -ne $null) -and ($SecondaryFpolicyEnginePrimaryServers -ne $null))) `
-                    #    -or (($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
-                    #    -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null))) `
-                    if ( ($PrimaryFpolicyEnginePort -ne $SecondaryFpolicyEnginePort) `
-                        -or ($PrimaryFpolicyEngineSslOption -ne $SecondaryFpolicyEngineSslOption) `
-                        -or ($PrimaryFpolicyEngineExternEngineType -ne $SecondaryFpolicyEngineExternEngineType) `
-                        -or ($PrimaryFpolicyEngineRequestCancelTimeout -ne $SecondaryFpolicyEngineRequestCancelTimeout) `
-                        -or ($PrimaryFpolicyEngineRequestAbortTimeout -ne $SecondaryFpolicyEngineRequestAbortTimeout) `
-                        -or ($PrimaryFpolicyEngineStatusRequestInterval -ne $SecondaryFpolicyEngineStatusRequestInterval) `
-                        -or ($PrimaryFpolicyEngineMaxConnectionRetries -ne $SecondaryFpolicyEngineMaxConnectionRetries) `
-                        -or ($PrimaryFpolicyEngineMaxServerRequests -ne $SecondaryFpolicyEngineMaxServerRequests) `
-                        -or ($PrimaryFpolicyEngineServerProgressTimeout -ne $SecondaryFpolicyEngineServerProgressTimeout) `
-                        -or ($PrimaryFpolicyEngineKeepAliveInterval -ne $SecondaryFpolicyEngineKeepAliveInterval) `
-                        -or ($PrimaryFpolicyEngineCertificateCommonName -ne $SecondaryFpolicyEngineCertificateCommonName) `
-                        -or ($PrimaryFpolicyEngineCertificateSerial -ne $SecondaryFpolicyEngineCertificateSerial) `
-                        -or ($PrimaryFpolicyEngineCertificateCa -ne $SecondaryFpolicyEngineCertificateCa) )
+            $PrimaryFpolicyEngineName=$PrimaryFpolicyEngine.EngineName
+            $PrimaryFpolicyEnginePort=$PrimaryFpolicyEngine.PortNumber
+            $PrimaryFpolicyEnginePrimaryServers=$PrimaryFpolicyEngine.PrimaryServers
+            $PrimaryFpolicyEnginePrimaryServers_str=[string]$PrimaryFpolicyEnginePrimaryServers
+            $PrimaryFpolicyEngineSecondaryServers=$PrimaryFpolicyEngine.SecondaryServers
+            $PrimaryFpolicyEngineSecondaryServers_str=[string]$PrimaryFpolicyEngineSecondaryServers
+            $PrimaryFpolicyEngineSslOption=$PrimaryFpolicyEngine.SslOption
+            $PrimaryFpolicyEngineExternEngineType=$PrimaryFpolicyEngine.ExternEngineType
+            $PrimaryFpolicyEngineRequestCancelTimeout=$PrimaryFpolicyEngine.RequestCancelTimeout
+            $PrimaryFpolicyEngineRequestAbortTimeout=$PrimaryFpolicyEngine.RequestAbortTimeout
+            $PrimaryFpolicyEngineStatusRequestInterval=$PrimaryFpolicyEngine.StatusRequestInterval
+            $PrimaryFpolicyEngineMaxConnectionRetries=$PrimaryFpolicyEngine.MaxConnectionRetries
+            $PrimaryFpolicyEngineMaxServerRequests=$PrimaryFpolicyEngine.MaxServerRequests
+            $PrimaryFpolicyEngineServerProgressTimeout=$PrimaryFpolicyEngine.ServerProgressTimeout
+            $PrimaryFpolicyEngineKeepAliveInterval=$PrimaryFpolicyEngine.KeepAliveInterval
+            $PrimaryFpolicyEngineCertificateCommonName=$PrimaryFpolicyEngine.CertificateCommonName
+            $PrimaryFpolicyEngineCertificateSerial=$PrimaryFpolicyEngine.CertificateSerial
+            $PrimaryFpolicyEngineCertificateCa=$PrimaryFpolicyEngine.CertificateCa
+            if(-not $Global:NonInteractive){
+                if($Backup -eq $False){
+                    Write-LogDebug "Get-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -Vserver $mySecondaryVserver -controller $mySecondaryController"
+                    $SecondaryFpolicyEngine=Get-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -Vserver $mySecondaryVserver -controller $mySecondaryController  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyExternalEngine failed [$ErrorVar]" }
+                    if($SecondaryFpolicyEngine -ne $null)
                     {
-                        Write-Log "[$workOn] Modify Fpolicy External Engine [$PrimaryFpolicyEngineName]"
-                        if($fromConfigureDR -eq $True)
-                        {
+                        $SecondaryFpolicyEnginePort=$SecondaryFpolicyEngine.PortNumber
+                        $SecondaryFpolicyEnginePrimaryServers=$SecondaryFpolicyEngine.PrimaryServers
+                        $SecondaryFpolicyEnginePrimaryServers_str=[string]$SecondaryFpolicyEnginePrimaryServers
+                        $SecondaryFpolicyEngineSecondaryServers=$SecondaryFpolicyEngine.SecondaryServers
+                        $SecondaryFpolicyEngineSecondaryServers_str=[string]$SecondaryFpolicyEngineSecondaryServers
+                        $SecondaryFpolicyEngineSslOption=$SecondaryFpolicyEngine.SslOption
+                        $SecondaryFpolicyEngineExternEngineType=$SecondaryFpolicyEngine.ExternEngineType
+                        $SecondaryFpolicyEngineRequestCancelTimeout=$SecondaryFpolicyEngine.RequestCancelTimeout
+                        $SecondaryFpolicyEngineRequestAbortTimeout=$SecondaryFpolicyEngine.RequestAbortTimeout
+                        $SecondaryFpolicyEngineStatusRequestInterval=$SecondaryFpolicyEngine.StatusRequestInterval
+                        $SecondaryFpolicyEngineMaxConnectionRetries=$SecondaryFpolicyEngine.MaxConnectionRetries
+                        $SecondaryFpolicyEngineMaxServerRequests=$SecondaryFpolicyEngine.MaxServerRequests
+                        $SecondaryFpolicyEngineServerProgressTimeout=$SecondaryFpolicyEngine.ServerProgressTimeout
+                        $SecondaryFpolicyEngineKeepAliveInterval=$SecondaryFpolicyEngine.KeepAliveInterval
+                        $SecondaryFpolicyEngineCertificateCommonName=$SecondaryFpolicyEngine.CertificateCommonName
+                        $SecondaryFpolicyEngineCertificateSerial=$SecondaryFpolicyEngine.CertificateSerial
+                        $SecondaryFpolicyEngineCertificateCa=$SecondaryFpolicyEngine.CertificateCa
 
-                            Write-Log "[$workOn] Enter IP Address of a Primary External Server"
-                            $ANS='y'
-                            $num=(($SecondaryFpolicyEnginePrimaryServers.count)-1)
-                            if($num -ge 0)
+                        #if ( (($PrimaryFpolicyEnginePrimaryServers_str -ne $SecondaryFpolicyEnginePrimaryServers_str) `
+                        #    -and (($PrimaryFpolicyEnginePrimaryServers -ne $null) -and ($SecondaryFpolicyEnginePrimaryServers -ne $null))) `
+                        #    -or (($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
+                        #    -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null))) `
+                        if ( ($PrimaryFpolicyEnginePort -ne $SecondaryFpolicyEnginePort) `
+                            -or ($PrimaryFpolicyEngineSslOption -ne $SecondaryFpolicyEngineSslOption) `
+                            -or ($PrimaryFpolicyEngineExternEngineType -ne $SecondaryFpolicyEngineExternEngineType) `
+                            -or ($PrimaryFpolicyEngineRequestCancelTimeout -ne $SecondaryFpolicyEngineRequestCancelTimeout) `
+                            -or ($PrimaryFpolicyEngineRequestAbortTimeout -ne $SecondaryFpolicyEngineRequestAbortTimeout) `
+                            -or ($PrimaryFpolicyEngineStatusRequestInterval -ne $SecondaryFpolicyEngineStatusRequestInterval) `
+                            -or ($PrimaryFpolicyEngineMaxConnectionRetries -ne $SecondaryFpolicyEngineMaxConnectionRetries) `
+                            -or ($PrimaryFpolicyEngineMaxServerRequests -ne $SecondaryFpolicyEngineMaxServerRequests) `
+                            -or ($PrimaryFpolicyEngineServerProgressTimeout -ne $SecondaryFpolicyEngineServerProgressTimeout) `
+                            -or ($PrimaryFpolicyEngineKeepAliveInterval -ne $SecondaryFpolicyEngineKeepAliveInterval) `
+                            -or ($PrimaryFpolicyEngineCertificateCommonName -ne $SecondaryFpolicyEngineCertificateCommonName) `
+                            -or ($PrimaryFpolicyEngineCertificateSerial -ne $SecondaryFpolicyEngineCertificateSerial) `
+                            -or ($PrimaryFpolicyEngineCertificateCa -ne $SecondaryFpolicyEngineCertificateCa) )
+                        {
+                            Write-Log "[$workOn] Modify Fpolicy External Engine [$PrimaryFpolicyEngineName]"
+                            if($fromConfigureDR -eq $True)
                             {
-                                $myFpolicyEnginePrimaryServers=$SecondaryFpolicyEnginePrimaryServers   
-                            }
-                            else
-                            {
-                                $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
-                            }
-                            while($ANS -ne 'n')
-                            {
-                                $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                                $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Primary External Server ?" -options "y/n"
-                            }
-                            if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
-                                -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null)) )
-                            {
-                                Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
+
+                                Write-Log "[$workOn] Enter IP Address of a Primary External Server"
                                 $ANS='y'
-                                $num=(($SecondaryFpolicyEngineSecondaryServers.count)-1)
+                                $num=(($SecondaryFpolicyEnginePrimaryServers.count)-1)
                                 if($num -ge 0)
                                 {
-                                    $myFpolicyEngineSecondaryServers=$SecondaryFpolicyEngineSecondaryServers   
+                                    $myFpolicyEnginePrimaryServers=$SecondaryFpolicyEnginePrimaryServers   
                                 }
                                 else
                                 {
-                                    $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
+                                    $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
                                 }
                                 while($ANS -ne 'n')
                                 {
-                                    $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                                    $ANS=Read-HostOptions -question "Do you want to add more Secondary External Server ?" -options "y/n"
-                                }        
-                            }
+                                    $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
+                                    $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Primary External Server ?" -options "y/n"
+                                }
+                                if( ($PrimaryFpolicyEngineSecondaryServers_str -ne $SecondaryFpolicyEngineSecondaryServers_str) `
+                                    -and (($PrimaryFpolicyEngineSecondaryServers -ne $null) -and ($SecondaryFpolicyEngineSecondaryServers -ne $null)) )
+                                {
+                                    Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
+                                    $ANS='y'
+                                    $num=(($SecondaryFpolicyEngineSecondaryServers.count)-1)
+                                    if($num -ge 0)
+                                    {
+                                        $myFpolicyEngineSecondaryServers=$SecondaryFpolicyEngineSecondaryServers   
+                                    }
+                                    else
+                                    {
+                                        $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
+                                    }
+                                    while($ANS -ne 'n')
+                                    {
+                                        $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
+                                        $ANS=Read-HostOptions -question "Do you want to add more Secondary External Server ?" -options "y/n"
+                                    }        
+                                }
 
-                            Write-LogDebug ""
-                            if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
-                            {
-                                Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                                -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController"
-                                $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                                -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
+                                Write-LogDebug ""
+                                if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
+                                {
+                                    Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                                    -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController"
+                                    $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                                    -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
+                                }
+                                else
+                                {
+                                    Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                                    -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEnginePrimaryServers -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController"
+                                    $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                                    -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEnginePrimaryServers -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
+                                }
                             }
                             else
                             {
-                                Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                                -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEnginePrimaryServers -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController"
-                                $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                                -Port $PrimaryFpolicyEnginePort -SecondaryServer $SecondaryFpolicyEnginePrimaryServers -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
-                            }
+                                if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
+                                {
+                                    Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
+                                    -Port $PrimaryFpolicyEnginePort -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController"
+                                    $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
+                                    -Port $PrimaryFpolicyEnginePort -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
+                                }
+                                else
+                                {
+                                    Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
+                                    -Port $PrimaryFpolicyEnginePort -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController"
+                                    $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
+                                    -Port $PrimaryFpolicyEnginePort -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
+                                    -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                                    -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                                    -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                                    -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                                    -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                                    -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
+                                }    
+                            }  
+                        }
+                    }
+                    else 
+                    {
+                        Write-Log "[$workOn] Create Fpolicy External Engine [$PrimaryFpolicyEngineName]"
+                        Write-Log "[$workOn] Enter IP Address of a Primary External Server"
+                        $ANS='y'
+                        $num=(($PrimaryFpolicyEnginePrimaryServers.count)-1)
+                        $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
+                        while($ANS -ne 'n')
+                        {
+                            $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
+                            $ANS=Read-HostOptions -question "Do you want to add more Primary External Server ?" -options "y/n"
+                        }
+                        if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
+                        {
+                            Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
+                            $ANS='y'
+                            $num=(($PrimaryFpolicyEngineSecondaryServers.count)-1)
+                            $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
+                            while($ANS -ne 'n')
+                            {
+                                $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
+                                $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Secondary External Server ?" -options "y/n"
+                            }    
+                        }
+
+                        if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
+                        {
+                            Write-LogDebug "New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                            -Port $PrimaryFpolicyEnginePort -Synchronous -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
+                            -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                            -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                            -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                            -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                            -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa -VserverContext $mySecondaryVserver `
+                            -Controller $mySecondaryController"
+                            $out=New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
+                            -Port $PrimaryFpolicyEnginePort -Synchronous -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
+                            -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                            -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                            -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                            -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                            -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                            -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcFpolicyExternalEngine failed [$ErrorVar]" } 
                         }
                         else
                         {
-                            if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
-                            {
-                                Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
-                                -Port $PrimaryFpolicyEnginePort -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController"
-                                $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
-                                -Port $PrimaryFpolicyEnginePort -Synchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
-                            }
-                            else
-                            {
-                                Write-LogDebug "Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
-                                -Port $PrimaryFpolicyEnginePort -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController"
-                                $out=Set-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName  `
-                                -Port $PrimaryFpolicyEnginePort -Asynchronous -SslOption $PrimaryFpolicyEngineSslOption `
-                                -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                                -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                                -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                                -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                                -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                                -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcFpolicyExternalEngine failed [$ErrorVar]" } 
-                            }    
-                        }  
-                    }
-                }
-                else 
-                {
-
-                    Write-Log "[$workOn] Create Fpolicy External Engine [$PrimaryFpolicyEngineName]"
-                    Write-Log "[$workOn] Enter IP Address of a Primary External Server"
-                    $ANS='y'
-                    $num=(($PrimaryFpolicyEnginePrimaryServers.count)-1)
-                    $myFpolicyEnginePrimaryServers=$PrimaryFpolicyEnginePrimaryServers    
-                    while($ANS -ne 'n')
-                    {
-                        $SecondaryFpolicyEnginePrimaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEnginePrimaryServers[$num++] -workOn $workOn
-                        $ANS=Read-HostOptions -question "Do you want to add more Primary External Server ?" -options "y/n"
-                    }
-                    if( $PrimaryFpolicyEngineSecondaryServers -ne $null )
-                    {
-                        Write-Log "[$workOn] Enter IP Address of a Secondary External Server"
-                        $ANS='y'
-                        $num=(($PrimaryFpolicyEngineSecondaryServers.count)-1)
-                        $myFpolicyEngineSecondaryServers=$PrimaryFpolicyEngineSecondaryServers    
-                        while($ANS -ne 'n')
-                        {
-                            $SecondaryFpolicyEngineSecondaryServers+=ask_IpAddr_from_cli -myIpAddr $myFpolicyEngineSecondaryServers[$num++] -workOn $workOn
-                            $ANS=Read-HostOptions -question "[$workOn] Do you want to add more Secondary External Server ?" -options "y/n"
+                            Write-LogDebug "New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $PrimaryFpolicyEnginePrimaryServers `
+                            -Port $PrimaryFpolicyEnginePort -Asynchronous -SecondaryServer $PrimaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
+                            -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                            -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                            -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                            -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                            -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa -VserverContext $mySecondaryVserver `
+                            -Controller $mySecondaryController"
+                            $out=New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $PrimaryFpolicyEnginePrimaryServers `
+                            -Port $PrimaryFpolicyEnginePort -Asynchronous -SecondaryServer $PrimaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
+                            -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
+                            -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
+                            -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
+                            -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
+                            -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
+                            -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcFpolicyExternalEngine failed [$ErrorVar]" } 
                         }    
                     }
-
-                    if($PrimaryFpolicyEngineExternEngineType -eq "Synchronous")
-                    {
-                        Write-LogDebug "New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                        -Port $PrimaryFpolicyEnginePort -Synchronous -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
-                        -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                        -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                        -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                        -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                        -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa -VserverContext $mySecondaryVserver `
-                        -Controller $mySecondaryController"
-                        $out=New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $SecondaryFpolicyEnginePrimaryServers `
-                        -Port $PrimaryFpolicyEnginePort -Synchronous -SecondaryServer $SecondaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
-                        -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                        -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                        -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                        -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                        -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                        -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcFpolicyExternalEngine failed [$ErrorVar]" } 
-                    }
-                    else
-                    {
-                        Write-LogDebug "New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $PrimaryFpolicyEnginePrimaryServers `
-                        -Port $PrimaryFpolicyEnginePort -Asynchronous -SecondaryServer $PrimaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
-                        -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                        -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                        -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                        -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                        -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa -VserverContext $mySecondaryVserver `
-                        -Controller $mySecondaryController"
-                        $out=New-NcFpolicyExternalEngine -Name $PrimaryFpolicyEngineName -PrimaryServer $PrimaryFpolicyEnginePrimaryServers `
-                        -Port $PrimaryFpolicyEnginePort -Asynchronous -SecondaryServer $PrimaryFpolicyEngineSecondaryServers -SslOption $PrimaryFpolicyEngineSslOption `
-                        -RequestCancelTimeout $PrimaryFpolicyEngineRequestCancelTimeout -RequestAbortTimeout $PrimaryFpolicyEngineRequestAbortTimeout `
-                        -StatusRequestInterval $PrimaryFpolicyEngineStatusRequestInterval -MaxConnectionRetries $PrimaryFpolicyEngineMaxConnectionRetries `
-                        -MaxServerRequests $PrimaryFpolicyEngineMaxServerRequests -ServerProgressTimeout $PrimaryFpolicyEngineServerProgressTimeout `
-                        -KeepAliveInterval $PrimaryFpolicyEngineKeepAliveInterval -CertificateCommonName $PrimaryFpolicyEngineCertificateCommonName `
-                        -CertificateSerial $PrimaryFpolicyEngineCertificateSerial -CertificateCa $PrimaryFpolicyEngineCertificateCa `
-                        -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcFpolicyExternalEngine failed [$ErrorVar]" } 
-                    }    
                 }
+            }else{
+                Write-LogWarn "SKIPPING fpolicy engine in non-interactive mode"    
             }
             # add code to get/create Event
             if($Restore -eq $False){
@@ -2707,16 +2713,15 @@ Function create_update_fpolicy_dr(
                 }
             }
             foreach ( $PrimaryFpolEvt in ( $PrimaryFpolEvtList | Skip-Null ) ) {
-                if($Backup -eq $False){
-                    $PrimaryFpolEvtEventName=$PrimaryFpolEvt.EventName
-                    $PrimaryFpolEvtFileOperations=$PrimaryFpolEvt.FileOperations
-                    $PrimaryFpolEvtFileOperations_str=[string]$PrimaryFpolEvtFileOperations
-                    $PrimaryFpolEvtFilterString=$PrimaryFpolEvt.FilterString
-                    $PrimaryFpolEvtFilterString_str=[string]$PrimaryFpolEvtFilterString
-                    $PrimaryFpolEvtProtocol=$PrimaryFpolEvt.Protocol
-                    $PrimaryFpolEvtProtocol_str=[string]$PrimaryFpolEvtProtocol
-                    $PrimaryFpolEvtVolumeOperation=$PrimaryFpolEvt.VolumeOperation
-                    
+                $PrimaryFpolEvtEventName=$PrimaryFpolEvt.EventName
+                $PrimaryFpolEvtFileOperations=$PrimaryFpolEvt.FileOperations
+                $PrimaryFpolEvtFileOperations_str=[string]$PrimaryFpolEvtFileOperations
+                $PrimaryFpolEvtFilterString=$PrimaryFpolEvt.FilterString
+                $PrimaryFpolEvtFilterString_str=[string]$PrimaryFpolEvtFilterString
+                $PrimaryFpolEvtProtocol=$PrimaryFpolEvt.Protocol
+                $PrimaryFpolEvtProtocol_str=[string]$PrimaryFpolEvtProtocol
+                $PrimaryFpolEvtVolumeOperation=$PrimaryFpolEvt.VolumeOperation
+                if($Backup -eq $False){    
                     Write-LogDebug "Get-NcFpolicyEvent -Name $PrimaryFpolEvtEventName -Vserver $mySecondaryVserver -Controller $mySecondaryController"
                     $SecondaryFpolEvt=Get-NcFpolicyEvent -Name $PrimaryFpolEvtEventName -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyEvent failed [$ErrorVar]" }
@@ -2766,8 +2771,9 @@ Function create_update_fpolicy_dr(
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcFpolicyEvent failed [$ErrorVar]" }      
                         }  
                     }
-                
-                    # add code to get/create Policy
+                }
+                # add code to get/create Policy
+                if($Restore -eq $False){
                     Write-LogDebug "Get-NcFpolicyPolicy -Template -Controller $myPrimaryController"
                     $Template=Get-NcFpolicyPolicy -Template -Controller $myPrimaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyPolicy failed [$ErrorVar]" }
@@ -2778,13 +2784,32 @@ Function create_update_fpolicy_dr(
                     $PrimaryFpolPol=Get-NcFpolicyPolicy -Query $Template -Controller $myPrimaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyPolicy failed [$ErrorVar]" }
                     if($PrimaryFpolPol -eq $null) {$Return = $Fale ; Write-LogWarn "Missing Fpolicy Policy on Primary Vserver"; continue}
-                    
-                    $PrimaryFpolPolName=$PrimaryFpolPol.PolicyName
-                    $PrimaryFpolPolIsMandatory=$PrimaryFpolPol.IsMandatory
-                    $PrimaryFpolPolAllowPrivilegedAccess=$PrimaryFpolPol.AllowPrivilegedAccess
-                    $PrimaryFpolPolAllowPrivilegedUserName=$PrimaryFpolPol.PrivilegedUserName
-                    $PrimaryFpolPolAllowIsPassthroughReadEnabled=$PrimaryFpolPol.IsPassthroughReadEnabled
+                }else{
+                    if(Test-Path $($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json")){
+                        $PrimaryFpolPol=Get-Content $($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json") -Raw | ConvertFrom-Json
+                    }else{
+                        $Return=$False
+                        $filepath=$($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json")
+                        Throw "ERROR: failed to read $filepath"
+                    }
+                }
+                if($Backup -eq $True){
+                    $PrimaryFpolPol | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json") -Encoding ASCII -Width 65535
+                    if( ($ret=get-item $($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json") -ErrorAction SilentlyContinue) -ne $null ){
+                        Write-LogDebug "$($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json") saved successfully"
+                    }else{
+                        Write-LogError "ERROR: Failed to saved $($Global:JsonPath+"Get-NcFpolicyPolicy_"+$PrimaryFpolicyEngineName+"_"+$PrimaryFpolEvtEventName+".json")"
+                        $Return=$False
+                    }
+                }
+                
+                $PrimaryFpolPolName=$PrimaryFpolPol.PolicyName
+                $PrimaryFpolPolIsMandatory=$PrimaryFpolPol.IsMandatory
+                $PrimaryFpolPolAllowPrivilegedAccess=$PrimaryFpolPol.AllowPrivilegedAccess
+                $PrimaryFpolPolAllowPrivilegedUserName=$PrimaryFpolPol.PrivilegedUserName
+                $PrimaryFpolPolAllowIsPassthroughReadEnabled=$PrimaryFpolPol.IsPassthroughReadEnabled
 
+                if($Backup -eq $False){
                     Write-LogDebug "Get-NcFpolicyPolicy -Template -Controller $mySecondaryController"
                     $Template=Get-NcFpolicyPolicy -Template -Controller $mySecondaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyPolicy failed [$ErrorVar]" }
@@ -2903,17 +2928,18 @@ Function create_update_fpolicy_dr(
                     }
                 }
                 if($PrimaryFpolScope -eq $null) {$Return = $Fale ; Write-LogWarn "Missing Fpolicy Scope on Primary Vserver"; continue}
-                if($Backup -eq $False){
-                    $PrimaryFpolScopeCheckExtensionsOnDirectories=$PrimaryFpolScope.CheckExtensionsOnDirectories
-                    $PrimaryFpolScopeExportPoliciesToExclude=$PrimaryFpolScope.ExportPoliciesToExclude
-                    $PrimaryFpolScopeExportPoliciesToInclude=$PrimaryFpolScope.ExportPoliciesToInclude
-                    $PrimaryFpolScopeFileExtensionsToExclude=$PrimaryFpolScope.FileExtensionsToExclude
-                    $PrimaryFpolScopeFileExtensionsToInclude=$PrimaryFpolScope.FileExtensionsToInclude
-                    $PrimaryFpolScopeSharesToExclude=$PrimaryFpolScope.SharesToExclude
-                    $PrimaryFpolScopeSharesToInclude=$PrimaryFpolScope.SharesToInclude
-                    $PrimaryFpolScopeVolumesToExclude=$PrimaryFpolScope.VolumesToExclude
-                    $PrimaryFpolScopeVolumesToInclude=$PrimaryFpolScope.VolumesToInclude
+                
+                $PrimaryFpolScopeCheckExtensionsOnDirectories=$PrimaryFpolScope.CheckExtensionsOnDirectories
+                $PrimaryFpolScopeExportPoliciesToExclude=$PrimaryFpolScope.ExportPoliciesToExclude
+                $PrimaryFpolScopeExportPoliciesToInclude=$PrimaryFpolScope.ExportPoliciesToInclude
+                $PrimaryFpolScopeFileExtensionsToExclude=$PrimaryFpolScope.FileExtensionsToExclude
+                $PrimaryFpolScopeFileExtensionsToInclude=$PrimaryFpolScope.FileExtensionsToInclude
+                $PrimaryFpolScopeSharesToExclude=$PrimaryFpolScope.SharesToExclude
+                $PrimaryFpolScopeSharesToInclude=$PrimaryFpolScope.SharesToInclude
+                $PrimaryFpolScopeVolumesToExclude=$PrimaryFpolScope.VolumesToExclude
+                $PrimaryFpolScopeVolumesToInclude=$PrimaryFpolScope.VolumesToInclude
 
+                if($Backup -eq $False){
                     Write-LogDebug "Get-NcFpolicyScope -PolicyName $PrimaryFpolPolName -Vserver $mySecondaryVserver -Controller $mySecondaryController"
                     $SecondaryFpolScope=Get-NcFpolicyScope -PolicyName $PrimaryFpolPolName -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcFpolicyScope failed [$ErrorVar]" }
@@ -2940,6 +2966,14 @@ Function create_update_fpolicy_dr(
                             -or ($PrimaryFpolScope.VolumesToExclude -ne $SecondaryFpolScope.VolumesToExclude) `
                             -or ($PrimaryFpolScope.VolumesToInclude -ne $SecondaryFpolScope.VolumesToInclude) )
                             {
+                                if($PrimaryFpolScope.ExportPoliciesToExclude -eq $null){$PrimaryFpolScopeExportPoliciesToExclude="-"}
+                                if($PrimaryFpolScope.ExportPoliciesToInclude -eq $null){$PrimaryFpolScopeExportPoliciesToInclude="-"}
+                                if($PrimaryFpolScope.FileExtensionsToExclude -eq $null){$PrimaryFpolScopeFileExtensionsToExclude="-"}
+                                if($PrimaryFpolScope.FileExtensionsToInclude -eq $null){$PrimaryFpolScopeFileExtensionsToInclude="-"}
+                                if($PrimaryFpolScope.SharesToExclude -eq $null){$PrimaryFpolScopeSharesToExclude="-"}
+                                if($PrimaryFpolScope.SharesToInclude -eq $null){$PrimaryFpolScopeSharesToInclude="-"}
+                                if($PrimaryFpolScope.VolumesToExclude -eq $null){$PrimaryFpolScopeVolumesToExclude="-"}
+                                if($PrimaryFpolScope.VolumesToInclude -eq $null){$PrimaryFpolScopeVolumesToInclude="-"}
                                 Write-LogDebug "Set-NcFpolicyScope -PolicyName $PrimaryFpolPolName -SharesToInclude $PrimaryFpolScopeSharesToInclude `
                                 -SharesToExclude $PrimaryFpolScopeSharesToExclude -VolumesToInclude $PrimaryFpolScopeVolumesToInclude `
                                 -VolumesToExclude $PrimaryFpolScopeVolumesToExclude -ExportPoliciesToInclude $PrimaryFpolScopeExportPoliciesToInclude `
@@ -4321,7 +4355,6 @@ Function set_serial_lundr (
 		  Write-LogError "ERROR: Resync_vserver_dr error"
 		}
 	}
-    Write-LogDebug "set_serial_lundr: end"
 	return $True
 }
 
@@ -5556,10 +5589,43 @@ Try {
         }
         $PathRead=""
     }
-    $fullpath=$("/vol/"+$RootVolume)
-    foreach($volume in ( ($Script:vol_junction | Sort-Object -Property Level).Name ) ) {
+    $SelectedVolumes=@()
+    if($Backup -eq $False){
+        $SVMRootVolume = (Get-NcVserver -Controller $mySecondaryController -Vserver $mySecondaryVserver -ErrorVariable ErrorVar).RootVolume
+        $NcCluster = Get-NcCluster -Controller $mySecondaryController
+        $DestinationCluster = $NcCluster.ClusterName
+        $SVMTOOL_DB_DST_CLUSTER=$Global:SVMTOOL_DB + '\' + $DestinationCluster + '.cluster'
+        $SVMTOOL_DB_DST_VSERVER=$SVMTOOL_DB_DST_CLUSTER + '\' +$mySecondaryVserver + '.vserver'
+        $SELECTVOL_DB_DST_FILE=$SVMTOOL_DB_DST_VSERVER + '\selectvolume.db' 
+        if( ( Test-Path $SELECTVOL_DB_DST_FILE ) -eq $true ) {
+            Write-LogDebug "Filter source CIFS share from selected volume available on Destination"
+            $SelectedVolumes=Get-Content $SELECTVOL_DB_DST_FILE
+        } 
+    }else{
+        $SVMRootVolume = (Get-NcVserver -Controller $myPrimaryController -Vserver $myPrimaryVserver -ErrorVariable ErrorVar).RootVolume
+        $NcCluster = Get-NcCluster -Controller $myPrimaryController
+        $SourceCluster = $NcCluster.ClusterName
+        $SVMTOOL_DB_SRC_CLUSTER=$Global:SVMTOOL_DB + '\' + $SourceCluster + '.cluster'
+        $SVMTOOL_DB_SRC_VSERVER=$SVMTOOL_DB_SRC_CLUSTER + '\' +$myPrimaryVserver + '.vserver'
+        $SELECTVOL_DB_SRC_FILE=$SVMTOOL_DB_SRC_VSERVER + '\selectvolume.db' 
+        if( ( Test-Path $SELECTVOL_DB_SRC_FILE ) -eq $true ) {
+            Write-LogDebug "Filter source CIFS share from selected volume available on Destination"
+            $SelectedVolumes=Get-Content $SELECTVOL_DB_SRC_FILE
+        }    
+    }
+    [System.Collections.ArrayList]$Selected=$SelectedVolumes
+    foreach($vol in ($Script:vol_junction | Sort-Object -Property Level) ) {
+        $volume=$vol.Name
         Write-LogDebug "mount_voldr [$volume]"
-        $JunctionPath=$volume.JunctionPath
+        $JunctionPath=$vol.JunctionPath
+        $JunctionParent=$vol.JunctionParent
+        if($Selected.count -ge 1){
+            if( ($volume -notin $Selected) -or ( ($JunctionParent -notin $Selected) -and ($JunctionParent -ne $SVMRootVolume) ) ){
+                Write-LogDebug "Ignore volume [$volume] because it's not a Selected volume or because his Junction Parent [$JunctionParent] is not a Selected volume"
+                $Selected.Remove($volume)
+                continue
+            }
+        }
         $retry = $True ; $count = 0 
 	    while ( ( $retry -eq $True ) -and ( $count -lt $MOUNT_RETRY_COUNT ) ) {
 		    $count++
@@ -7185,7 +7251,8 @@ Function create_update_NFS_dr (
     [string] $mySecondaryVserver,
     [string]$workOn=$mySecondaryVserver,
     [bool]$Backup,
-    [bool]$Restore) {
+    [bool]$Restore,
+    [bool]$FromReactivate) {
 Try {
 	$Return = $True
     Write-Log "[$workOn] Check SVM NFS configuration"
@@ -7243,11 +7310,21 @@ Try {
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcNfsService failed [$ErrorVar]" }
             }
         }
-        Write-LogDebug "Disable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
-        $out=Disable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
-        if ( $? -ne $True ) {
-            Write-LogError "ERROR: Failed to disable NFS on Vserver [$myVserver]" 
-            $Return = $False
+        if(-not $FromReactivate){
+            Write-LogDebug "Disable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
+            $out=Disable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+            if ( $? -ne $True ) {
+                Write-LogError "ERROR: Failed to disable NFS on Vserver [$myVserver]" 
+                $Return = $False
+            }
+        }else{
+            Write-Log "[$workOn] Start NFS service"
+            Write-LogDebug "Enable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
+            $out=Enable-NcNfs -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+            if ( $? -ne $True ) {
+                Write-LogError "ERROR: Failed to Enable NFS on Vserver [$myVserver]" 
+                $Return = $False
+            }    
         }
     }
     Write-LogDebug "create_update_NFS_dr[$myPrimaryVserver]: end"
@@ -8642,6 +8719,8 @@ Try {
                 Write-LogDebug "Filter source CIFS share from selected volume available on Destination"
                 $SelectedVolumes=Get-Content $SELECTVOL_DB_DST_FILE 
                 if($SelectedVolumes.count -ge 1){
+                    $SVMRootVolume = (Get-NcVserver -Controller $mySecondaryController -Vserver $mySecondaryVserver -ErrorVariable ErrorVar).RootVolume
+                    $SelectedVolumes+=$SVMRootVolume
                     $SharesListSource=$SharesListSource | Where-Object {$_.Volume -in $SelectedVolumes}
                 }
             }
@@ -9770,7 +9849,7 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
         if ( $SecondaryVserver -ne $null ) 
         {
-            Write-Log "[$mySecondaryVserver] already exists on $mySecondaryController"
+            Write-Log "[$mySecondaryVserver] Already exists on $mySecondaryController"
             $SecondaryRootVolume = $SecondaryVserver.RootVolume
             $SecondaryRootVolumeSecurityStyle = $SecondaryVserver.RootVolumeSecurityStyle
             $SecondaryLanguage = $SecondaryVserver.Language
@@ -11035,7 +11114,8 @@ Function update_vserver_dr (
 	[string] $myDataAggr,
     [bool] $DDR,
     [string]$aggrMatchRegEx,
-    [string]$nodeMatchRegEx ) {
+    [string]$nodeMatchRegEx,
+    [switch]$FromReactivate ) {
 	$Return = $True
 	Write-LogDebug "update_vserver_dr: start"
 	if ( ( check_update_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed check update vserver" ; return $False }
@@ -11115,19 +11195,15 @@ Function update_vserver_dr (
         Write-LogError "ERROR: Failed to create User Mapping"
         $Return = $True
     }
-    if(-not $Global:NonInteractive){
-        Write-LogDebug "update_vserver_dr: Update Vscan dr"
-        if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-            Write-LogError "ERROR: create_update_vscan_dr failed" 
-            $Return = $False 
-        }
-        Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
-        if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-            Write-LogError "ERROR: create_update_fpolicy_dr failed" 
-            $Return = $False 
-        }
-    }else{
-        Write-LogWarn "SKIPPING vscan and fpolicy in non-interactive mode"
+    Write-LogDebug "update_vserver_dr: Update Vscan dr"
+    if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+        Write-LogError "ERROR: create_update_vscan_dr failed" 
+        $Return = $False 
+    }
+    Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
+    if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+        Write-LogError "ERROR: create_update_fpolicy_dr failed" 
+        $Return = $False 
     }
 	Write-LogDebug "update_vserver_dr: Check Destination Volumes"
 	if ( ( check_update_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
@@ -11147,7 +11223,7 @@ Function update_vserver_dr (
 		Write-LogError "ERROR: create_update_NIS_dr failed" 
 		$Return = $False 
 	}
-	if ( ( create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
+	if ( ( create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -FromReactivate ($FromReactivate.IsPresent) ) -ne $True ) {
 		Write-LogError "ERROR: create_update_NFS_dr failed" 
 		$Return = $False 
 	}
@@ -12925,7 +13001,7 @@ Function Set_LIF_from_JSON (
                 $LIFname=$LIF.InterfaceName
                 $Address=($NetList | where-object {$_.InterfaceName -eq $LIFname}).Address
                 $Netmask=($NetList | where-object {$_.InterfaceName -eq $LIFname}).Netmask
-                Write-Log "[$ToVserver] Configure LIF [$LIFname] with [$Address] [$Netmask]"
+                Write-Log "[$ToVserver] Configure LIF [$LIFname] with [$Address] [$Netmask] [$AdminState]"
                 Write-LogDebug "Set-NcNetInterface -Name $LIFname -Vserver $ToVserver -Address $Address -Netmask $Netmask -AdministrativeStatus $AdminState -Controller $ToNcController"
                 $ret=Set-NcNetInterface -Name $LIFname -Vserver $ToVserver -Address $Address -Netmask $Netmask -AdministrativeStatus $AdminState -Controller $ToNcController -ErrorVariable ErrorVar
                 if($? -ne $True){
@@ -12950,7 +13026,7 @@ Function Set_LIF_from_JSON (
                 $FailoverPolicy=$Interface.FailoverPolicy
                 $FailoverGroup=$Interface.FailoverGroup
                 $Comment=$Interface.Comment 
-                Write-Log "[$ToVserver] Create LIF [$InterfaceName] with [$Address] [$Netmask]"
+                Write-Log "[$ToVserver] Create LIF [$InterfaceName] with [$Address] [$Netmask] [$AdminState]"
                 Write-LogDebug "New-NcNetInterface -Name $InterfaceName -Vserver $ToVserver -Address $Address -Netmask $Netmask `
                 -Role $Role -Node $CurrentNode -Port $CurrentPort -DataProtocols $DataProtocols -FirewallPolicy $FirewallPolicy `
                 -AdministrativeStatus $AdminState -RoutingGroup $RoutingGroupName -DnsDomain $DnsDomainName -FailoverPolicy $FailoverPolicy `
