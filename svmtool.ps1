@@ -360,7 +360,6 @@
 					Improve Restore behaviour when restoring Vserver to its original place (Cluster/Vserver)
 		- 0.1.5 :	Fix ActivateDR and ReActivate to keep CIFS shares on the active SVM
 		- 0.1.6 :   Fix restart services during ReActivate
-
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
