@@ -330,10 +330,29 @@
 	svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> -DeleteCloneDR -CloneName PSLAB_DR_clone.2
 
 	Completely delete Vserver Clone named PSLAB_DR_clone.2 from secondary cluster
+.EXAMPLE
+	To enable encryption on destination volume you need:
+	
+		. Upgrade PowerShell ToolKit (PSTK) to version 4.7 minimum (NaToolkitVersion 4.5 minimum)
+		. Destination Cluster must run at least ONTAP 9.1
+		. Destination Cluster must run at least ONTAP 9.3 if you want to convert existing destination volumes into encrypted volumes
+		. You must modify your instance configuration by running
+			.\svmtool.ps1 -Setup <Instance Name> -Vserver <SVM Name>
+			or
+			New-SvmDrConfiguration -Instance <Instance Name> -Vserver <SVM Name>
+
+			And answer yes to the question to enable encryption
+		. Once instance modified, all new volumes will be automatically encyrpted on destination
+		. If you already have unencrypted volumes on destination, you can choose to encrypt them by running:
+			.\svmtool.ps1 -Instance <Instance Name> -Vserver <SVM Name> -ConfiguredDR
+			or
+			New-SvmDr -Instance <Instance Name> -Vserver <SVM Name>
+
+			You will then be prompted to choose to encrypt volume by volume, all volumes or no volume
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : November 14th, 2018
+    Version : January 4th, 2019
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -360,6 +379,7 @@
 					Improve Restore behaviour when restoring Vserver to its original place (Cluster/Vserver)
 		- 0.1.5 :	Fix ActivateDR and ReActivate to keep CIFS shares on the active SVM
 		- 0.1.6 :   Fix restart services during ReActivate
+		- 0.1.7 : 	Add support for Volume Encryption on Destination
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -792,11 +812,11 @@ Param (
 # Minimum Netapp Supported TK
 #############################################################################################
 $Global:MIN_MAJOR = 4
-$Global:MIN_MINOR = 3
+$Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.6"
+$Global:RELEASE="0.1.7"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -907,6 +927,16 @@ if(-not $WfaIntegration){
 }else{
     $module=import-module "$PSScriptRoot\..\DataOntap" -PassThru
 }
+
+$PSTKVersion=Get-NaToolkitVersion
+if($PSTKVersion.Major -lt $Global:MIN_MAJOR -and $PSTKVersion.Minor -lt $Global:MIN_MINOR -and $PSTKVersion.Minor -lt $Global:MIN_BUILD){
+	Write-Warning "Your PSTK version is lower than mandatory version (ToolkitVersion 4.5.0 / PSTK 4.7)"
+	Write-Warning "You will not be able to manage volume encryption and other options may not work properly"
+	$Global:PSTKEncryptionPossible=$False
+}else{
+	$Global:PSTKEncryptionPossible=$True
+}
+
 # initialize log4net, only needed once.
 init_log4net
 
@@ -995,7 +1025,6 @@ if($ImportInstance){
 	}else{
 		clean_and_exit 1	
 	}
-	
 }
 
 if ( $RemoveInstance ) {
@@ -1661,7 +1690,7 @@ if ( ( $Setup ) -or ( $read_vconf -eq $null ) ) {
 			Write-Log "[$Vserver] -> [$VserverPeer]"
 		}
 	}
-	create_vserver_config_file_cli -Vserver $Vserver -ConfigFile $VCONFFILE -VserverDr $VserverDr -QuotaDr:$QuotaDR
+	create_vserver_config_file_cli -Vserver $Vserver -ConfigFile $VCONFFILE -VserverDr $VserverDr -QuotaDr:$QuotaDR -NcSecondaryCtrl $NcSecondaryCtrl
 	$read_vconf = read_config_file $VCONFFILE
 	if ( $read_vconf -eq $null ){
 		Write-LogError "ERROR: Failed to create $VCONFFILE "
@@ -1678,6 +1707,8 @@ if ( $Vserver -eq $Null ) {
         clean_and_exit 1 ;
 }
 $AllowQuotaDR=$read_vconf.Get_Item("AllowQuotaDR")
+$AllowEncryption=$read_vconf.Get_Item("AllowEncrypt")
+if($AllowEncryption -ne $null){$Global:AllowEncryption=$AllowEncryption}
 $SVMTOOL_DB=$read_conf.Get_Item("SVMTOOL_DB")
 $Global:SVMTOOL_DB=$SVMTOOL_DB
 $Global:CorrectQuotaError=$CorrectQuotaError
@@ -2416,6 +2447,10 @@ if ( $ReActivate ){
 		if ( ( $ret=create_quota_rules_from_quotadb -myController $NcPrimaryCtrl -myVserver $Vserver  ) -ne $True ) {
 			Write-LogError "ERROR: create_quota_rules_from_quotadb failed"
 		}
+	}
+
+	if ( ($ret=disable_network_protocol_vserver_dr -myController $NcSecondaryCtrl -myVserver $VserverDR -ForceDisable) -eq $False){
+		Throw "ERROR: Failed to disable all services on [$VserverDR]"
 	}
 	clean_and_exit 0
 }

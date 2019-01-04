@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : January 2th, 2019
+    Release : January 4th, 2019
 
 #>
 
@@ -36,7 +36,7 @@ function init_log4net{
 
 #############################################################################################
 function flush_log4net($loggerInstance){
-    write-log "Close log"
+    Write-LogDebug "Close log"
     $wrapper = [log4net.LogManager]::GetLogger($loggerInstance)
     $l = $wrapper.Logger
     $l.RemoveAllAppenders()
@@ -456,7 +456,7 @@ function Read-HostOptions{
     }else{
         $ans = Read-Host
     }
-    while(-not ($optionlist -match $ans) -or ($ans -eq "") -or ($ans -eq $null)){
+    while(-not ($optionlist -contains $ans) -or ($ans -eq "") -or ($ans -eq $null)){
         Format-Colors "Please choose from [{0:Yellow}] : " -Arguments $options -NoNewLine
         $ans = Read-Host
     }
@@ -542,7 +542,8 @@ Function create_vserver_config_file_cli (
 	[string]$Vserver, 
 	[string]$VserverDR, 
     [switch]$QuotaDr,
-	[string]$ConfigFile)  {
+    [string]$ConfigFile,
+    [NetApp.Ontapi.Filer.C.NcController]$NcSecondaryCtrl)  {
 
 	if ( $VserverDR ) {
 		$myVserverDR=$VserverDR
@@ -570,12 +571,48 @@ Function create_vserver_config_file_cli (
 			$AllowQuotaDR="true"
 		} else  {
 			$AllowQuotaDR="false"
-		}
+        }
+        $AllowEncryption="false"
+        if($Global:PSTKEncryptionPossible -eq $True){
+            $AnsEncryption = Read-HostOptions -question "Do you want to Encrypt all volumes on destination (NVE) ?" -options "y/n" -default "n"
+            if ( $AnsEncryption -eq 'y' ) {
+                $SecondaryVersionTuple=(Get-NcSystemVersionInfo -Controller $NcSecondaryCtrl | Select-Object VersionTuple).VersionTuple
+                if($SecondaryVersionTuple.Generation -ge 9 -and $SecondaryVersionTuple.Major -ge 1){
+                    Write-LogDebug "Get-NcNode -Controller $NcSecondaryCtrl"
+                    $Nodes=Get-NcNode -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+                    if($? -ne $True){$Return=$false; throw "ERROR: Failed to get node list reason [$ErrorVar]"}
+                    $NodeCompatible=$True
+                    foreach($node in $Nodes){
+                        $nodeName=$node.Node
+                        try{
+                            $ret=Test-NcSecurityKeyManagerVolumeEncryptionSupport -Node $nodeName -Controller $NcSecondaryCtrl -ErrorAction Stop
+                        }catch{
+                            #$ErrorMessage = $_.Exception
+                            $ErrorMessage = $_.ToString().split("`r`n")[0]
+                            Write-Warning "$ErrorMessage"
+                            $NodeCompatible=$False
+                        }
+                    }
+                    if($NodeCompatible -eq $True){
+                        $AllowEncryption="true"
+                    }else{
+                        Write-Warning "Destination Cluster is not configured for Encryption"
+                        $AllowEncryption="false"
+                    }
+                }else{
+                    Write-Warning "You cannot Enable Encryption on Destination Cluster without upgrading to at least ONTAP 9.1"
+                    $AllowEncryption="false"
+                }
+            } else  {
+                $AllowEncryption="false"
+            }
+        }
 		if ( ( $Vserver -eq $myVserverDR ) -or ( $myVserverDR -eq "" ) -or ( $myVserverDR -eq $null ) ) {
 		$ANS = 'n' 
 		} else { 
-			Write-Log "Vserver DR Name :      [$myVserverDR]"
-			Write-Log "QuotaDR :              [$AllowQuotaDR]"
+			Write-Log "Vserver DR Name :              [$myVserverDR]"
+            Write-Log "QuotaDR :                      [$AllowQuotaDR]"
+            if($Global:PSTKEncryptionPossible -eq $True){Write-Log "Encrypt Destinations volumes : [$AllowEncryption]"}
 			Write-Log ""
         	$ANS = Read-HostOptions -question "Apply new configuration ?" -options "y/n/q" -default "y"
 			if ( $ANS -eq 'q' ) { clean_and_exit 1 }
@@ -585,7 +622,8 @@ Function create_vserver_config_file_cli (
 	
 	write-Output "#" | Out-File -FilePath $ConfigFile
 	write-Output "VserverDR=$myVserverDR" | Out-File -FilePath $ConfigFile -Append
-	write-Output "AllowQuotaDR=$AllowQuotaDR" | Out-File -FilePath $ConfigFile -Append
+    write-Output "AllowQuotaDR=$AllowQuotaDR" | Out-File -FilePath $ConfigFile -Append
+    if($Global:PSTKEncryptionPossible -eq $True){write-Output "AllowEncrypt=$AllowEncryption" | Out-File -FilePath $ConfigFile -Append}
 }
 
 #############################################################################################
@@ -4974,7 +5012,6 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" }
     }
 
-
 	if($Global:NonInteractive -eq $False){
         if($Global:SelectVolume -eq $True){
             if($Backup -eq $False -and $Restore -eq $False){
@@ -4984,6 +5021,7 @@ Try {
             }
         }
     }
+
      # Create all missing Destination Volumes
      if($Restore -eq $False){
         $PrimaryVolList = Get-NcVol -Controller $myPrimaryController -Vserver $myPrimaryVserver  -ErrorVariable ErrorVar  
@@ -5038,6 +5076,20 @@ Try {
         Write-LogDebug "Remove file [$SELECTVOL_DB_DST_FILE] for destination" 
         $out=Remove-Item -Confirm:$false -Force -Path $SELECTVOL_DB_DST_FILE -ErrorAction SilentlyContinue  
     }
+    # check if conversion to encrypted volume is possible on destination cluster
+    $ConversionSupported=$False
+    if($Global:AllowEncryption -eq "True"){
+        $SecondaryVersionTuple=(Get-NcSystemVersionInfo -Controller $mySecondaryController | Select-Object VersionTuple).VersionTuple
+        if($SecondaryVersionTuple.Generation -ge 9 -and $SecondaryVersionTuple.Major -ge 3){
+            Write-Log "[$mySecondaryController] Destination Cluster runs ONTAP 9.3 or greater"
+            Write-Log "[$mySecondaryController] Volume conversion into Encrypted Volume is supported"
+            $ConversionSupported=$True
+        }else{
+            Write-Log "[$mySecondaryController] Volume conversion not supported, you need to perform manual 'vol move' to encrypt your destination volume"
+        }
+    }
+    $ChooseEncryptionConversion=$true
+    $DefaultEncryptionChoice=$false
     foreach ( $PrimaryVol in ( $PrimaryVolList | Skip-Null ) ) {
         if($Backup -eq $False){
             Write-LogDebug "create_volume_voldr: PrimaryVol [$PrimaryVol]"
@@ -5127,7 +5179,7 @@ Try {
                     }
                     $Available=$Aggr.Available
 
-                    # if in non-interactive mode and matching aggr does not have enought space, break
+                    # if in non-interactive mode and matching aggr does not have enough space, break
                     # break only if we are provisioning Thick volume and available space is not enough
                     # we already defaulted to the largest aggr anyways
                     if($Global:NonInteractive -and ($SpaceReserve -ne "none" -and ($Available -lt $PrimaryVolSize)) ){
@@ -5169,22 +5221,34 @@ Try {
                     }elseif($Available -lt $PrimaryVolSize){
                         Write-Warning "Monitor space available on Aggr [$myDataAggr] [$mySecondaryController]. Thin volume [$PrimaryVolName] is larger than available space"    
                     }
-                    if($Restore -eq $False){	
+                    if($Restore -eq $False){
+                        $Encrypt=$Global:AllowEncryption
+                        if($Encrypt -eq "True"){$Encrypt=$True}else{$Encrypt=$False}	
                         Write-Log "[$workOn] Create new volume DR: [$PrimaryVolName]"
-                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }
+                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                     }else{
+                        #Run a restore, so get some options directly from JSON backup file
                         Write-Log "[$workOn] Create new volume: [$PrimaryVolName]"
+                        if(Test-Path $($Global:JsonPath+"Get-NcVol.json")){
+                            $VolList=Get-Content $($Global:JsonPath+"Get-NcVol.json") -Raw | ConvertFrom-Json
+                            $VolDetail=$VolList | where-object {$_.Name -eq $PrimaryVolName}
+                            $EncryptedVolume=$VolDetail.Encrypt
+                            if($EncryptedVolume -eq $null){$EncryptedVolume=$False}
+                        }else{
+                            Write-Warning "Failed to read Get-NcVol.json backup file"
+                            Write-Warning "Will restore with basic options"
+                        }
                         if($Global:VOLUME_TYPE -eq "RW"){
                             Write-LogDebug "Create RW volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }else{
                             Write-LogDebug "Create DP volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }
                     }
@@ -5198,11 +5262,49 @@ Try {
                     }
                 } 
                 else {
-                    Write-Log "[$workOn] Volume [$PrimaryVolName] already exists on  [$workOn]"
+                    Write-Log "[$workOn] Volume [$PrimaryVolName] already exists"
                     # ADD Volume Type
                     $SecondaryVolType=$SecondaryVol.VolumeIdAttributes.Type
                     if ( $SecondaryVolType -ne "DP" -and $Restore -eq $False -and $Backup -eq $False) {
                         Write-LogError "ERROR: volume $SecondaryVol is not DP Volume"
+                    }
+                    # If possible, convert destination volumes into encrypted volumes
+                    if($Global:AllowEncryption -eq "True"){
+                        if($ConversionSupported -eq $True){
+                            $VolDetail=Get-NcVol -Name $PrimaryVolName -Vserver $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
+                            if($? -ne $True){$Return=$False; Write-Error "Failed to get volume detail"}
+                            $IsEncrypted=$VolDetail.Encrypt
+                            if($IsEncrypted -eq $null){$IsEncrypted=$False}
+                            if($IsEncrypted -eq $False){
+                                if($ChooseEncryptionConversion -ne $false){
+                                    $AnsChoiceEncryption = Read-HostOptions -question "[$workOn] Do you want to Encrypted volume [$PrimaryVolName] ?" -options "y/n/All/None" -default "n"
+                                    if($AnsChoiceEncryption -eq "All"){
+                                        $DefaultEncryptionChoice = $True
+                                        $ChooseEncryptionConversion = $False
+                                        $AllowConversion=$True
+                                    }
+                                    if($AnsChoiceEncryption -eq "None"){
+                                        $DefaultEncryptionChoice = $False
+                                        $ChooseEncryptionConversion = $False
+                                        $AllowConversion=$False
+                                    }
+                                    if($AnsChoiceEncryption -eq 'y'){
+                                        $AllowConversion=$True
+                                    }
+                                    if($AnsChoiceEncryption -eq 'n'){
+                                        $AllowConversion=$False
+                                    }
+                                }else{
+                                    $AllowConversion = $DefaultEncryptionChoice
+                                }
+                                if($AllowConversion -eq $True){
+                                    Write-Log "[$workOn] Run Encryption Conversion for volume [$PrimaryVolName]"
+                                    Write-LogDebug "Start-NcVolumeEncryptionConversion -Volume $PrimaryVolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                                    $ret=Start-NcVolumeEncryptionConversion -Volume $PrimaryVolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false -ErrorVariable ErrorVar
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }
+                                }
+                            }
+                        }
                     }
                 }
                 # Diff Volume Attributes
@@ -8699,7 +8801,7 @@ Try {
                 Write-Log "[$mySecondaryVserver] Change NetBiosAlias to [$NetBiosAliase]"
                 Write-LogDebug "Set-NcCifsServer -VserverContext $mySecondaryVserver -Domain $SecondaryDomain -AdminCredential $ADcred -Controller $mySecondaryController -AddNetbiosAlias $NetBiosAliase"
                 $out = Set-NcCifsServer -VserverContext $mySecondaryVserver -Domain $SecondaryDomain -AdminCredential $ADcred -Controller $mySecondaryController -AddNetbiosAlias $NetBiosAliase  -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcCifsServer failed [$ErrorVar]" }
             }
         }
     }
@@ -11215,7 +11317,6 @@ Function update_vserver_dr (
 		Write-LogDebug "update_vserver_dr: Create required new volumes $mySecondaryController Vserver $Vserver"
 
 		if ( ( create_volume_voldr -myDataAggr $myDataAggr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -aggrMatchRegEx $aggrMatchRegEx ) -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; return $False }
-
 
 		Write-LogDebug "update_vserver_dr: Create required new snapmirror relations $mySecondaryController Vserver $Vserver"
 		if ( ( create_snapmirror_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -DDR $DDR ) -ne $True ) { Write-LogError "ERROR: Failed to create all snapmirror relations " ; return $False }

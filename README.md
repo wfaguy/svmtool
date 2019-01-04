@@ -4,6 +4,8 @@
 
 This script use [NetApp PowerShell Toolkit](https://mysupport.netapp.com/tools/info/ECMLP2310788I.html?productID=61926)
 
+If you need to Encrypt your destination volumes you will need at least the version 4.7 of the PowerShel ToolKit (PSTK)
+
 It also require at least .Net Framework v3.5 and Windows Powershell at least v3.0.
 
 *This script currently not working with Powershell Core*
@@ -76,6 +78,7 @@ Migrate an SVM and keep it identity<br>For CIFS, IP and Server Name will be the 
 Select subset of sources volumes that will be replicated | Yes
 Clone DR SVM<br>In order to test DR without interrupting SnapMirror relationships during the timeframe of the test | Yes
 FabricPool on Destination | Yes<br>
+Encrypt Destination's volumes (NVE)<br>with conversion support if running at least ONTAP 9.3 | Yes
 
 ### BACKUP & RESTORE Purpose
 In order to perform a restore operation a minimal config must exist on the destination Cluster:
