@@ -88,6 +88,6 @@ In order to perform a restore operation a minimal config must exist on the desti
 - Low Level Network configuration done : IFGRP, IPSPACE, SUBNET, BROADCAST-DOMAIN already created
 
 ### Documentation
-For more information download [Manual](https://github.com/oliviermasson/svmtool/blob/master/SVMTOOL_Manual_v1.0.docx)
+For more information download [Manual](https://github.com/oliviermasson/svmtool/blob/master/SVMTOOL_Manual_v1.1.docx)
 
 HTH
