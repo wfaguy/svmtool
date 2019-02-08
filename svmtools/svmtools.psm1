@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : January 4th, 2019
+    Release : February 8th, 2019
 
 #>
 
@@ -8933,7 +8933,7 @@ Try {
                         if($? -ne $true){$Return=$False;Write-Error "ERROR: Failed to remove reason [$ErrorVar]"}
                     }
                 }else{
-                    # modif share on dest only if in c$,admin$,ipc$
+                    # modif share on dest only if share is in c$,admin$ or ipc$
                     # or create if else
                     $PrimaryShareName=$sharediff.ShareName
                     Write-LogDebug "Working on share [$PrimaryShareName]"
@@ -9064,16 +9064,18 @@ $request=@"
                             }
                         } 
                     }else{
-                        # modif existing share
+                        # modif existing share c$ or admin$ or ipc$
+                        # for that kind of non-data share share-properties and symlinkProperties are not modifiable
+                        # so exclude them from the Set-NcCifsShare
                         Write-Log "[$workOn] Modify share [$PrimaryShareName]"
-                        Write-LogDebug "Set-NcCifsShare -Name $PrimaryShareName -ShareProperties $PrimarySharePropertiesList `
-                        -SymlinkProperties $PrimarySymlinkPropertiesList -FileUmask $PrimaryFileUmask `
+                        Write-LogDebug "Set-NcCifsShare -Name $PrimaryShareName `
+                        -FileUmask $PrimaryFileUmask `
                         -DirUmask $PrimaryDirUmask -Comment $PrimaryComment -AttributeCacheTtl $PrimaryAttributeCacheTtl `
                         -OfflineFilesMode $PrimaryOfflineFilesMode -VscanProfile $PrimaryVscanFileopProfile `
                         -MaxConnectionsPerShare $PrimaryMaxConnectionsPerShare -ForceGroupForCreate $PrimaryForceGroupForCreate `
                         -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                        $out=Set-NcCifsShare -Name $PrimaryShareName -ShareProperties $PrimarySharePropertiesList `
-                        -SymlinkProperties $PrimarySymlinkPropertiesList -FileUmask $PrimaryFileUmask `
+                        $out=Set-NcCifsShare -Name $PrimaryShareName `
+                        -FileUmask $PrimaryFileUmask `
                         -DirUmask $PrimaryDirUmask -Comment $PrimaryComment -AttributeCacheTtl $PrimaryAttributeCacheTtl `
                         -OfflineFilesMode $PrimaryOfflineFilesMode -VscanProfile $PrimaryVscanFileopProfile `
                         -MaxConnectionsPerShare $PrimaryMaxConnectionsPerShare -ForceGroupForCreate $PrimaryForceGroupForCreate `
