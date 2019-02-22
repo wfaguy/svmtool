@@ -9,7 +9,7 @@
 # Updated on : 2018-10-09
 #
 # Update by : Olivier MASSON
-# Updated on : 2019-02-08
+# Updated on : 2019-02-22
 #
 # Version Control :
 #   1.0.4 : Initial version
@@ -37,6 +37,7 @@
 #           Manage additionnal network static route
 #   1.1.6 : Add support of Volume Encryption on destination
 #   1.1.7 : Modify create_update_CIFS_shares_dr behaviour on c$, admin$ or ipc$ non-data special share
+#   1.1.8 : Correct import_instance_svmdr to generate LIF and CIFS details JSON files during import
 #           
 @{
 
@@ -44,7 +45,7 @@
 RootModule = '.\svmtools.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.1.7'
+ModuleVersion = '1.1.8'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()

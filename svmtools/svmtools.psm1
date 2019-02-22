@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : February 8th, 2019
+    Release : February 22th, 2019
 
 #>
 
@@ -695,12 +695,45 @@ Function import_instance_svmdr() {
             $myPrimaryCluster=$read_conf.Get_Item("PRIMARY_CLUSTER")
             $mySecondaryCluster=$read_conf.Get_Item("SECONDARY_CLUSTER")
             $mySvmdrDB=$read_conf.Get_Item("SVMDR_DB")
+            $Global:SVMTOOL_DB=$mySvmdrDB
             $myMode="DR"
             write-Output "#" | Out-File -FilePath $myDestConfFile
             write-Output "PRIMARY_CLUSTER=$myPrimaryCluster" | Out-File -FilePath $myDestConfFile -Append
             write-Output "SECONDARY_CLUSTER=$mySecondaryCluster" | Out-File -FilePath $myDestConfFile -Append
             write-Output "SVMTOOL_DB=$mySvmdrDB" | Out-File -FilePath $myDestConfFile -Append
             write-Output "INSTANCE_MODE=$myMode" | Out-File -FilePath $myDestConfFile -Append
+        }
+        $read_conf = read_config_file $myDestConfFile
+		if ( $read_conf -eq $null ){
+				Write-LogError "ERROR: read configuration file $CONFFILE failed" 
+				clean_and_exit 1 ;
+		}
+		$PRIMARY_CLUSTER=$read_conf.Get_Item("PRIMARY_CLUSTER") ;
+		if ( $PRIMARY_CLUSTER -eq $Null ) {
+			Write-LogError "ERROR: unable to find PRIMARY_CLUSTER in $CONFFILE"
+				clean_and_exit 1 ;
+		}
+		$SECONDARY_CLUSTER=$read_conf.Get_Item("SECONDARY_CLUSTER") ;
+		if ( $SECONDARY_CLUSTER -eq $Null ) {
+			Write-LogError "ERROR: unable to find SECONDARY_CLUSTER in $CONFFILE"
+				clean_and_exit 1 ;
+		}
+		$myCred=get_local_cDotcred ($PRIMARY_CLUSTER) 
+		$tmp_str=$MyCred.UserName
+		Write-LogDebug "Connect to cluster [$PRIMARY_CLUSTER] with login [$tmp_str]"
+		Write-LogDebug "connect_cluster -myController $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
+		if ( ( $NcPrimaryCtrl =  connect_cluster -myController $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+			Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
+				clean_and_exit 1
+		}
+		$myCred=get_local_cDotcred ($SECONDARY_CLUSTER) 
+		Write-LogDebug "connect_cluster -myController $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout"
+		if ( ( $NcSecondaryCtrl =  connect_cluster -myController $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
+			Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
+				clean_and_exit 1
+		}
+		if ( ($ret=Save_Cluster_To_JSON -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl) -ne $True){
+			Write-Warning "FAILED to backup cluster information"
         }
         $VserverItemList=Get-ChildItem $mySourceConfDir
         foreach ( $VserverItem in ( $VserverItemList | Skip-Null ) ) {
@@ -709,8 +742,33 @@ Function import_instance_svmdr() {
             if ( $VserverFile -ne 'svmdr.conf' ) 
             {
                 Copy-Item $mySourceVserverFilePath -Destination $myConfDir
+                $VserverName=$VserverFile -replace ".conf",""
+                $read_vconf = read_config_file $mySourceVserverFilePath
+                $Vserver=$VserverName
+                $VserverDR=$read_vconf.Get_Item("VserverDR")
+                $PrimaryCifsServer=Get-NcCifsServer -VserverContext $Vserver -Controller $NcPrimaryCtrl -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+                $SecondaryCifsServer=Get-NcCifsServer -VserverContext $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
+                if ( ($ret=Save_CIFS_To_JSON -myPrimaryController $NcPrimaryCtrl `
+                                            -mySecondaryController $NcSecondaryCtrl `
+                                            -myPrimaryCIFS $PrimaryCifsServer `
+                                            -mySecondaryCIFS $SecondaryCifsServer `
+                                            -myPrimaryVserver $Vserver `
+                                            -mySecondaryVserver $VserverDR) -eq $False){
+                    Write-Log "Failed to Backup CIFS Server details to JSON"
+                    return $False
+                }
+                $PrimaryInterfaceList = Get-NcNetInterface -Role DATA -VserverContext $Vserver -DataProtocols cifs,nfs,none,iscsi -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetInterface failed [$ErrorVar]" }
+                $SecondaryInterfaceList = Get-NcNetInterface -Role DATA -VserverContext $VserverDR -DataProtocols cifs,nfs,none,iscsi -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetInterface failed [$ErrorVar]" }
+                if ( ($ret=Save_LIF_To_JSON -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryNetList $PrimaryInterfaceList -mySecondaryNetList $SecondaryInterfaceList -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -eq $False){
+                    Write-Log "Failed to Backup Net LIF details to JSON"
+                    return $False
+                }
             }
-        } 
+        }
     }
     return $True
 }
@@ -5997,7 +6055,7 @@ Try {
     $PeerClusterName=$PeerController.Name
     $SourceClusterName=$SourceController.Name
     if( ($Global:SINGLE_CLUSTER -eq $True) -or ($PeerClusterName -eq $SourceClusterName )){
-        Write-Log "Single Cluster detected"
+        Write-Log "[$clustername] Single Cluster detected"
         $Global:SINGLE_CLUSTER=$True
         Write-LogDebug "check_create_cluster_peer[$clustername]: end"
         return $True
@@ -6987,6 +7045,18 @@ Try {
                         $OtherRouteDone+=$PrimaryOtherDestination
                     }
                 }
+                <# $VersionTuple=(Get-NcSystemVersionInfo -Controller $mySecondaryController | Select-Object VersionTuple).VersionTuple
+                if($VersionTuple.Generation -ge 9){
+                    $SecondaryRoutes=Get-NcNetRoute -Query @{Destination="0.0.0.0/0";Vserver=$mySecondaryVserver} -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ){$Return = $False ; throw "ERROR: Get-NcNetRoute failed [$ErrorVar]"}
+                }else{
+                    $SecondaryRoutes=Get-NcNetRoutingGroupRoute -Destination '0.0.0.0/0' -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetRoutingGroupRoute failed [$ErrorVar]" }
+                }
+                if ( ($ret=Save_Route_To_JSON -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryRoutes $PrimaryDefaultRouteOther -mySecondaryRoutes $SecondaryRoutes -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver) -eq $False){
+                    Write-Log "Failed to Backup Net Route details to JSON"
+                    return $False
+                } #>
             }
         }
     }
@@ -11795,7 +11865,7 @@ Function activate_vserver_dr (
         Write-Log "[$currentPassiveVserver] Modify LIF"
 		if( ($ret=Set_LIF_from_JSON -ToNcController $NcCurrentPassiveCtrl -ToVserver $currentPassiveVserver -fromSrc) -eq $False ){
 			Throw "ERROR: Failed to set IP address on [$currentPassiveVserver]"	
-		}
+        }
 		if($NeedCIFS){
             #add new cifs server with primary identity on active
             Write-Log "[$currentPassiveVserver] Register new CIFS server"
@@ -13240,6 +13310,100 @@ Function Set_LIF_from_JSON (
         return $True
     }catch{
         handle_error $_ $ToVserver
+    	return $Return    
+    }
+}
+
+#############################################################################################
+Function Save_Route_To_JSON (
+    [NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
+    [NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
+    [object] $myPrimaryRoutes,
+    [object] $mySecondaryRoutes,
+    [string] $myPrimaryVserver,
+    [string] $mySecondaryVserver)
+{
+    try{
+        $Return=$True
+        Write-LogDebug "Save_Route_To_JSON: start"
+        $NcCluster = Get-NcCluster -Controller $myPrimaryController
+        $SourceCluster = $NcCluster.ClusterName
+        $NcCluster = Get-NcCluster -Controller $mySecondaryController
+        $DestinationCluster = $NcCluster.ClusterName
+        $SVMTOOL_DB_SRC_CLUSTER=$Global:SVMTOOL_DB + '\' + $SourceCluster + '.cluster'
+        $SVMTOOL_DB_SRC_VSERVER=$SVMTOOL_DB_SRC_CLUSTER + '\' + $myPrimaryVserver + '.vserver'
+
+        if ( ( Test-Path $SVMTOOL_DB_SRC_CLUSTER -pathType container ) -eq $false ) {
+                $out=new-item -Path $SVMTOOL_DB_SRC_CLUSTER -ItemType directory
+                if ( ( Test-Path $SVMTOOL_DB_SRC_CLUSTER -pathType container ) -eq $false ) {
+                        Write-LogError "ERROR: Unable to create new item $SVMTOOL_DB_SRC_CLUSTER" 
+                        return $False
+                }
+        }
+
+        if ( ( Test-Path $SVMTOOL_DB_SRC_VSERVER -pathType container ) -eq $false ) {
+                $out=new-item -Path $SVMTOOL_DB_SRC_VSERVER -ItemType directory
+                if ( ( Test-Path $SVMTOOL_DB_SRC_VSERVER -pathType container ) -eq $false ) {
+                        Write-LogError "ERROR: Unable to create new item $SVMTOOL_DB_SRC_VSERVER" 
+                        return $False
+                }
+        }
+
+        $SVMTOOL_DB_DST_CLUSTER=$Global:SVMTOOL_DB + '\' + $DestinationCluster + '.cluster'
+        $SVMTOOL_DB_DST_VSERVER=$SVMTOOL_DB_DST_CLUSTER + '\' +$mySecondaryVserver + '.vserver'
+
+        if ( ( Test-Path $SVMTOOL_DB_DST_CLUSTER -pathType container ) -eq $false ) {
+                $out=new-item -Path $SVMTOOL_DB_DST_CLUSTER -ItemType directory
+                if ( ( Test-Path $SVMTOOL_DB_DST_CLUSTER -pathType container ) -eq $false ) {
+                        Write-LogError "ERROR: Unable to create new item $SVMTOOL_DB_DST_CLUSTER" 
+                        return $False
+                }
+        }
+
+        if ( ( Test-Path $SVMTOOL_DB_DST_VSERVER -pathType container ) -eq $false ) {
+                $out=new-item -Path $SVMTOOL_DB_DST_VSERVER -ItemType directory
+                if ( ( Test-Path $SVMTOOL_DB_DST_VSERVER -pathType container ) -eq $false ) {
+                        Write-LogError "ERROR: Unable to create new item $SVMTOOL_DB_DST_VSERVER" 
+                        return $False
+                }
+        }
+
+        $ROUTEINFO_SRC_FILE=$SVMTOOL_DB_SRC_VSERVER + '\routesrcinfo.json'
+        $ROUTEINFO_DST_FILE=$SVMTOOL_DB_SRC_VSERVER + '\routedstinfo.json'
+        $myPrimaryRoutes | ConvertTo-Json -Depth 5 | Out-File -FilePath $ROUTEINFO_SRC_FILE -Encoding ASCII -Width 65535
+        if( ($ret=get-item $ROUTEINFO_SRC_FILE -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$ROUTEINFO_SRC_FILE saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $ROUTEINFO_SRC_FILE"
+            $Return=$False
+        }
+        $mySecondaryRoutes | ConvertTo-Json -Depth 5 | Out-File -FilePath $ROUTEINFO_DST_FILE -Encoding ASCII -Width 65535
+        if( ($ret=get-item $ROUTEINFO_DST_FILE -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$ROUTEINFO_DST_FILE saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $ROUTEINFO_DST_FILE"
+            $Return=$False
+        }
+        $ROUTEINFO_SRC_FILE=$SVMTOOL_DB_DST_VSERVER + '\routesrcinfo.json'
+        $ROUTEINFO_DST_FILE=$SVMTOOL_DB_DST_VSERVER + '\routedstinfo.json'
+        $myPrimaryRoutes | ConvertTo-Json -Depth 5 | Out-File -FilePath $ROUTEINFO_SRC_FILE -Encoding ASCII -Width 65535
+        if( ($ret=get-item $ROUTEINFO_SRC_FILE -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$ROUTEINFO_SRC_FILE saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $ROUTEINFO_SRC_FILE"
+            $Return=$False
+        }
+        $mySecondaryRoutes | ConvertTo-Json -Depth 5 | Out-File -FilePath $ROUTEINFO_DST_FILE -Encoding ASCII -Width 65535
+        if( ($ret=get-item $ROUTEINFO_DST_FILE -ErrorAction SilentlyContinue) -ne $null ){
+            Write-LogDebug "$ROUTEINFO_DST_FILE saved successfully"
+        }else{
+            Write-LogError "ERROR: Failed to saved $ROUTEINFO_DST_FILE"
+            $Return=$False
+        }
+        Write-LogDebug "Save_Route_To_JSON: end"
+        return $Return
+    }catch{
+        handle_error $_ $SourceVserver
     	return $Return    
     }
 }

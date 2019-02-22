@@ -2374,6 +2374,7 @@ if ( $ReActivate ){
 		if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"} #>
 		$NeedCIFS=$True	
 	}
+	Write-LogDebug "NeedCIFS = $NeedCIFS"
 	# restore all secondary LIF address with info previously backed
 	Write-Log "[$VserverDR] Restore LIF with DR configuration"
 	if( ($ret=Set_LIF_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
