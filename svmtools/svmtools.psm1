@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release : February 22th, 2019
+    Release  : March 28th, 2019
 
 #>
 
@@ -8797,7 +8797,7 @@ Try {
     }
     if($Backup -eq $False -and $Restore -eq $False){
         if($WinSIDCompatible -eq $False){
-        Write-LogDebug "set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state up"
+            Write-LogDebug "set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state up"
             if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state up) -ne $True ) {
                     Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
                     clean_and_exit 1
@@ -8869,6 +8869,11 @@ Try {
             }
             foreach ( $NetBiosAliase in ( $PrimaryNetbiosAliases | Skip-Null ) ) {
                 Write-Log "[$mySecondaryVserver] Change NetBiosAlias to [$NetBiosAliase]"
+                Write-LogDebug "set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state up"
+                if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state up) -ne $True ) {
+                    Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
+                    clean_and_exit 1
+                }
                 Write-LogDebug "Set-NcCifsServer -VserverContext $mySecondaryVserver -Domain $SecondaryDomain -AdminCredential $ADcred -Controller $mySecondaryController -AddNetbiosAlias $NetBiosAliase"
                 $out = Set-NcCifsServer -VserverContext $mySecondaryVserver -Domain $SecondaryDomain -AdminCredential $ADcred -Controller $mySecondaryController -AddNetbiosAlias $NetBiosAliase  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcCifsServer failed [$ErrorVar]" }
@@ -9253,12 +9258,12 @@ $request=@"
             }
         }
         
-        if($WinSIDCompatible -eq $False){
-            if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state down) -ne $True ) {
-                    Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
-                    clean_and_exit 1
-            }
+        #if($WinSIDCompatible -eq $False){
+        if (($ret=set_all_lif -mySecondaryVserver $mySecondaryVserver -myPrimaryVserver $myPrimaryVserver -mySecondaryController $mySecondaryController  -myPrimaryController $myPrimaryController -state down) -ne $True ) {
+            Write-LogError "ERROR: Failed to set all lif up on [$mySecondaryVserver]"
+            clean_and_exit 1
         }
+        #}
     }
     Write-LogDebug "create_update_CIFS_shares_dr[$myPrimaryVserver]: end"
 	return $True
@@ -11421,11 +11426,11 @@ Function update_vserver_dr (
         Write-LogError "ERROR: Failed to create all Firewall policy" 
         $Return = $False 
     }
-    Write-LogDebug "update_vserver_dr: Update lif dr"
+    <# Write-LogDebug "update_vserver_dr: Update lif dr"
 	if ( ( create_lif_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -nodeMatchRegEx $nodeMatchRegEx) -ne $True ) {
         Write-LogError "ERROR: create_lif_dr failed" 
 		$Return = $True
-    }
+    } #>
 
     if((-not $Global:NonInteractive) -or ($Global:DefaultLocalUserCredentials -ne $null)){
 
