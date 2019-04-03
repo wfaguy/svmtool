@@ -380,6 +380,7 @@
 		- 0.1.5 :	Fix ActivateDR and ReActivate to keep CIFS shares on the active SVM
 		- 0.1.6 :   Fix restart services during ReActivate
 		- 0.1.7 : 	Add support for Volume Encryption on Destination
+		- 0.1.8 :	Change version display and align to Github release number
 #>
 [CmdletBinding(HelpURI="https://github.com/oliviermasson/svmtool",DefaultParameterSetName="ListInstance")]
 Param (
@@ -816,7 +817,8 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE="0.1.7"
+$Global:RELEASE="0.2.0"
+$Global:SCRIPT_RELEASE="0.1.8"
 $Global:BASEDIR='C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR=$BASEDIR + '\etc\'
@@ -991,15 +993,16 @@ if ( $Version ) {
 		$path=split-path $path
 		$module=Import-Module $path -PassThru
 		if($module -ne $null){
-			$ModuleVersion=(Get-Module -Name svmtools).Version
+			$ModuleVersion=(Get-Module -Name svmtool).Version
 			$ModuleVersion=$ModuleVersion.ToString()
 		}
 	}else{
 		$ModuleVersion=$ModuleVersion.ToString()	
 	}
-	Write-Log "Script Version [$RELEASE]"
-	if($ModuleVersion -ne $null){Write-Log "Module svmtool Version [$ModuleVersion]"}
-	Write-Log "Module svmtools Version [$ModulesVersion]"
+	Write-Log "[svmtool] Release [$RELEASE]"
+	Write-Log "[Script] Version [$SCRIPT_RELEASE]"
+	if($ModuleVersion -ne $null){Write-Log "[Module svmtool] Version [$ModuleVersion]"}
+	Write-Log "[Module svmtools] Version [$ModulesVersion]"
 	Clean_and_exit 0 
 }
 Write-LogDebug "BASEDIR           [$BASEDIR]"
@@ -2374,6 +2377,7 @@ if ( $ReActivate ){
 		if($? -ne $True){$Return = $False; throw "ERROR: failed to remove secondary CIFS server"} #>
 		$NeedCIFS=$True	
 	}
+	Write-LogDebug "NeedCIFS = $NeedCIFS"
 	# restore all secondary LIF address with info previously backed
 	Write-Log "[$VserverDR] Restore LIF with DR configuration"
 	if( ($ret=Set_LIF_from_JSON -ToNcController $NcSecondaryCtrl -ToVserver $VserverDR) -eq $False ){
