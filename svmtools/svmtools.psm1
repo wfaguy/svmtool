@@ -17,16 +17,6 @@ $Global:MOUNT_RETRY_COUNT = 100
 $Global:VOLUME_TYPE="DP"
 
 #############################################################################################
-function free_mutexconsole{
-    try{ 
-        [void]$Global:mutexconsole.ReleaseMutex()
-    }catch{
-        $ErrorVar = $_.Exception.Message
-        Write-LogDebug "Failed to release mutexconsole [$ErrorVar]"
-    }    
-}
-
-#############################################################################################
 function init_log4net{
     write-verbose "Loading log4net from path $PSScriptRoot\log4net.dll"
     $log4NetLocation = "$PSScriptRoot\log4net.dll" 
