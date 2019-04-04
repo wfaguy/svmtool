@@ -1834,7 +1834,7 @@ if ( $ShowDR ) {
     clean_and_exit 0
 }
 
-if ( ConfigureDR -or UpdateDR){
+if ( $ConfigureDR -or $UpdateDR){
     if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
         $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
