@@ -392,7 +392,13 @@ function New-SvmDr{
         [switch]$DRfromDR,
 
         # Optional, sets the XDP Policy
+        # Defaults to MirrorAllSnapshots
         [string]$XDPPolicy,
+
+        # Optional, sets the Mirror schedule
+        # Defaults to hourly
+        # use "none" to have no schedule
+        [string]$MirrorSchedule,        
 
         # Optional, A regular expression to map source aggregate to destination aggregate
         # Use regex-groups (wrap in brackets) to create wildcards
@@ -777,6 +783,15 @@ function Update-SvmDr{
         #   - node number match : "(.*)-[0-9]{2}" => (src = *-03 ; dst = *-03)
         [regex]$NodeMatchRegex,
 
+        # Optional, sets the XDP Policy
+        # Defaults to MirrorAllSnapshots
+        [string]$XDPPolicy,
+
+        # Optional, sets the Mirror schedule
+        # Defaults to hourly
+        # use "none" to have no schedule
+        [string]$MirrorSchedule,                
+
         # Enables intensive source quota error checking and (potential) correcting
         # before saving to the Quota Database (SVMTOOL_DB)
         [switch]$CorrectQuotaError,
@@ -794,6 +809,13 @@ function Update-SvmDr{
 
         # Enables the force-recreation of snapmirror relations
         [switch]$ForceRecreate,
+
+        # Omits snapmirror updates during the update cycle (=faster)
+        # All snapmirror updates are assumed to be handles by the attached snapmirror schedule
+        [switch]$NoSnapmirrorUpdate,
+
+        # Omits snapmirror wait after snapmirror create and update (=faster)
+        [switch]$NoSnapmirrorWait,
 
         # Optional, this SvmDr solution cannot transfer the passwords of local users (cifs, cluster)
         # In Non-Interactive Mode, the script cannot create missing users
@@ -1220,6 +1242,13 @@ function Update-SvmDrReverse{
 
         # Enables the force-recreation of snapmirror relations
         [switch]$ForceRecreate,
+
+        # Omits snapmirror updates during the update cycle (=faster)
+        # All snapmirror updates are assumed to be handles by the attached snapmirror schedule
+        [switch]$NoSnapmirrorUpdate,
+
+        # Omits snapmirror wait after snapmirror create and update (=faster)
+        [switch]$NoSnapmirrorWait,        
 
         # Optional, this SvmDr solution cannot transfer the passwords of local users (cifs, cluster)
         # In Non-Interactive Mode, the script cannot create missing users
