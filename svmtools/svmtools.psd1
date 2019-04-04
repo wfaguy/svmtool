@@ -41,6 +41,9 @@
 #   1.1.9 : Modify behavior during UpdateDR. Now the script no longer checks for differences or absence of LIF or route to the destination during an UpdateDR (or Update-SvmDr). 
 #           This is in order to preserve any differences in gateway or other between the Primary and the Secondary.
 #           If you need to modify/create your LIFs or Routes configuration on the Secondary, you must now do so only with a ConfigureDR (or New-SvmDr)
+#   1.2.0 : Added NoSnapmirrorUpdate and NoSnapmirrorWait flags for updateDR (mirko)
+#           Added MirrorSchedule & XDPPolicy for UpdateDR & ConfigureDR (default remains hourly schedule)
+#           Use "none" to omit the schedule
 #           
 @{
 
@@ -48,7 +51,7 @@
 RootModule = '.\svmtools.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.1.9'
+ModuleVersion = '1.2.0'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()

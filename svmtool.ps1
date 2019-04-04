@@ -360,7 +360,7 @@
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : January 4th, 2019
+    Version : April 4th, 2019
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -841,8 +841,8 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE = "0.2.0"
-$Global:SCRIPT_RELEASE = "0.1.8"
+$Global:RELEASE = "0.2.1"
+$Global:SCRIPT_RELEASE = "0.1.9"
 $Global:BASEDIR = 'C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR = $BASEDIR + '\etc\'
@@ -1834,22 +1834,22 @@ if ( $ShowDR ) {
     clean_and_exit 0
 }
 
-if ( ConfigureDR -or UpdateDR){
+if ( $ConfigureDR -or $UpdateDR){
     if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
         $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
             Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
             Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
-            $Global:XDPPolicy = "MirrorAllSnapshots"
-        }
+			$Global:XDPPolicy = "MirrorAllSnapshots"
+		}
     }
     if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
         $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
             Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
             Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
-            $Global:MirrorSchedule = "none"
-        }
+			$Global:MirrorSchedule = "none"
+		}
     } 
     # default to hourly
     if ($MirrorSchedule -eq ""){
@@ -2758,7 +2758,17 @@ if ( $MirrorSchedule ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
-    }
+	}
+	
+	if($MirrorSchedule -ne "none"){
+		$ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+		if ( $? -ne $True -or $ret.count -eq 0 ) {
+			Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
+			Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
+			clean_and_exit 1
+		}
+	}
+
     if ( ( $ret = set_snapmirror_schedule_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -mySchedule $MirrorSchedule ) -ne $True ) {
         Write-LogError "ERROR: set_snapmirror_schedule_dr error"
         clean_and_exit 1
@@ -2783,7 +2793,17 @@ if ( $MirrorScheduleReverse ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
         clean_and_exit 1
-    }
+	}
+	
+	if($MirrorScheduleReverse -ne "none"){
+		$ret = Get-NcJobCronSchedule -Name $MirrorScheduleReverse -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+		if ( $? -ne $True -or $ret.count -eq 0 ) {
+			Write-LogDebug "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
+			Write-Warning "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
+			clean_and_exit 1
+		}
+	}
+
     if ( ( $ret = set_snapmirror_schedule_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -mySchedule $MirrorScheduleReverse ) -ne $True ) {
         Write-LogError "ERROR: set_snapmirror_schedule_dr error"
         clean_and_exit 1
