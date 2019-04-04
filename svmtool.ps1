@@ -1834,29 +1834,6 @@ if ( $ShowDR ) {
     clean_and_exit 0
 }
 
-if ( $ConfigureDR -or $UpdateDR){
-    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
-        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
-        if ( $? -ne $True -or $ret.count -eq 0 ) {
-            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
-            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
-            $Global:XDPPolicy = "MirrorAllSnapshots"
-        }
-    }
-    if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
-        $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
-        if ( $? -ne $True -or $ret.count -eq 0 ) {
-            Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
-            Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
-            $Global:MirrorSchedule = "none"
-        }
-    } 
-    # default to hourly
-    if ($MirrorSchedule -eq ""){
-        $Global:MirrorSchedule = "hourly"
-    }
-}
-
 if ( $ConfigureDR ) {
     $Run_Mode = "ConfigureDR"
     Write-LogOnly "SVMTOOL ConfigureDR"
@@ -1879,6 +1856,28 @@ if ( $ConfigureDR ) {
         Write-Warning "FAILED to backup cluster information"
     }
     $DestVserver = Get-NcVserver -Vserver $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+
+    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
+            $Global:XDPPolicy = "MirrorAllSnapshots"
+        }
+    }
+    if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
+        $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
+            Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
+            $Global:MirrorSchedule = "none"
+        }
+    } 
+    # default to hourly
+    if ($MirrorSchedule -eq ""){
+        $Global:MirrorSchedule = "hourly"
+    }
+
     if ( $? -ne $True ) {
         $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" 
     }
@@ -2274,6 +2273,28 @@ if ( $UpdateDR ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
     }
+
+    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
+            $Global:XDPPolicy = "MirrorAllSnapshots"
+        }
+    }
+    if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
+        $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
+            Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
+            $Global:MirrorSchedule = "none"
+        }
+    } 
+    # default to hourly
+    if ($MirrorSchedule -eq ""){
+        $Global:MirrorSchedule = "hourly"
+    }    
+
     # if ( ( $ret=analyse_junction_path -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
     # Write-LogError "ERROR: analyse_junction_path" 
     # clean_and_exit 1
