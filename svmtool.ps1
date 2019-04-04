@@ -580,9 +580,11 @@ Param (
     [switch]$LastSnapshot,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]	
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]    
     [switch]$NoSnapmirrorUpdate,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]	
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [switch]$NoSnapmirrorWait,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
