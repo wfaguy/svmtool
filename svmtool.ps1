@@ -1016,7 +1016,7 @@ if ( ( check_init_setup_dir ) -eq $False ) {
 }
 
 Write-LogOnly ""
-Write-LogOnly "SVMTOOL START"
+Write-LogOnly "SVMTOOL START $($Global:RELEASE)"
 if ( $Help ) {
     Write-Help 
 }
