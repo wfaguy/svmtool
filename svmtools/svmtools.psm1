@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release  : April 4th, 2019
+    Release  : April 5th, 2019
 
 #>
 
@@ -6350,7 +6350,7 @@ Function wait_snapmirror_dr(
                 {
     				$loop = $True
     			} 
-                elseif ( ( $MirrorState -eq "snapmirrored" ) -and ( $RelationshipStatus -eq "idle" ) ) 
+                elseif ( ( $MirrorState -eq "snapmirrored" ) -and ( $RelationshipStatus -in $("idle","insync") ) ) 
                 {} 
                 else 
                 {
@@ -6423,7 +6423,16 @@ Try {
     if($PrimaryVersion.Major -ge 9 -and $SecondaryVersion.Major -ge 9){
 	    $vfrEnable=$True
 	}
-	Write-Log "[$workOn] VFR mode is set to [$vfrEnable]"
+    Write-Log "[$workOn] VFR mode is set to [$vfrEnable]"
+    if($vfrEnable -eq $True){
+        if($Global:XDPPolicy -ne ""){
+            Write-LogDebug "Snapmirror Policy set to [$($Global:XDPPolicy)]"
+            $SnapmirrorPolicy=$Global:XDPPolicy
+        }else{
+            Write-LogDebug "Snapmirror Policy set to default [MirrorAllSnapshots]"
+            $SnapmirrorPolicy="MirrorAllSnapshots"    
+        }
+    }
     if($Global:SelectVolume -eq $True)
     {
         $Selected=get_volumes_from_selectvolumedb $myPrimaryController $myPrimaryVserver
@@ -6464,25 +6473,25 @@ Try {
                         Write-Log "[$workOn] Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
                         if($Global:MirrorSchedule -ne "none"){
                             Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }else{
                             Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }else{
                         Write-Log "[$workOn] Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
                         if($Global:MirrorSchedule -ne "none"){
-                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $($Global:MirrorSchedule) -type vault -policy $($Global:XDPPolicy) -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $($Global:MirrorSchedule) -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController "
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }else{
-                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $($Global:XDPPolicy) -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController "
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }
         			Write-LogDebug "Invoke-NcSnapmirrorInitialize -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
-        			$relation=Invoke-NcSnapmirrorInitialize -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController  -ErrorVariable ErrorVar
+        			$ret=Invoke-NcSnapmirrorInitialize -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController  -ErrorVariable ErrorVar
         			if ( $? -ne $True ) 
                     { 
         				Write-LogError "ERROR: Snapmirror Initialize failed"
@@ -6495,20 +6504,20 @@ Try {
                         Write-Log "[$workOn] Create SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
                         if($Global:MirrorSchedule -ne "none"){
                             Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }else{
         			        Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }else{
                         Write-Log "[$workOn] Create VF SnapMirror [${myPrimaryVserver}:$PrimaryVol] -> [${mySecondaryVserver}:$PrimaryVol]"
                         if($Global:MirrorSchedule -ne "none"){
-                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         }else{
-                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
-                            $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar    
+                            Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController "
+                            $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar    
                         }
         			    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                     }   
@@ -6526,7 +6535,7 @@ Try {
                         $SourceLocation=$relationDR.SourceLocation
                         $DestinationLocation=$relationDR.DestinationLocation
                         $RelationshipStatus=$relationDR.RelationshipStatus
-                        if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) 
+                        if ( ( $MirrorState -eq 'snapmirrored' ) -and ( $RelationshipStatus -in $("idle","insync") ) ) 
                         {
                             Write-Log "[$workOn] Break relation [$SourceLocation] ---> [$DestinationLocation]"
                             Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
@@ -6573,20 +6582,20 @@ Try {
                             Write-Log "[$workOn] Create relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
                             if($Global:MirrorSchedule -ne "none"){
                                 Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
-                                $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                                $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                             }else{
                                 Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController "
-                                $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar     
+                                $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Controller $mySecondaryController  -ErrorVariable ErrorVar     
                             }
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         }else{
                             Write-Log "[$workOn] Create VF relation [${myPrimaryVserver}:$PrimaryVolName] -> [${mySecondaryVserver}:$PrimaryVolName]"
                             if($Global:MirrorSchedule -ne "none"){
-                                Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
-                                $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                                Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $SnapmirrorPolicy -Schedule $($Global:MirrorSchedule) -Controller $mySecondaryController "
+                                $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $SnapmirrorPolicy -Schedule $Global:MirrorSchedule -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                             }else{
-                                Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController "
-                                $relation=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar     
+                                Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController "
+                                $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -Schedule hourly -type vault -policy $SnapmirrorPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar     
                             }
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         }
@@ -6607,7 +6616,7 @@ Try {
 			}
 			if ( $relation.MirrorState -eq "uninitialized" ) 
             {
-				if ( $relation.Status -eq "idle" ) 
+				if ( $relation.RelationshipStatus -eq "idle" ) 
                 {
 					Write-LogDebug "Invoke-NcSnapmirrorInitialize -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
 					$relation=Invoke-NcSnapmirrorInitialize -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -6619,12 +6628,28 @@ Try {
 				} 
                 else 
                 {
-					$tmp_str= $relation.Status 
+					$tmp_str= $relation.RelationshipStatus 
 					Write-LogWarn "relation [[${myPrimaryController}:${myPrimaryVserver}:${PrimaryVol}]] -> [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}]"
 					Write-LogWarn "status: [uninitiliazed] [$tmp_str]" 
 					$Return = $True 
 				}
-			}
+			}elseif ( ( $relation.MirrorState -eq "snapmirrored" ) -and ( $relation.RelationshipStatus -in $("idle","insync") )  ) {
+                # add code here to eventualy modify XDPpolicy ...if new XDPpolicy provided
+                if( ( $Global:XDPPolicy -ne "" ) -and ( $Global:XDPPolicy -ne $relation.Policy ) ){
+                    Write-Log "[$workOn] Relation [${myPrimaryController}:${myPrimaryVserver}:${PrimaryVol}] ---> [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] with Policy [$($relation.Policy)] will be modified to Policy [$($Global:XDPPolicy)]"
+                    if( ( $Global:XDPPolicy -ne "Sync" ) -and ( $Global:XDPPolicy -ne "StrictSync" ) ){
+                        # here we will modify snapmirror poolicy
+                        Write-LogDebug "Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $($Global:XDPPolicy)"
+                        $ret=Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $Global:XDPPolicy -ErrorVariable ErrorVar
+                        if($? -ne $True){
+                            Write-LogWarn "Failed to change SnapMirror Policy for relationship to [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"
+                        }
+                    }else{
+                        # add code here to convert snapmirror async to sync : quiesce, release, break, delete, create, resync
+                        write-log "add code here to convert snapmirror async to sync : quiesce, release, break, delete, create and resync"
+                    }
+                }    
+            }
 		}
 	}	
     Write-LogDebug "create_snapmirror_dr: end"
@@ -10298,7 +10323,6 @@ Try {
 		if ( ( $ret=map_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to map all LUNs " ; $Return = $False }
 		if ( ( $ret=set_serial_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-Log "ERROR: Failed to change LUN serial Numbers" ; $Return = $False} 
     }
-    # ajouter ici en mode Backup ou Restore only : la sauvegarde des qtree present avec toutes leurs options
     if($Backup -eq $True -or $Restore -eq $True){
         #wait-debugger
         if(($ret=update_qtree -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True) {Write-Log "ERROR Failed to update all Qtree"; $Return = $False}
@@ -10806,7 +10830,8 @@ Function update_snapmirror_vserver (
 	[NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
-	[string] $mySecondaryVserver ) {
+    [string] $mySecondaryVserver,
+    [string] $workOn=$mySecondaryVserver ) {
 Try {
 	$Return = $True
 
@@ -10833,8 +10858,23 @@ Try {
 		$DestinationVolume=$relation.DestinationVolume
 		$SourceLocation=$relation.SourceLocation
 		$DestinationLocation=$relation.DestinationLocation
-		$RelationshipStatus=$relation.RelationshipStatus
-		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) {
+        $RelationshipStatus=$relation.RelationshipStatus
+        $PrimaryVol=$relation.SourceVolume
+		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -in $("idle","insync") ) ) {
+            if( ( $Global:XDPPolicy -ne "" ) -and ( $Global:XDPPolicy -ne $relation.Policy ) ){
+                Write-Log "[$workOn] Destination Relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] with Policy [$($relation.Policy)] will be modified to Policy [$($Global:XDPPolicy)]"
+                if( ( $Global:XDPPolicy -ne "Sync" ) -and ( $Global:XDPPolicy -ne "StrictSync" ) ){
+                    # here we will modify snapmirror poolicy
+                    Write-LogDebug "Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $($Global:XDPPolicy)"
+                    $ret=Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $Global:XDPPolicy -ErrorVariable ErrorVar
+                    if($? -ne $True){
+                        Write-LogWarn "Failed to change SnapMirror Policy for relationship to [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"
+                    }
+                }else{
+                    # add code here to convert snapmirror async to sync : quiesce, release, break, delete, create, resync
+                    write-log "add code here to convert snapmirror async to sync : quiesce, release, break, delete, create and resync"
+                }
+            }
 			Write-Log "[$mySecondaryVserver] Update relation [$SourceLocation] ---> [$DestinationLocation]" 
 			Write-LogDebug "Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController"
 			$out=Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar 
@@ -10905,7 +10945,7 @@ Try {
 		$SourceLocation=$relation.SourceLocation
 		$DestinationLocation=$relation.DestinationLocation
 		$RelationshipStatus=$relation.RelationshipStatus
-		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -eq 'idle' ) ) 
+		if ( ( $MirrorState -eq 'snapmirrored' ) -and ( $RelationshipStatus -in  $("idle","insync") ) ) 
         {
 			Write-Log "[$mySecondaryVserver] Break relation [$SourceLocation] ---> [$DestinationLocation]" -f red
 			Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"

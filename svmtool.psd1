@@ -12,13 +12,14 @@
 #   1.0.0 : Initial version
 #   1.0.1 : Add DefaultLDAPCredentials
 #   1.0.2 : Add XDPPolicy, MirrorSchedule, NoSnapmirrorUpdate, NoSnapmirrorWait
+#   1.0.3 : Fix update of XDPPolicy during ConfigureDR or UpdateDR
 @{
 
 # Script module or binary module file associated with this manifest.
 RootModule = '.\svmtool.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.0.2'
+ModuleVersion = '1.0.3'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()

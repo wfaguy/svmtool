@@ -190,9 +190,10 @@
     Allow to create the second DR relationship for a particular instance and SVM
     Used only with ConfigureDR
 .PARAMETER XDPPolicy
-    Optional argument to specify a particular SnapMirror policy to use when creates XDP relationship
+    Optional argument to specify a particular SnapMirror policy to use when creates or updates XDP relationship
     By default, it uses MirrorAllSnapshots policy
-	The specified Policy must already exist in ONTAP and be correctly configured
+    The specified Policy must already exist in ONTAP and be correctly configured
+    You can change XDPPolicy with this argument during ConfigureDR or UpdateDR operations
 .PARAMETER NoSnapmirrorUpdate
 	During UpdateDR, omit snapmirror updates in the assumption that schedules are applied.
 	Note that new snapmirrors will of course still be created
@@ -249,7 +250,7 @@
 
     Create a new instance named test
 .EXAMPLE
-    svmtool.ps1 -Instance test -Vserver svm_source -ConfigureDR
+    svmtool.ps1 -Instance test -Vserver svm_source -ConfigureDR [-XDPPolicy <policy name>]
 
     Configure a SVM DR relationship for SVM svm_source in the instance test
     And create all necessary DR objects
@@ -356,11 +357,16 @@
 			or
 			New-SvmDr -Instance <Instance Name> -Vserver <SVM Name>
 
-			You will then be prompted to choose to encrypt volume by volume, all volumes or no volume
+            You will then be prompted to choose to encrypt volume by volume, all volumes or no volume
+.EXAMPLE
+    svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> [-ConfigureDR|-UpdateDR] -XDPPolicy <policy name>
+    
+    You can change existing Policy of all snapmirror relationships by running ConfigureDR or UpdateDR with XDPpolicy argument
+    The chosen policy must already exist on destination Cluster
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
-    Version : April 4th, 2019
+    Version : April 5th, 2019
     Version History : 
         - 0.0.3 : 	Initial version 
         - 0.0.4 : 	Bugfix, typos and added ParameterSets
@@ -394,6 +400,7 @@
         - 0.2.1 :	Added NoSnapmirrorUpdate and NoSnapmirrorWait flags for updateDR (mirko)
                     Added MirrorSchedule & XDPPolicy for UpdateDR & ConfigureDR (default remains hourly schedule)
                     Use "none" to omit the schedule
+        - 0.2.2 :   Fix change of XDPPolicy during ConfigureDR or UpdateDR
 #>
 [CmdletBinding(HelpURI = "https://github.com/oliviermasson/svmtool", DefaultParameterSetName = "ListInstance")]
 Param (
@@ -567,7 +574,7 @@ Param (
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]    
-    [string]$XDPPolicy = "MirrorAllSnapshots",
+    [string]$XDPPolicy = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
@@ -841,8 +848,8 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE = "0.2.1"
-$Global:SCRIPT_RELEASE = "0.1.9"
+$Global:RELEASE = "0.2.2"
+$Global:SCRIPT_RELEASE = "0.1.10"
 $Global:BASEDIR = 'C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR = $BASEDIR + '\etc\'
@@ -1857,7 +1864,7 @@ if ( $ConfigureDR ) {
     }
     $DestVserver = Get-NcVserver -Vserver $VserverDR -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
 
-    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
+    if ( ( $XDPPolicy -ne "" ) -and ( $XDPPolicy -ne "MirrorAllSnapshots" ) ) {
         $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
             Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
