@@ -9,7 +9,7 @@
 # Updated on : 2018-10-09
 #
 # Update by : Olivier MASSON
-# Updated on : 2019-03-28
+# Updated on : 2019-04-05
 #
 # Version Control :
 #   1.0.4 : Initial version
@@ -44,6 +44,7 @@
 #   1.2.0 : Added NoSnapmirrorUpdate and NoSnapmirrorWait flags for updateDR (mirko)
 #           Added MirrorSchedule & XDPPolicy for UpdateDR & ConfigureDR (default remains hourly schedule)
 #           Use "none" to omit the schedule
+#   1.2.1 : Fix Change of XDPPolicy during ConfigureDR (New-SvmDR) or UpdateDR (Update-SvmDr)
 #           
 @{
 
@@ -51,7 +52,7 @@
 RootModule = '.\svmtools.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.2.0'
+ModuleVersion = '1.2.1'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
