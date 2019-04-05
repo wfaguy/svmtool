@@ -1855,7 +1855,7 @@ if ( $ShowDR ) {
     }
     Write-LogDebug "show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR"
     $ret = show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -Lag:$Lag -Schedule:$Schedule
-    clean_and_exit 0
+    clean_and_exit $ret
 }
 
 if ( $ConfigureDR ) {
@@ -1901,7 +1901,10 @@ if ( $ConfigureDR ) {
     if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }
-
+    # no schedule if Policy Sync or StrictSync is chosen
+    if ( ( $Global:XDPPolicy -ne "") -and ( $Global:XDPPolicy -in $("Sync","StrictSync") ) ) {
+        $Global:MirrorSchedule = "none"    
+    }
     if ( $? -ne $True ) {
         $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" 
     }
@@ -2322,7 +2325,10 @@ if ( $UpdateDR ) {
     if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }    
-
+    # no schedule if Policy Sync or StrictSync is chosen
+    if ( ( $Global:XDPPolicy -ne "") -and ( $Global:XDPPolicy -in $("Sync","StrictSync") ) ) {
+        $Global:MirrorSchedule = "none"    
+    }
     # if ( ( $ret=analyse_junction_path -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
     # Write-LogError "ERROR: analyse_junction_path" 
     # clean_and_exit 1
