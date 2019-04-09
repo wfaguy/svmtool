@@ -1747,8 +1747,8 @@ Function create_update_vscan_dr (
                                 -or (($PrimaryOnAccessPolicyExcludePath_str -ne $SecondaryOnAccessPolicyExcludePath_str) `
                                     -and (($PrimaryOnAccessPolicyExcludePath -ne $null) -and ($SecondaryOnAccessPolicyExcludePath -ne $null))) `
                                 -or (($PrimaryOnAccessPolicyFileExtToExclude_str -ne $SecondaryOnAccessPolicyFileExtToExclude_str) `
-                                    -and (($PrimaryOnAccessPolicyFileExtToExclude -ne $null) -and ($SecondaryOnAccessPolicyFileExtToExclude -ne $null))) )
-                        { #-or ($PrimaryOnAccessPolicyProtocol -ne $SecondaryOnAccessPolicyProtocol) ` 
+                                    -and (($PrimaryOnAccessPolicyFileExtToExclude -ne $null) -and ($SecondaryOnAccessPolicyFileExtToExclude -ne $null))) ) {
+                            #-or ($PrimaryOnAccessPolicyProtocol -ne $SecondaryOnAccessPolicyProtocol) ` 
                             if ($PrimaryOnAccessPolicyFilters.count -eq 0 ) {
                                 $PrimaryOnAccessPolicyFilters += "-"
                             }
@@ -4110,7 +4110,8 @@ Function create_update_snap_policy_dr(
                         }
                     } 	
                 }
-                else { # add new policy
+                else {
+                    # add new policy
                     Write-Log "[$workOn] Policy [$PolicyName] does not exist"
                     Write-Log "[$workOn] Create Policy and associated rules"
                     $firstSchedule = 0
@@ -9911,7 +9912,7 @@ Function create_update_CIFS_server_dr (
                 $SecondaryDomain = $PrimaryCifsServerInfos.Domain
                 $SecondaryDomainWorkgroup = $PrimaryCifsServerInfos.DomainWorkgroup
                 $SecondaryOrganizationalUnit = $PrimaryCifsServerInfos.OrganizationalUnit
-                if($ActiveDirectoryCustomOU){
+                if ($ActiveDirectoryCustomOU) {
                     Write-Log "[$workOn] A custom OU has been provided, using this one instead [$ActiveDirectoryCustomOU]" 
                     $SecondaryOrganizationalUnit = $ActiveDirectoryCustomOU
                 }
@@ -9966,7 +9967,7 @@ Function create_update_CIFS_server_dr (
                         $InterfaceMasterCurrentNode = $InterfaceMaster.CurrentNode
                         $InterfaceMasterCurrentPort = $InterfaceMaster.CurrentPort
                         if ($SecondaryCifsLifCustomVlan) {
-                            Write-Log "[$workOn] a custom vlan has been provided for the temp cifs lif [SecondaryCifsLifCustomVlan]"
+                            Write-Log "[$workOn] a custom vlan has been provided for the temp cifs lif [$SecondaryCifsLifCustomVlan]"
                             $SecondaryCifsLifCustomVlanPort = Get-NcNetPortVlan -VlanId $SecondaryCifsLifCustomVlan -Node $InterfaceMasterCurrentNode -Controller $mySecondaryController
                             if ( $? -ne $True ) {
                                 $Return = $False ; throw "ERROR: Get-NcNetPortVlan failed [$ErrorVar]" 
