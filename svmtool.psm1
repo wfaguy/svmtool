@@ -1,11 +1,10 @@
 ﻿# A wrapper to quickly invoke the svmtool, without manually rebuilding the argument string
-# A wrapper to quickly invoke the svmtool, without manually rebuilding the argument string
-function invokeSvmtool {
+function invokeSvmtool{
     param(
         [ref]$ParameterList,
         [string]$Action,
-        [string]$Add = "",
-        [string[]]$Drop = ""
+        [string]$Add="",
+        [string[]]$Drop=""
     )
     $strings = @()
     $switches = @()
@@ -14,9 +13,9 @@ function invokeSvmtool {
     $regexs = @()
     $creds = @()
     foreach ($Parameter in $ParameterList.Value) {
-        foreach ($v in $Parameter.Values) {
-            if ($v.Name -notin @($Drop)) {
-                switch ($v.ParameterType.Name) {
+        foreach($v in $Parameter.Values){
+            if($v.Name -notin @($Drop)){
+                switch($v.ParameterType.Name){
 
                     "String" {
                         $strings += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
@@ -25,52 +24,47 @@ function invokeSvmtool {
                     
                         $regexs += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "SwitchParameter" {
+                    "SwitchParameter"{
                         $switches += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "Boolean" {
+                    "Boolean"{
                         $bools += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "PSCredential" {
+                    "PSCredential"{
                         $creds += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    default {
+                    default{
                         $others += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
                 }
             }
         }
     }
-    $args += $strings | % { $_.Value } | % { if ($_.Value -match "\s") {
-            ("-{0} `"{1}`"" -f $_.name, $_.value)
-        }
-        else {
-            ("-{0} {1}" -f $_.name, $_.value)
-        } }
-    $args += $regexs | % { ($_.Value -ne $null) } | % { ($_.Value.ToString()) } | % { ("-{0} `"{1}`"" -f $_.name, ($_.value).ToString()) }
-    $args += $switches | % { $_.Value } | % { ("-{0}" -f $_.name) }
-    $args += $bools | % { ("-{0} `${1}" -f $_.name, $_.value) }
-    $i = 0
-    foreach ($c in $creds) {
-        if ($c.value -ne $null) {
-            New-Variable -name "cred$i" -value ($c.value)
-            $args += ("-{0} `${1}" -f $c.name, "cred$i")
+    $args += $strings | ?{$_.Value} | %{if($_.Value -match "\s"){("-{0} `"{1}`"" -f $_.name,$_.value)}else{("-{0} {1}" -f $_.name,$_.value)}}
+    $args += $regexs | ?{($_.Value -ne $null)} | ?{($_.Value.ToString())} | %{("-{0} `"{1}`"" -f $_.name,($_.value).ToString())}
+    $args += $switches | ?{$_.Value} | %{("-{0}" -f $_.name)}
+    $args += $bools | %{("-{0} `${1}" -f $_.name,$_.value)}
+    $i=0
+    foreach($c in $creds){
+        if($c.value -ne $null){
+            new-variable -name "cred$i" -value ($c.value)
+            $args += ("-{0} `${1}" -f $c.name,"cred$i")
             $i++
         }
     }
-    $args += $others | % { $_.Value } | % { ("-{0} {1}" -f $_.name, $_.value) }
+    $args += $others | ?{$_.Value} | %{("-{0} {1}" -f $_.name,$_.value)}
     $arguments = ($args -join " ")
-    if ($Add) {
+    if($Add){
         $arguments = $Add + " " + $arguments
     }
-    if ($Action) {
+    if($Action){
         $arguments = "-$Action " + $arguments
     }
     $scriptPath = "$PSScriptRoot\svmtool.ps1"
 
-    Write-Verbose "Invoking svmtool"
-    Write-Verbose "Scriptpath : $scriptPath"
-    Write-Verbose "Arguments : $arguments"
+    write-verbose "Invoking svmtool"
+    write-verbose "Scriptpath : $scriptPath"
+    write-verbose "Arguments : $arguments"
 
     Invoke-Expression "& `"$scriptPath`" $arguments"
 }
