@@ -8636,8 +8636,8 @@ Try {
                         if ( $? -ne $True ) {
                             $Return = $False ; throw "ERROR: Get-NcNetPortVlan failed [$ErrorVar]" 
                         }
-                        Write-Log ("[$workOn] Custom vlan found [{0}], using this port instead of the temp cifs lif" -f $SecondaryCifsLifCustomVlanPort.name)
-                        $InterfaceMasterCurrentPort = $SecondaryCifsLifCustomVlanPort.name
+                        Write-Log ("[$workOn] Custom vlan found [{0}], using this port instead of the temp cifs lif" -f $SecondaryCifsLifCustomVlanPort.InterfaceName)
+                        $InterfaceMasterCurrentPort = $SecondaryCifsLifCustomVlanPort.InterfaceName
                     }                    
 			        $InterfaceMasterDataProtocols=$InterfaceMaster.DataProtocols
 			        $InterfaceMasterDnsDomainName=$InterfaceMaster.DnsDomainName
