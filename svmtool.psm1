@@ -1,10 +1,10 @@
 ﻿# A wrapper to quickly invoke the svmtool, without manually rebuilding the argument string
-function invokeSvmtool{
+function invokeSvmtool {
     param(
         [ref]$ParameterList,
         [string]$Action,
-        [string]$Add="",
-        [string[]]$Drop=""
+        [string]$Add = "",
+        [string[]]$Drop = ""
     )
     $strings = @()
     $switches = @()
@@ -13,9 +13,9 @@ function invokeSvmtool{
     $regexs = @()
     $creds = @()
     foreach ($Parameter in $ParameterList.Value) {
-        foreach($v in $Parameter.Values){
-            if($v.Name -notin @($Drop)){
-                switch($v.ParameterType.Name){
+        foreach ($v in $Parameter.Values) {
+            if ($v.Name -notin @($Drop)) {
+                switch ($v.ParameterType.Name) {
 
                     "String" {
                         $strings += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
@@ -24,47 +24,52 @@ function invokeSvmtool{
                     
                         $regexs += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "SwitchParameter"{
+                    "SwitchParameter" {
                         $switches += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "Boolean"{
+                    "Boolean" {
                         $bools += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    "PSCredential"{
+                    "PSCredential" {
                         $creds += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
-                    default{
+                    default {
                         $others += Get-Variable -Name $v.Name -ErrorAction SilentlyContinue;
                     }
                 }
             }
         }
     }
-    $args += $strings | ?{$_.Value} | %{if($_.Value -match "\s"){("-{0} `"{1}`"" -f $_.name,$_.value)}else{("-{0} {1}" -f $_.name,$_.value)}}
-    $args += $regexs | ?{($_.Value -ne $null)} | ?{($_.Value.ToString())} | %{("-{0} `"{1}`"" -f $_.name,($_.value).ToString())}
-    $args += $switches | ?{$_.Value} | %{("-{0}" -f $_.name)}
-    $args += $bools | %{("-{0} `${1}" -f $_.name,$_.value)}
-    $i=0
-    foreach($c in $creds){
-        if($c.value -ne $null){
-            new-variable -name "cred$i" -value ($c.value)
-            $args += ("-{0} `${1}" -f $c.name,"cred$i")
+    $args += $strings | % { $_.Value } | % { if ($_.Value -match "\s") {
+            ("-{0} `"{1}`"" -f $_.name, $_.value)
+        }
+        else {
+            ("-{0} {1}" -f $_.name, $_.value)
+        } }
+    $args += $regexs | % { ($_.Value -ne $null) } | % { ($_.Value.ToString()) } | % { ("-{0} `"{1}`"" -f $_.name, ($_.value).ToString()) }
+    $args += $switches | % { $_.Value } | % { ("-{0}" -f $_.name) }
+    $args += $bools | % { ("-{0} `${1}" -f $_.name, $_.value) }
+    $i = 0
+    foreach ($c in $creds) {
+        if ($c.value -ne $null) {
+            New-Variable -name "cred$i" -value ($c.value)
+            $args += ("-{0} `${1}" -f $c.name, "cred$i")
             $i++
         }
     }
-    $args += $others | ?{$_.Value} | %{("-{0} {1}" -f $_.name,$_.value)}
+    $args += $others | % { $_.Value } | % { ("-{0} {1}" -f $_.name, $_.value) }
     $arguments = ($args -join " ")
-    if($Add){
+    if ($Add) {
         $arguments = $Add + " " + $arguments
     }
-    if($Action){
+    if ($Action) {
         $arguments = "-$Action " + $arguments
     }
     $scriptPath = "$PSScriptRoot\svmtool.ps1"
 
-    write-verbose "Invoking svmtool"
-    write-verbose "Scriptpath : $scriptPath"
-    write-verbose "Arguments : $arguments"
+    Write-Verbose "Invoking svmtool"
+    Write-Verbose "Scriptpath : $scriptPath"
+    Write-Verbose "Arguments : $arguments"
 
     Invoke-Expression "& `"$scriptPath`" $arguments"
 }
@@ -115,20 +120,20 @@ function invokeSvmtool{
     Apply new configuration ? [y/n/q] : 
     Autoselecting default [y]
 #>
-function New-SvmDrConfiguration{
+function New-SvmDrConfiguration {
     [alias("Update-SvmDrConfiguration")]
     [CmdletBinding()]
     param(
         # A unique name, referencing the relationship between 2 clusters.
         # An instance could manage one or several SVM DR relationships inside the corresponding cluster
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source cluster
-	    [string]$PrimaryCluster,
+        [string]$PrimaryCluster,
 
         # The destination cluster
-	    [string]$SecondaryCluster,
+        [string]$SecondaryCluster,
 
         # The source vserver (svm)
         [string]$Vserver,
@@ -141,12 +146,12 @@ function New-SvmDrConfiguration{
         [switch]$QuotaDR,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -156,9 +161,9 @@ function New-SvmDrConfiguration{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
+        [switch]$HTTP,
 
-	    [Int32]$Timeout = 60
+        [Int32]$Timeout = 60
 
     )
 
@@ -363,13 +368,13 @@ function New-SvmDrConfiguration{
     [cifs-dr] Save Quota rules
 
 #>
-function New-SvmDr{
+function New-SvmDr {
     [alias("Initialize-SvmDr")]
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -457,13 +462,23 @@ function New-SvmDr{
         # A temporary lif will be created to join the vserver dr in AD
         [string]$SecondaryCifsLifMaster,
 
+        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # So we will clone the lif used in the parameter SecondaryCifsLifMaster
+        # A temporary lif will be created to join the vserver dr in AD
+        # This parameter will override the vlan in which this temp lif is created
+        [string]$SecondaryCifsLifCustomVlan,
+
+        # When the dr cifs server is joined AD, you can override in which OU this happens with this parameter
+        [string]$ActiveDirectoryCustomOU,
+
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -473,8 +488,8 @@ function New-SvmDr{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -522,7 +537,7 @@ function New-SvmDr{
     [SLASH.LOCAL] Enter login: administrator
 
 #>
-function Show-SvmDrConfiguration{
+function Show-SvmDrConfiguration {
     [CmdletBinding()]
     param(
 
@@ -531,12 +546,12 @@ function Show-SvmDrConfiguration{
         [switch]$ResetPassword,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration
@@ -609,13 +624,13 @@ function Show-SvmDrConfiguration{
     ---------------------------
 
 #>
-function Show-SvmDr{
+function Show-SvmDr {
     [CmdletBinding()]
     param(
 
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -625,18 +640,18 @@ function Show-SvmDr{
         [switch]$MSID,
 
         # Enables display of lag information
-	    [switch]$Lag,
+        [switch]$Lag,
 
         # Enables display of schedule information
-	    [switch]$Schedule,
+        [switch]$Schedule,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -646,8 +661,8 @@ function Show-SvmDr{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -758,12 +773,12 @@ function Show-SvmDr{
     [cifs-dr] Save Quota rules
 
 #>
-function Update-SvmDr{
+function Update-SvmDr {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -823,19 +838,19 @@ function Update-SvmDr{
         [pscredential]$DefaultLocalUserCredentials,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -862,24 +877,24 @@ function Update-SvmDr{
     Remove root volume [svm_root]
 
 #>
-function Remove-SvmDr{
+function Remove-SvmDr {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -889,8 +904,8 @@ function Remove-SvmDr{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -925,12 +940,12 @@ function Remove-SvmDr{
     WARNING: No quota activated on any Vserver's volume
 
 #>
-function Invoke-SvmDrActivate{
+function Invoke-SvmDrActivate {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -946,12 +961,12 @@ function Invoke-SvmDrActivate{
         [switch]$ForceUpdateSnapPolicy,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -961,8 +976,8 @@ function Invoke-SvmDrActivate{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -991,12 +1006,12 @@ function Invoke-SvmDrActivate{
     Resync relationship [cifs:vol1] [cifs-dr:vol1] 
 
 #>
-function Invoke-SvmDrResync{
+function Invoke-SvmDrResync {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1006,12 +1021,12 @@ function Invoke-SvmDrResync{
         [switch]$ForceRecreate,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1021,8 +1036,8 @@ function Invoke-SvmDrResync{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1055,12 +1070,12 @@ function Invoke-SvmDrResync{
     Reverse resync [c3po://cifs-dr/vol1] -> [r2d2://cifs/vol1]
 
 #>
-function Invoke-SvmDrResyncReverse{
+function Invoke-SvmDrResyncReverse {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1070,12 +1085,12 @@ function Invoke-SvmDrResyncReverse{
         [switch]$ForceRecreate,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1085,8 +1100,8 @@ function Invoke-SvmDrResyncReverse{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1200,12 +1215,12 @@ function Invoke-SvmDrResyncReverse{
 
 
 #>
-function Update-SvmDrReverse{
+function Update-SvmDrReverse {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1256,19 +1271,19 @@ function Update-SvmDrReverse{
         [pscredential]$DefaultLocalUserCredentials,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1315,7 +1330,7 @@ function Update-SvmDrReverse{
     WARNING: No quota activated on any Vserver's volume
 
 #>
-function Invoke-SvmDrRecoverFromDr{
+function Invoke-SvmDrRecoverFromDr {
     [alias("Invoke-SvmDrReActivate")]
     [alias("Invoke-SvmDrRecover")]
     [alias("Invoke-SvmDrActivateReverse")]
@@ -1323,7 +1338,7 @@ function Invoke-SvmDrRecoverFromDr{
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1340,12 +1355,12 @@ function Invoke-SvmDrRecoverFromDr{
         [switch]$ForceUpdateSnapPolicy,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1355,8 +1370,8 @@ function Invoke-SvmDrRecoverFromDr{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1379,31 +1394,31 @@ function Invoke-SvmDrRecoverFromDr{
     C:\Scripts\SVMTOOL\etc\Default\cifs.conf removed successfully...
 
 #>
-function Remove-SvmDrConfiguration{
+function Remove-SvmDrConfiguration {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1427,12 +1442,12 @@ function Remove-SvmDrConfiguration{
 
 
 #>
-function Set-SvmDrSchedule{
+function Set-SvmDrSchedule {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1443,12 +1458,12 @@ function Set-SvmDrSchedule{
         [string]$MirrorSchedule,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1458,8 +1473,8 @@ function Set-SvmDrSchedule{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1482,12 +1497,12 @@ function Set-SvmDrSchedule{
     cifs-dr:vol1                    cifs:vol1                         daily
 
 #>
-function Set-SvmDrScheduleReverse{
+function Set-SvmDrScheduleReverse {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1498,12 +1513,12 @@ function Set-SvmDrScheduleReverse{
         [string]$MirrorScheduleReverse,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1513,8 +1528,8 @@ function Set-SvmDrScheduleReverse{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1685,12 +1700,12 @@ function Set-SvmDrScheduleReverse{
     Final rename will be done when [-DeleteSource] step will be executed, once you are ready to completely delete [cifs] on Source Cluster [r2d2]
 
 #>
-function Invoke-SvmDrMigrate{
+function Invoke-SvmDrMigrate {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -1699,7 +1714,7 @@ function Invoke-SvmDrMigrate{
         # Enables the removal of the source vserver
         [switch]$DeleteSource,
 
-       # Optional, makes an aggregate suggestion for the datavolumes
+        # Optional, makes an aggregate suggestion for the datavolumes
         [string]$DataAggr,
 
         # Optional, A regular expression to map aggregate names
@@ -1723,12 +1738,12 @@ function Invoke-SvmDrMigrate{
         [pscredential]$DefaultLocalUserCredentials,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1738,8 +1753,8 @@ function Invoke-SvmDrMigrate{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -1787,24 +1802,24 @@ function Invoke-SvmDrMigrate{
     [cifs] completely deleted on [r2d2]
 
 #>
-function Remove-SvmDrSource{
+function Remove-SvmDrSource {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1814,8 +1829,8 @@ function Remove-SvmDrSource{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
     $CommandName = $PSCmdlet.MyInvocation.InvocationName;
@@ -1848,25 +1863,25 @@ function Remove-SvmDrSource{
     Enable quota on [cifs-dr] Volume [vol9]
 
 #>
-function Set-SvmDrQuota{
+function Set-SvmDrQuota {
     [alias("Invoke-SvmDrCreateQuota")]
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1876,8 +1891,8 @@ function Set-SvmDrQuota{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -1912,25 +1927,25 @@ function Set-SvmDrQuota{
     Enable quota on [cifs] Volume [vol9]
 
 #>
-function Set-SvmDrQuotaReverse{
+function Set-SvmDrQuotaReverse {
     [alias("Invoke-SvmDrCreateQuotaReverse")]
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1940,8 +1955,8 @@ function Set-SvmDrQuotaReverse{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -1974,24 +1989,24 @@ function Set-SvmDrQuotaReverse{
     Tests completed successfully
 
 #>
-function Test-SvmDrConnection{
+function Test-SvmDrConnection {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -2001,8 +2016,8 @@ function Test-SvmDrConnection{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2025,24 +2040,24 @@ function Test-SvmDrConnection{
     Clear-SvmDrReverse -Instance reverse -Vserver cifs
 
 #>
-function Clear-SvmDrReverse{
+function Clear-SvmDrReverse {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -2052,8 +2067,8 @@ function Clear-SvmDrReverse{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2132,12 +2147,12 @@ function Clear-SvmDrReverse{
     Finished - Script ran for 00:00:04.4539205
 
 #>
-function Backup-SvmDr{
+function Backup-SvmDr {
     [CmdletBinding()]
     param(
         # The name of the cluster to backup
         [Parameter(Mandatory = $true)]
-	    [string]$Cluster,
+        [string]$Cluster,
 
         # Optional, The vserver to backup
         [string]$Vserver,
@@ -2146,19 +2161,19 @@ function Backup-SvmDr{
         [switch]$Recreateconf,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2304,12 +2319,12 @@ function Backup-SvmDr{
     ERROR: create_quota_rules_from_quotadb failed
 
 #>
-function New-SvmDrClone{
+function New-SvmDrClone {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -2343,26 +2358,36 @@ function New-SvmDrClone{
         # Use this parameter to join the dr vserver in AD without interaction
         [pscredential]$ActiveDirectoryCredentials,
 
-        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Optional, when the vserver clone is created, all lifs are taken offline (duplicate ip conflicts)
         # Hence if the vserver needs to be joined in AD, there is no lif available
         # By passing an temporary ip-address and in combination with parameter "SecondaryCifsLifMaster"
-        # A temporary lif will be created to join the vserver dr in AD
+        # A temporary lif will be created to join the vserver clone in AD
         [string]$TemporarySecondaryCifsIp,
 
-        # Optional, when the vserver dr is created, all lifs are taken offline (duplicate ip conflicts)
+        # Optional, when the vserver clone is created, all lifs are taken offline (duplicate ip conflicts)
         # Hence if the vserver needs to be joined in AD, there is no lif available
         # So we will clone the lif that is passed in this parameter (using same port and options)
         # Use this in combination with parameter "TemporarySecondaryCifsIp"
-        # A temporary lif will be created to join the vserver dr in AD
+        # A temporary lif will be created to join the vserver clone in AD
         [string]$SecondaryCifsLifMaster,
 
+        # Optional, when the vserver clone is created, all lifs are taken offline (duplicate ip conflicts)
+        # Hence if the vserver needs to be joined in AD, there is no lif available
+        # So we will clone the lif used in the parameter SecondaryCifsLifMaster
+        # A temporary lif will be created to join the vserver clone in AD
+        # This parameter will override the vlan in which this temp lif is created
+        [string]$SecondaryCifsLifCustomVlan,
+
+        # When the clone cifs server is joined AD, you can override in which OU this happens with this parameter
+        [string]$ActiveDirectoryCustomOU,        
+
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -2372,8 +2397,8 @@ function New-SvmDrClone{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2410,12 +2435,12 @@ function New-SvmDrClone{
     [cifs-dr_clone.0] Remove SVM
 
 #>
-function Remove-SvmDrClone{
+function Remove-SvmDrClone {
     [CmdletBinding()]
     param(
         # The unique name, referencing the relationship between the 2 clusters.
         [Parameter(Mandatory = $true)]
-	    [string]$Instance,
+        [string]$Instance,
 
         # The source vserver
         [Parameter(Mandatory = $true)]
@@ -2426,12 +2451,12 @@ function Remove-SvmDrClone{
         [string]$CloneName,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -2441,8 +2466,8 @@ function Remove-SvmDrClone{
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2474,16 +2499,16 @@ function Remove-SvmDrClone{
     Restore-SvmDr -Cluster r2d2 -Destination c3po -Vserver cifs
 
 #>
-function Restore-SvmDr{
+function Restore-SvmDr {
     [CmdletBinding()]
     param(
         # The name of the cluster to restore
         [Parameter(Mandatory = $true)]
-	    [string]$Cluster,
+        [string]$Cluster,
 
         # The name of the destination cluster
         [Parameter(Mandatory = $true)]
-	    [string]$Destination,
+        [string]$Destination,
 
         # Optional, the vserver to be restored
         [Parameter(Mandatory = $true)]
@@ -2545,19 +2570,19 @@ function Restore-SvmDr{
         [string]$SecondaryCifsLifMaster,
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info",
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
         # Enables HTTP mode (default HTTPS)
-	    [switch]$HTTP,
-	    [Int32]$Timeout = 60
+        [switch]$HTTP,
+        [Int32]$Timeout = 60
     )
 
 
@@ -2571,17 +2596,17 @@ function Restore-SvmDr{
     Imports instances from previous generations
 
 #>
-function Import-SvmDrConfiguration{
+function Import-SvmDrConfiguration {
     [CmdletBinding()]
     param(
 
         # Loglevel of the console output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelConsole="Info",
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelConsole = "Info",
 
         # Loglevel of the logfile output
-	    [ValidateSet("Debug","Info","Warn","Error","Fatal","Off")]
-        [string]$LogLevelLogFile="Info"
+        [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
+        [string]$LogLevelLogFile = "Info"
     )
 
 
@@ -2604,7 +2629,7 @@ function Import-SvmDrConfiguration{
     Module Version [1.0.9]
 
 #>
-function Show-SvmDrVersion{
+function Show-SvmDrVersion {
     [CmdletBinding()]
     $scriptPath = "$PSScriptRoot\svmtool.ps1"
     Invoke-Expression "& `"$scriptPath`" -Version"
