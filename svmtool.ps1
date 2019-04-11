@@ -228,6 +228,13 @@
     For cifs, sometimes a secondary lif is needed to join in Active Directory (duplicate ip conflict)
     This lif will be used as a template to create a new temporary lif to complete this AD join
     Must be used together with TemporarySecondaryCifsIp
+.PARAMETER SecondaryCifsLifCustomVlan
+    For cifs, sometimes a secondary lif is needed to join in Active Directory (duplicate ip conflict)
+    We use the SecondaryCifsLifMaster to clone a new temp lif, however with this parameter you can override the vlan
+    to which this Temp lif is bound.
+    Must be used together with TemporarySecondaryCifsIp and SecondaryCifsLifMaster 
+.PARAMETER ActiveDirectoryCustomOU
+    When joining a DR Cifs vserver in AD, you can override the target OU with this parameter.     
 .PARAMETER NonInteractive
     Runs the script in Non Interactive Mode.  
     No confirmations and resource selection is automated
@@ -401,6 +408,7 @@
                     Added MirrorSchedule & XDPPolicy for UpdateDR & ConfigureDR (default remains hourly schedule)
                     Use "none" to omit the schedule
         - 0.2.2 :   Fix change of XDPPolicy during ConfigureDR or UpdateDR
+        - 0.2.3 :   Add Cifs join options : override AD OU + override temp-cifs-join-lif VLAN
 #>
 [CmdletBinding(HelpURI = "https://github.com/oliviermasson/svmtool", DefaultParameterSetName = "ListInstance")]
 Param (
@@ -477,7 +485,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName = 'MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]  
-    [string]$MirrorSchedule="",
+    [string]$MirrorSchedule = "",
 
     [Parameter(Mandatory = $true, ParameterSetName = 'MirrorScheduleReverse')]
     [string]$MirrorScheduleReverse,
@@ -837,7 +845,15 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
-    [string]$SecondaryCifsLifMaster = $null
+    [string]$SecondaryCifsLifMaster = $null,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
+    [string]$SecondaryCifsLifCustomVlan = $null,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
+    [string]$ActiveDirectoryCustomOU = $null        
 )
 
 #############################################################################################
@@ -848,7 +864,7 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE = "0.2.2"
+$Global:RELEASE = "0.2.3"
 $Global:SCRIPT_RELEASE = "0.1.10"
 $Global:BASEDIR = 'C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
@@ -941,8 +957,8 @@ if ($Path -notcontains $PSScriptRoot) {
     $Path = [string]::Join(";", $Path)
     [System.Environment]::SetEnvironmentVariable('PSModulePath', $Path)
 }
-remove-module -Name svmtools -ErrorAction SilentlyContinue
-$module = import-module "$PSScriptRoot\svmtools" -PassThru
+Remove-Module -Name svmtools -ErrorAction SilentlyContinue
+$module = Import-Module "$PSScriptRoot\svmtools" -PassThru
 if ( $module -eq $null ) {
     Write-Host "ERROR: Failed to load module SVMTOOLS" -ForegroundColor Red
     Write-Error "ERROR: Failed to load module SVMTOOLS"
@@ -954,7 +970,7 @@ if (!($env:PSModulePath -match "NetApp PowerShell Toolkit")) {
 if (-not $WfaIntegration) {
     $module = Get-Module DataONTAP
     if ($module -eq $null) {
-        $module = import-module -Name DataONTAP -PassThru
+        $module = Import-Module -Name DataONTAP -PassThru
         if ( $module -eq $null ) {
             Write-Error "ERROR: DataONTAP module not found" 
             clean_and_exit 1
@@ -965,7 +981,7 @@ if (-not $WfaIntegration) {
     }
 }
 else {
-    $module = import-module "$PSScriptRoot\..\DataOntap" -PassThru
+    $module = Import-Module "$PSScriptRoot\..\DataOntap" -PassThru
 }
 
 $PSTKVersion = Get-NaToolkitVersion
@@ -1032,8 +1048,8 @@ if ( $Version ) {
     $ModulesVersion = $ModulesVersion.ToString()
     $ModuleVersion = (Get-Module -Name svmtool).Version
     if ($ModuleVersion -eq $null) {
-        $path = (get-variable -Name PSCommandPath).Value
-        $path = split-path $path
+        $path = (Get-Variable -Name PSCommandPath).Value
+        $path = Split-Path $path
         $module = Import-Module $path -PassThru
         if ($module -ne $null) {
             $ModuleVersion = (Get-Module -Name svmtool).Version
@@ -1127,10 +1143,10 @@ if ( $Backup ) {
             if ( $ANS -eq 'q' ) {
                 clean_and_exit 1 
             }
-            write-Output "#" | Out-File -FilePath $CONFFILE  
-            write-Output "SVMTOOL_DB=$SVMTOOL_DB\$Backup" | Out-File -FilePath $CONFFILE -Append 
-            write-output "INSTANCE_MODE=BACKUP_RESTORE" | Out-File -FilePath $CONFFILE -Append
-            write-output "BACKUP_CLUSTER=$Backup" | Out-File -FilePath $CONFFILE -Append  
+            Write-Output "#" | Out-File -FilePath $CONFFILE  
+            Write-Output "SVMTOOL_DB=$SVMTOOL_DB\$Backup" | Out-File -FilePath $CONFFILE -Append 
+            Write-Output "INSTANCE_MODE=BACKUP_RESTORE" | Out-File -FilePath $CONFFILE -Append
+            Write-Output "BACKUP_CLUSTER=$Backup" | Out-File -FilePath $CONFFILE -Append  
         }
     }
     elseif ($SVMTOOL_DB.Length -gt 0) {
@@ -1153,7 +1169,7 @@ if ( $Backup ) {
         clean_and_exit 1
     }
     if ($BACKUPALLSVM -eq $True) {
-        $AllSVM = Get-NcVserver -Query @{VserverType = "data"; VserverSubtype = "!sync_destination,!dp_destination"} -Controller $NcPrimaryCtrl -ErrorVariable ErrorVar 
+        $AllSVM = Get-NcVserver -Query @{VserverType = "data"; VserverSubtype = "!sync_destination,!dp_destination" } -Controller $NcPrimaryCtrl -ErrorVariable ErrorVar 
         if ( $? -ne $True ) {
             $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" 
         }
@@ -1204,15 +1220,15 @@ if ( $Backup ) {
                     $Path = [string]::Join(";", $Path)
                     [System.Environment]::SetEnvironmentVariable('PSModulePath', $Path)
                 }
-                $module = import-module svmtools -PassThru
+                $module = Import-Module svmtools -PassThru
                 if ( $module -eq $null ) {
                     Write-Error "ERROR: Failed to load module SVMTOOLS"
                     exit 1
                 }
                 $Global:STOP_TIMEOUT = 360
                 $Global:START_TIMEOUT = 360
-                $dir = split-path -Path $LOGFILE -Parent
-                $file = split-path -Path $LOGFILE -Leaf
+                $dir = Split-Path -Path $LOGFILE -Parent
+                $file = Split-Path -Path $LOGFILE -Leaf
                 $LOGFILE = ($dir + '\' + $myPrimaryVserver + '\' + $file)
 
                 # appenders (logfile, eventviewer & console)
@@ -1236,7 +1252,7 @@ if ( $Backup ) {
                 if (!($env:PSModulePath -match "NetApp PowerShell Toolkit")) {
                     $env:PSModulePath = $($env:PSModulePath + ";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
                 }
-                $module = import-module -Name DataONTAP -PassThru
+                $module = Import-Module -Name DataONTAP -PassThru
                 if ( $module -eq $null ) {
                     Write-LogError "ERROR: Failed to load module Netapp PSTK"
                     exit 1
@@ -1266,7 +1282,7 @@ if ( $Backup ) {
                     return $False
                 }
                 $AllQuotaRulesList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath + "Get-NcQuota.json") -Encoding ASCII -Width 65535
-                if ( ($ret = get-item $($Global:JsonPath + "Get-NcQuota.json") -ErrorAction SilentlyContinue) -ne $null ) {
+                if ( ($ret = Get-Item $($Global:JsonPath + "Get-NcQuota.json") -ErrorAction SilentlyContinue) -ne $null ) {
                     Write-LogDebug "$($Global:JsonPath+"Get-NcQuota.json") saved successfully"
                 }
                 else {
@@ -1284,7 +1300,7 @@ if ( $Backup ) {
                     return $False
                 }
                 $AllQuotaPolicyList | ConvertTo-Json -Depth 5 | Out-File -FilePath $($Global:JsonPath + "Get-NcQuotaPolicy.json") -Encoding ASCII -Width 65535
-                if ( ($ret = get-item $($Global:JsonPath + "Get-NcQuotaPolicy.json") -ErrorAction SilentlyContinue) -ne $null ) {
+                if ( ($ret = Get-Item $($Global:JsonPath + "Get-NcQuotaPolicy.json") -ErrorAction SilentlyContinue) -ne $null ) {
                     Write-LogDebug "$($Global:JsonPath+"Get-NcQuotaPolicy.json") saved successfully"
                 }
                 else {
@@ -1329,8 +1345,8 @@ if ( $Backup ) {
         $Jobs_Backup += $JobBackup
         $numJobBackup++
     }
-    While (($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $True} | Measure-Object).Count -ne $numJobBackup) {
-        $JobRemain = $Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $False}
+    While (($Jobs_Backup | Where-Object { $_.Handle.IsCompleted -eq $True } | Measure-Object).Count -ne $numJobBackup) {
+        $JobRemain = $Jobs_Backup | Where-Object { $_.Handle.IsCompleted -eq $False }
         $Remaining = ""
         $Remaining = $JobRemain.Name
         If ($Remaining.Length -gt 80) {
@@ -1347,7 +1363,7 @@ if ( $Backup ) {
             -PercentComplete (((($Jobs_Backup.Count) - $numberRemaining) / $Jobs_Backup.Count) * 100) `
             -Status "$($($($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining task(s) : $Remaining [$percentage% done]"
     }
-    ForEach ($JobBackup in $($Jobs_Backup | Where-Object {$_.Handle.IsCompleted -eq $True})) {
+    ForEach ($JobBackup in $($Jobs_Backup | Where-Object { $_.Handle.IsCompleted -eq $True })) {
         $jobname = $JobBackup.Name
         Write-log "$jobname finished" -color magenta
         $result_Backup = $JobBackup.Thread.EndInvoke($JobBackup.Handle)
@@ -1457,7 +1473,7 @@ if ( $Restore ) {
         else {
             $ans = $null
             if ($SelectBackupDate -eq $True) {
-                $listBackupAvailable = ($BackupAvailable | select-object Name).Name
+                $listBackupAvailable = ($BackupAvailable | Select-Object Name).Name
                 while ($ans -eq $null) {
                     Write-Host "Select a Backup Date for [$svm] : "
                     $i = 1
@@ -1518,7 +1534,7 @@ if ( $Restore ) {
                     $Path = [string]::Join(";", $Path)
                     [System.Environment]::SetEnvironmentVariable('PSModulePath', $Path)
                 }
-                $module = import-module svmtools -PassThru
+                $module = Import-Module svmtools -PassThru
                 if ( $module -eq $null ) {
                     Write-Error "ERROR: Failed to load module SVMTOOLS"
                     exit 1
@@ -1528,15 +1544,15 @@ if ( $Restore ) {
                 if (!($env:PSModulePath -match "NetApp PowerShell Toolkit")) {
                     $env:PSModulePath = $($env:PSModulePath + ";C:\Program Files (x86)\NetApp\NetApp PowerShell Toolkit\Modules")
                 }
-                $module = import-module -Name DataONTAP -PassThru
+                $module = Import-Module -Name DataONTAP -PassThru
                 if ( $module -eq $null ) {
                     Write-LogError "ERROR: Failed to load module Netapp PSTK"
                     exit 1
                 }
                 $Global:STOP_TIMEOUT = 360
                 $Global:START_TIMEOUT = 360
-                $dir = split-path -Path $LOGFILE -Parent
-                $file = split-path -Path $LOGFILE -Leaf
+                $dir = Split-Path -Path $LOGFILE -Parent
+                $file = Split-Path -Path $LOGFILE -Leaf
                 $LOGFILE = ($dir + '\' + $SourceVserver + '\' + $file)
 
                 # appenders (logfile, eventviewer & console)
@@ -1633,8 +1649,8 @@ if ( $Restore ) {
         $JobRestore.Handle = $Handle
         $JobRestore.Thread = $RestoreJob
         $JobRestore.Name = $svm
-        $dir = split-path -Path $LOGFILE -Parent
-        $file = split-path -Path $LOGFILE -Leaf
+        $dir = Split-Path -Path $LOGFILE -Parent
+        $file = Split-Path -Path $LOGFILE -Leaf
         $LOGJOB = ($dir + '\' + $svm + '\' + $file)
         $JobRestore.Log = $LOGJOB
         if ($JobRestore.Thread.InvocationStateInfo.State -eq "Failed") {
@@ -1650,8 +1666,8 @@ if ( $Restore ) {
         $Jobs_Restore += $JobRestore
         $numJobRestore++
     }
-    While (@($Jobs_Restore | Where-Object {$_.Handle.IsCompleted -eq $True} | Measure-Object).Count -ne $numJobRestore) {
-        $JobRemain = $Jobs_Restore | Where-Object {$_.Handle.IsCompleted -eq $False}
+    While (@($Jobs_Restore | Where-Object { $_.Handle.IsCompleted -eq $True } | Measure-Object).Count -ne $numJobRestore) {
+        $JobRemain = $Jobs_Restore | Where-Object { $_.Handle.IsCompleted -eq $False }
         $Remaining = ""
         $Remaining = $JobRemain.Name
         If ($Remaining.Length -gt 80) {
@@ -1668,7 +1684,7 @@ if ( $Restore ) {
             -PercentComplete (((($Jobs_Restore.Count) - $numberRemaining) / $Jobs_Restore.Count) * 100) `
             -Status "$($($($Jobs_Restore | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining : $Remaining [$percentage% done]"
     }
-    ForEach ($JobRestore in $($Jobs_Restore | Where-Object {$_.Handle.IsCompleted -eq $True})) {
+    ForEach ($JobRestore in $($Jobs_Restore | Where-Object { $_.Handle.IsCompleted -eq $True })) {
         $jobname = $JobRestore.Name
         Write-logDebug "$jobname finished"
         $result_Restore = $JobRestore.Thread.EndInvoke($JobRestore.Handle)
@@ -1872,7 +1888,7 @@ if ( $ConfigureDR ) {
             $Global:XDPPolicy = "MirrorAllSnapshots"
         }
     }
-    if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
+    if ( $MirrorSchedule -ne "" -and $MirrorSchedule -ne "none") {
         $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
             Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
@@ -1881,7 +1897,7 @@ if ( $ConfigureDR ) {
         }
     } 
     # default to hourly
-    if ($MirrorSchedule -eq ""){
+    if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }
 
@@ -1900,7 +1916,7 @@ if ( $ConfigureDR ) {
         clean_and_exit 1
     }
 
-    if ( ( $ret = create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.isPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
+    if ( ( $ret = create_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.isPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -myDataAggr $DataAggr -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -SecondaryCifsLifCustomVlan $SecondaryCifsLifCustomVlan -ActiveDirectoryCustomOU $ActiveDirectoryCustomOU)[-1] -ne $True ) {
         clean_and_exit 1
 
     }
@@ -2086,13 +2102,13 @@ if ($Migrate) {
                     Write-LogDebug "Enable-NcNfs -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
                     $out = Enable-NcNfs -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar -Confirm:$False
                     if ( $? -ne $True ) {
-                        Write-warning "ERROR: Failed to enable NFS on Vserver [$VserverDR] [ErrorVar]"
+                        Write-Warning "ERROR: Failed to enable NFS on Vserver [$VserverDR] [ErrorVar]"
                         Write-LogError "ERROR: Failed to enable NFS on Vserver [$VserverDR]" 
                     }
                     Write-LogDebug "Disable-NcNfs -VserverContext $VserverDR -Controller $NcPrimaryCtrl"
                     $out = Disable-NcNfs -VserverContext $Vserver -Controller $NcPrimaryCtrl  -ErrorVariable ErrorVar -Confirm:$False
                     if ( $? -ne $True ) {
-                        Write-warning "ERROR: Failed to disable NFS on Vserver [$VserverDR] [ErrorVar]"
+                        Write-Warning "ERROR: Failed to disable NFS on Vserver [$VserverDR] [ErrorVar]"
                         Write-LogError "ERROR: Failed to disable NFS on Vserver [$VserverDR]" 
                     }
                 }
@@ -2113,7 +2129,7 @@ if ($Migrate) {
                     Write-LogDebug "Enable-NcIscsi -VserverContext $VserverDR -Controller $NcSecondaryCtrl"
                     $out = Enable-NcIscsi -VserverContext $VserverDR -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar -Confirm:$False
                     if ( $? -ne $True ) {
-                        Write-warning "ERROR: Failed to enable iSCSI on Vserver [$VserverDR] [ErrorVar]"
+                        Write-Warning "ERROR: Failed to enable iSCSI on Vserver [$VserverDR] [ErrorVar]"
                         Write-LogError "ERROR: Failed to enable iSCSI on Vserver [$VserverDR] [ErrorVar]" 
                     }
                 }
@@ -2289,7 +2305,7 @@ if ( $UpdateDR ) {
             $Global:XDPPolicy = "MirrorAllSnapshots"
         }
     }
-    if ( $MirrorSchedule -ne "" -and  $MirrorSchedule -ne "none") {
+    if ( $MirrorSchedule -ne "" -and $MirrorSchedule -ne "none") {
         $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
             Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]. Will use no schedule"
@@ -2298,7 +2314,7 @@ if ( $UpdateDR ) {
         }
     } 
     # default to hourly
-    if ($MirrorSchedule -eq ""){
+    if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }    
 
@@ -2365,7 +2381,7 @@ if ( $CloneDR ) {
         clean_and_exit 1
     }
     $CloneVserverDR = $($VserverDR + "_clone")
-    $ListCloneVserver = Get-NcVserver -Query @{VserverName = $($CloneVserverDR + "*")} -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+    $ListCloneVserver = Get-NcVserver -Query @{VserverName = $($CloneVserverDR + "*") } -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
     if ( $? -ne $True ) {
         $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" 
     }
@@ -2378,7 +2394,7 @@ if ( $CloneDR ) {
         $CloneVserverDR += $("." + $newNumber)	
     }
     Write-Log "Create Clone SVM [$CloneVserverDR]"
-    if ( ( $ret = create_clonevserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $CloneVserverDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster)[-1] -ne $True ) {
+    if ( ( $ret = create_clonevserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $CloneVserverDR -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -RootAggr $RootAggr -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -SecondaryCifsLifCustomVlan $SecondarCifsLifCustomVlan -ActiveDirectoryCustomOU $ActiveDirectoryCustomOU)[-1] -ne $True ) {
         Write-LogDebug "ERROR: create_clonevserver_dr failed"
         clean_and_exit 1
     }
@@ -2786,16 +2802,16 @@ if ( $MirrorSchedule ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
-	}
+    }
 	
-	if($MirrorSchedule -ne "none"){
-		$ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
-		if ( $? -ne $True -or $ret.count -eq 0 ) {
-			Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
-			Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
-			clean_and_exit 1
-		}
-	}
+    if ($MirrorSchedule -ne "none") {
+        $ret = Get-NcJobCronSchedule -Name $MirrorSchedule -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
+            Write-Warning "MirrorSchedule [$MirrorSchedule] does not exist on [$SECONDARY_CLUSTER]."
+            clean_and_exit 1
+        }
+    }
 
     if ( ( $ret = set_snapmirror_schedule_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -mySchedule $MirrorSchedule ) -ne $True ) {
         Write-LogError "ERROR: set_snapmirror_schedule_dr error"
@@ -2821,16 +2837,16 @@ if ( $MirrorScheduleReverse ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $PRIMARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$PRIMARY_CLUSTER]" 
         clean_and_exit 1
-	}
+    }
 	
-	if($MirrorScheduleReverse -ne "none"){
-		$ret = Get-NcJobCronSchedule -Name $MirrorScheduleReverse -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
-		if ( $? -ne $True -or $ret.count -eq 0 ) {
-			Write-LogDebug "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
-			Write-Warning "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
-			clean_and_exit 1
-		}
-	}
+    if ($MirrorScheduleReverse -ne "none") {
+        $ret = Get-NcJobCronSchedule -Name $MirrorScheduleReverse -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
+            Write-Warning "MirrorSchedule [$MirrorScheduleReverse] does not exist on [$SECONDARY_CLUSTER]."
+            clean_and_exit 1
+        }
+    }
 
     if ( ( $ret = set_snapmirror_schedule_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -mySchedule $MirrorScheduleReverse ) -ne $True ) {
         Write-LogError "ERROR: set_snapmirror_schedule_dr error"

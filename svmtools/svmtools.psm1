@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release  : April 5th, 2019
+    Release  : April 9th, 2019
 
 #>
 
@@ -8498,8 +8498,11 @@ Function create_update_CIFS_server_dr (
     [bool]$Restore,
     [string]$TemporarySecondaryCifsIp,
     [string]$SecondaryCifsLifMaster,
+    [string]$SecondaryCifsLifCustomVlan,
+    [string]$ActiveDirectoryCustomOU,    
     [switch] $ForClone
-    ) {
+    ) 
+    {
 Try {
 	$Return=$True
     Write-Log "[$workOn] Check SVM CIFS Sever configuration"
@@ -8578,6 +8581,10 @@ Try {
             $SecondaryDomain = $PrimaryCifsServerInfos.Domain
             $SecondaryDomainWorkgroup = $PrimaryCifsServerInfos.DomainWorkgroup
             $SecondaryOrganizationalUnit = $PrimaryCifsServerInfos.OrganizationalUnit
+            if ($ActiveDirectoryCustomOU) {
+                Write-Log "[$workOn] A custom OU has been provided, using this one instead [$ActiveDirectoryCustomOU]" 
+                $SecondaryOrganizationalUnit = $ActiveDirectoryCustomOU
+            }            
             $ADCred = get_local_cred ($SecondaryDomain)
 
             if($ForClone -eq $True){
@@ -8622,11 +8629,19 @@ Try {
                         $InterfaceMasterNetMask=$InterfaceMaster.Netmask
                     }
 			        $InterfaceMasterCurrentNode=$InterfaceMaster.CurrentNode
-			        $InterfaceMasterCurrentPort=$InterfaceMaster.CurrentPort
+                    $InterfaceMasterCurrentPort=$InterfaceMaster.CurrentPort
+                    if ($SecondaryCifsLifCustomVlan) {
+                        Write-Log "[$workOn] a custom vlan has been provided for the temp cifs lif [$SecondaryCifsLifCustomVlan]"
+                        $SecondaryCifsLifCustomVlanPort = Get-NcNetPortVlan -VlanId $SecondaryCifsLifCustomVlan -Node $InterfaceMasterCurrentNode -Controller $mySecondaryController
+                        if ( $? -ne $True ) {
+                            $Return = $False ; throw "ERROR: Get-NcNetPortVlan failed [$ErrorVar]" 
+                        }
+                        Write-Log ("[$workOn] Custom vlan found [{0}], using this port instead of the temp cifs lif" -f $SecondaryCifsLifCustomVlanPort.InterfaceName)
+                        $InterfaceMasterCurrentPort = $SecondaryCifsLifCustomVlanPort.InterfaceName
+                    }                    
 			        $InterfaceMasterDataProtocols=$InterfaceMaster.DataProtocols
 			        $InterfaceMasterDnsDomainName=$InterfaceMaster.DnsDomainName
 			        $InterfaceMasterRole=$InterfaceMaster.Role
-			        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcNetPort failed [$ErrorVar]" }
 			        $InterfaceMasterFirewallPolicy=$InterfaceMaster.FirewallPolicy
 			        $InterfaceMasterIsAutoRevert=$InterfaceMaster.IsAutoRevert
 
@@ -9982,6 +9997,8 @@ Function create_clonevserver_dr (
     [string] $nodeMatchRegEx,
     [string]$TemporarySecondaryCifsIp,
     [string]$SecondaryCifsLifMaster,
+    [string]$SecondaryCifsLifCustomVlan,
+    [string]$ActiveDirectoryCustomOU,    
     [string]$RootAggr
     ){
 Try {
@@ -10059,7 +10076,7 @@ Try {
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
-    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -ForClone) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
+    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -SecondaryCifsLifCustomVlan $SecondaryCifsLifCustomVlan -ActiveDirectoryCustomOU $ActiveDirectoryCustomOU  -ForClone) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $? -ne $True ) {
         Write-LogWarn "Some CIFS options has not been set on [$workOn]"    
@@ -10113,6 +10130,8 @@ Function create_vserver_dr (
     [string] $myDataAggr,
     [string]$TemporarySecondaryCifsIp,
     [string]$SecondaryCifsLifMaster,
+    [string]$SecondaryCifsLifCustomVlan,
+    [string]$ActiveDirectoryCustomOU,    
     [string]$RootAggr
     ){
 Try {
@@ -10260,7 +10279,7 @@ Try {
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
     if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
-    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster) -ne $True ) {Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
+    if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -SecondaryCifsLifCustomVlan $SecondaryCifsLifCustomVlan -ActiveDirectoryCustomOU $ActiveDirectoryCustomOU) -ne $True ) {Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $? -ne $True ) {
         Write-LogWarn "[$workOn] Some CIFS options has not been set on"    
