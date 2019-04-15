@@ -1235,7 +1235,7 @@ Function select_nodePort_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContro
     $bestMatch = -3  # using this to find the best match, some are better than others 0=best
     $defaultReason = ""
     Write-Log "$myQuestion"
-	foreach ( $NodePort in ( $NodePortList | Skip-Null ) ) {
+	foreach ( $NodePort in ( $NodePortList | Skip-Null | Sort-Object -Property LinkStatus -Descending ) ) {
 		$i++ 
 		$tmpStr=$NodePort.Name
 		$Link=$NodePort.LinkStatus
@@ -1370,7 +1370,7 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
 		}
         Write-Log $myQuestion
 		$i = 0 
-		foreach ( $Aggr in ( $AggrList | Skip-Null | sort -Property Available -Descending ) ) {
+		foreach ( $Aggr in ( $AggrList | Skip-Null | Sort-Object -Property Available -Descending ) ) {
 			if ( $Aggr.AggrRaidAttributes.HasLocalRoot -eq $False ) {
 				$i++ 
 				$tmpStr=$Aggr.Name
@@ -1390,8 +1390,13 @@ Function select_data_aggr_from_cli ([NetApp.Ontapi.Filer.C.NcController]$myContr
                 }
 				$Nodes=$Aggr.Nodes
 				$Size= [math]::round($Aggr.Available/1GB)
-				$AggrSelectedList += $tmpStr
-				Write-Log "`t[$i] : [$tmpStr]`t[$Nodes]`t[$Size GB]" -firstValueIsSpecial
+                $AggrSelectedList += $tmpStr
+                $aggrDisplay=[string]::Format("{0,5} : {1,-15} {2,-20} {3,-10}",`
+                $("["+$i+"]"),`
+                $("["+$tmpStr+"]"),`
+                $("["+$Nodes+"]"),`
+                $("["+$Size+" GB]"))
+                Format-ColorBrackets $aggrDisplay -FirstIsSpecial
 			}
 		}
 		if ( $i -eq 0 ) {
@@ -4997,6 +5002,7 @@ Try {
         $DestVolName=$DestVol.Name
         $DestVolSize=$DestVol.VolumeSpaceAttributes.Size
         $DestVolJunctionPath=$DestVol.VolumeIdAttributes.JunctionPath
+        $DestVolComment=$DestVol.VolumeIdAttributes.Comment
         if( $Global:SelectVolume -eq $True )
         {
             $volsizeGB=[math]::round($DestVolSize/1024/1024,2)
@@ -5011,14 +5017,18 @@ Try {
             } 
         }
         Write-Log "[$workOn] Create Flexclone [$DestVolName] from SVM [$DestinationVserverDR]"
-        $ForceCreateNewSnap=$False
         Write-LogDebug "Get-NcSnapshot -Controller $mySecondaryController -Query @{Vserver=$DestinationVserverDR;Volume=$DestVolName;Dependency=`"`!snapmirror`"}"
         $SnapshotList=Get-NcSnapshot -Controller $mySecondaryController -Query @{Vserver=$DestinationVserverDR;Volume=$DestVolName} -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapshot failed [$ErrorVar]" }
         $ParentSnapshot=$SnapshotList[-1]
         $ParentSnapshotName=$ParentSnapshot.Name
         $JunctionPath=$("/"+$DestVolName)
-        Write-LogDebug "New-NcVolClone -CloneVolume $DestVolName -ParentVolume $DestVolName -VolumeType rw -Vserver $mySecondaryVserver -ParentVserver $DestinationVserverDR -VserverContext $DestinationVserverDR -ParentSnapshot $ParentSnapshotName -Controller $mySecondaryController"
+        if($DestVolComment.Length -ge 1){
+            $CloneVolComment=$($DestVolComment+" flexclone svmtool")
+        }else{
+            $CloneVolComment="flexclone svmtool"
+        }
+        Write-LogDebug "New-NcVolClone -CloneVolume $DestVolName -ParentVolume $DestVolName -VolumeType rw -Vserver $mySecondaryVserver -ParentVserver $DestinationVserverDR -VserverContext $DestinationVserverDR -ParentSnapshot $ParentSnapshotName -Comment $CloneVolComment -Controller $mySecondaryController"
         $FlexVol = New-NcVolClone -CloneVolume $DestVolName `
         -ParentVolume $DestVolName `
         -VolumeType "rw" `
@@ -5028,7 +5038,10 @@ Try {
         -ParentSnapshot $ParentSnapshotName `
         -Controller $mySecondaryController `
         -ErrorVariable ErrorVar 
-        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVolClone Failed to create flexclone $DestVolName [$ErrorVar]" }             
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVolClone Failed to create flexclone $DestVolName [$ErrorVar]" } 
+        Write-LogDebug "Update-NcVol -Query {@VolumeIdAttributes=@{Name=$DestVolName}} -Attributes @{VolumeIdAttributes=@{Comment=$CloneVolComment}} -VserverContext $mySecondaryVserver -controller $mySecondaryController"
+        $ret=Update-NcVol -Query @{VolumeIdAttributes=@{Name=$DestVolName}} -Attributes @{VolumeIdAttributes=@{Comment=$CloneVolComment}} -VserverContext $mySecondaryVserver -controller $mySecondaryController -ErrorVariable ErrorVar
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Update-NcVol Failed to update Comment on $DestVolName [$ErrorVar]" }           
     }
     Write-LogDebug "create_clone_volume_voldr[$workOn]: end"
     return $Return  
@@ -5167,6 +5180,7 @@ Try {
             $PrimaryVolJunctionPath=$PrimaryVol.VolumeIdAttributes.JunctionPath
             $PrimaryVolIsInfiniteVolume=$PrimaryVol.IsInfiniteVolume
             $PrimaryVolIsVserverRoot=$PrimaryVol.VolumeStateAttributes.IsVserverRoot
+            $PrimaryVolComment=$PrimaryVol.Comment
             if ( ( $PrimaryVolState -eq "online" ) -and ($PrimaryVolType -eq "rw" ) -and ($PrimaryVolIsVserverRoot -eq $False ) -and ( $PrimaryVolIsInfiniteVolume -eq $False ) ) {
                 if($Restore -eq $False -and $Backup -eq $False){
                     if( $Global:SelectVolume -eq $True -and $Global:NonInteractive -eq $False )
@@ -5281,12 +5295,17 @@ Try {
                     }elseif($Available -lt $PrimaryVolSize){
                         Write-Warning "Monitor space available on Aggr [$myDataAggr] [$mySecondaryController]. Thin volume [$PrimaryVolName] is larger than available space"    
                     }
+                    if($PrimaryVolComment.Length -ge 1){
+                        $SecondaryVolComment=$PrimaryVolComment
+                    }else{
+                        $SecondaryVolComment=""    
+                    }
                     if($Restore -eq $False){
                         $Encrypt=$Global:AllowEncryption
                         if($Encrypt -eq "True"){$Encrypt=$True}else{$Encrypt=$False}	
                         Write-Log "[$workOn] Create new volume DR: [$PrimaryVolName]"
-                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                        Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                        $SecondaryVol = New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -Encrypt:$Encrypt -SpaceReserve $SpaceReserve -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                     }else{
                         #Run a restore, so get some options directly from JSON backup file
@@ -5302,13 +5321,13 @@ Try {
                         }
                         if($Global:VOLUME_TYPE -eq "RW"){
                             Write-LogDebug "Create RW volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type RW -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }else{
                             Write-LogDebug "Create DP volume"
-                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
-                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
+                            Write-LogDebug "create_volume_voldr: New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP  -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize $option"
+                            $SecondaryVol = New-NcVol -Name $PrimaryVolName -Comment $SecondaryVolComment -Aggregate $myDataAggr -JunctionPath $null -ExportPolicy $PrimaryVolExportPolicy -SecurityStyle $PrimaryVolStyle -SpaceReserve $SpaceReserve -Encrypt:$Encrypt -SnapshotReserve $PrimaryVolSnapshotReserve -Type DP -Language $PrimaryVolLang -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Size $PrimaryVolSize @option -ErrorVariable ErrorVar 
                             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }    
                         }
                     }
@@ -5361,7 +5380,7 @@ Try {
                                     Write-Log "[$workOn] Run Encryption Conversion for volume [$PrimaryVolName]"
                                     Write-LogDebug "Start-NcVolumeEncryptionConversion -Volume $PrimaryVolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                     $ret=Start-NcVolumeEncryptionConversion -Volume $PrimaryVolName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$false -ErrorVariable ErrorVar
-                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcVol Failed: Failed to create new volume $PrimaryVolName [$ErrorVar]" }
+                                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Start-NcVolumeEncryptionConversion Failed [$PrimaryVolName] [$ErrorVar]" }
                                 }
                             }
                         }
@@ -5872,8 +5891,8 @@ Try {
                             } else {
                                 $retry = $True
                             }
-                            Write-Log "[$workOn] Snapmirror [$SourceLocation] [$DestinationLocation] in state [$RelationshipStatus] [$MirrorState] retry"						
-                            Write-LogDebug "Wait [$count] and retry [$retry]"
+                            Write-Log "[$workOn] Snapmirror [$SourceLocation] [$DestinationLocation] in state [$RelationshipStatus] [$MirrorState] retrying"						
+                            Write-LogDebug "Wait [$count] and retrying [$retry]"
                             Start-Sleep $count
                         } else {
                             $retry = $False
@@ -6005,25 +6024,34 @@ Function get_vserver_peer_list(
 	[NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
-	[string] $mySecondaryVserver) {
+    [string] $mySecondaryVserver,
+    [string] $peerState) {
 Try {
 	Write-LogDebug "get_vserver_peer_list: start"
 
 	$ReturnVserverPeerList = @() 
 	
 	$myPrimaryCluster = (Get-NcCluster -Controller $myPrimaryController  -ErrorVariable ErrorVar).ClusterName			
-	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" } 
-	$mySecondaryCluster = (Get-NcCluster -Controller $mySecondaryController  -ErrorVariable ErrorVar).ClusterName			
-	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" } 
+    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" } 
+    if($mySecondaryController){
+        $mySecondaryCluster = (Get-NcCluster -Controller $mySecondaryController  -ErrorVariable ErrorVar).ClusterName			
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" } 
+    }
 	$CheckVserver = (Get-NcVserver -Vserver $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar).Vserver
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" } 
 	if ( ( $CheckVserver -eq $null ) -or ( $CheckVserver -eq "" ) ) { 
 		return $null
 	}
-	$Query=Get-NcVserverPeer -Template -Controller $myPrimaryController
-	$Query.PeerCluster = $mySecondaryCluster
-	$Query.Vserver=$myPrimaryVserver
-	$Query.PeerState='peered'
+    $Query=Get-NcVserverPeer -Template -Controller $myPrimaryController
+    if($mySecondaryController){
+        $Query.PeerCluster = $mySecondaryCluster
+    }
+    $Query.Vserver=$myPrimaryVserver
+    if($peerState.Length -ge 1){
+        $Query.PeerState=$peerState   
+    }else{
+        $Query.PeerState="peered"
+    }
 
 	if ( $mySecondaryVserver ) {
 		$Query.PeerVserver=$mySecondaryVserver
@@ -6035,8 +6063,11 @@ Try {
 	foreach ( $VserverPeer in ( $VserverPeerList | Skip-Null ) ) {
 		$ReturnVserverPeerList += $VserverPeer.PeerVserver 
 	}
-
-	return $ReturnVserverPeerList 
+    if($mySecondaryController){
+        return $ReturnVserverPeerList 
+    }else{
+        return $VserverPeerList
+    }
 }
 Catch {
     handle_error $_ $myPrimaryVserver
@@ -6315,6 +6346,56 @@ Catch {
 	return $Return
 }
 }
+
+#############################################################################################
+Function wait_snapmirror_dr_status{
+    Param(
+        [Parameter(Mandatory=$false)][string] $SourceCluster,
+        [Parameter(Mandatory=$false)][string] $SourceVserver,
+        [Parameter(Mandatory=$true)][string] $DestinationVserver,
+        [Parameter(Mandatory=$true)][string] $PrimaryVolumeName,
+        [Parameter(Mandatory=$true)][string] $Status,
+        [Parameter(Mandatory=$true)][string] $Mirrorstate
+        ) 
+
+    Try {
+        $Return = $True 
+        Write-LogDebug "wait_snapmirror_dr_status[$DestinationVserver]: start"
+        Write-LogDebug "[$DestinationVserver] Waiting for SnapMirror relationships to get status [$status]"
+        $isTimeOut = $false
+        $StartTime=Get-date
+        $GoodStatus = $false
+        while ( ( $GoodStatus -eq $false ) -and ( $isTimeOut -eq $false ) ){
+            Start-Sleep 2
+            if($SourceCluster -and $SourceVserver){
+                $relation=Get-NcSnapmirror -DestinationVserver $DestinationVserver -DestinationVolume $PrimaryVolumeName -SourceVserver $SourceVserver -SourceVolume $PrimaryVolumeName -VserverContext $DestinationVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+            }else{
+                $relation=Get-NcSnapmirror -DestinationVserver $DestinationVserver -DestinationVolume $PrimaryVolumeName -VserverContext $DestinationVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+            }
+            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirror failed [$ErrorVar]" }
+            foreach($rel in $relation){
+                $relationStatus=$rel.Status
+                $relationMirrorstate=$rel.MirrorState
+                if( ( $relationStatus -eq $Status ) -and ( $relationMirrorState -eq $Mirrorstate) ){
+                    $GoodStatus = $true
+                }
+                $CurrentTime=Get-date
+                $TimeoutTime = ($CurrentTime - $StartTime).TotalSeconds
+                if ( $TimeOutTime -gt $Global:STOP_TIMEOUT ) {
+                    $isTimeOut = $true
+                    Write-LogWarn "WARNING: Timeout waiting Snapmirror status [$Status] on destination relationship [$($DestinationVserver+":"+$PrimaryVolumeName)]"
+                    $Return = $false
+                }
+            }	
+        }
+        Write-LogDebug "wait_snapmirror_dr_status[$DestinationVserver]: end"
+    	return $Return 
+    }catch{
+        handle_error $_ $mySecondaryVserver
+    	return $Return
+    }
+}
+
 #############################################################################################
 Function wait_snapmirror_dr(
 	[NetApp.Ontapi.Filer.C.NcController] $myPrimaryController,
@@ -6327,7 +6408,7 @@ Function wait_snapmirror_dr(
 
     	$Return = $True 
         Write-Log "[$mySecondaryVserver] Waiting for SnapMirror relationships to finish"
-        Write-LogDebug "wait_snapmirror_dr[$myPrimaryVserver]: start"
+        Write-LogDebug "wait_snapmirror_dr[$mySecondaryVserver]: start"
 
     	$myPrimaryCluster = (Get-NcCluster -Controller $myPrimaryController  -ErrorVariable ErrorVar).ClusterName			
     	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCluster failed [$ErrorVar]" }
@@ -6337,7 +6418,7 @@ Function wait_snapmirror_dr(
     	Write-Log "[$mySecondaryVserver] Please wait until all snapmirror transfers terminate"
 
     	$loop = $True ; $count = 0 
-
+        $noSleep=$false
     	while ( $loop -eq $True ) 
         {
     		$count++
@@ -6345,7 +6426,7 @@ Function wait_snapmirror_dr(
     		Write-LogDebug "Get-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
             $relationList = Get-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirror failed [$ErrorVar]" }
-            if($relationList -eq $null){
+            if( $null -eq $relationList ){
                 Write-LogDebug "No SnapMirror relationship"
                 return $True
             }
@@ -6363,14 +6444,17 @@ Function wait_snapmirror_dr(
     				$loop = $True
     			} 
                 elseif ( ( $MirrorState -eq "snapmirrored" ) -and ( $RelationshipStatus -in $("idle","insync") ) ) 
-                {} 
+                {
+                    $loop = $false
+                    $noSleep=$True
+                } 
                 else 
                 {
     				Write-LogError "ERROR: Relation [$SourceLocation] [$DestinationLocation] is [$MirrorState] [$RelationshipStatus] " 
     				$Return = $False
     			}
-    		}
-    		sleep $count
+            }
+            if($noSleep -eq $false){sleep $count}
     	}
 
     	Write-Log "[$mySecondaryVserver] All Snapmirror transfers terminated"
@@ -6547,8 +6631,18 @@ Try {
                         $SourceLocation=$relationDR.SourceLocation
                         $DestinationLocation=$relationDR.DestinationLocation
                         $RelationshipStatus=$relationDR.RelationshipStatus
+                        $SourceVerver=$relation.SourceVserver
+                        $DestinationVserver=$relation.DestinationVserver
                         if ( ( $MirrorState -eq 'snapmirrored' ) -and ( $RelationshipStatus -in $("idle","insync") ) ) 
                         {
+                            Write-LogDebug "Invoke-NcSnapmirrorQuiesce -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController"
+                            $ret=Invoke-NcSnapmirrorQuiesce -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
+                            if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                            $ret=wait_snapmirror_dr_status -SourceCluster $myPrimaryCluster -SourceVserver $SourceVerver -DestinationVserver $DestinationVserver -PrimaryVolumeName $SourceVolume -Status "quiesced" -MirrorState "snapmirrored"
+                            if($ret -eq $false){
+                                $Return=$False
+                                Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                            }
                             Write-Log "[$workOn] Break relation [$SourceLocation] ---> [$DestinationLocation]"
                             Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
                             $out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -6572,6 +6666,14 @@ Try {
                                 $ANS=Read-HostOptions -question "Do you want to break this relation ?" -options "y/n" -default "y"
                                 if ( $ANS -eq 'y' ) 
                                 {
+                                    Write-LogDebug "Invoke-NcSnapmirrorQuiesce -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController"
+                                    $ret=Invoke-NcSnapmirrorQuiesce -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
+                                    if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                                    $ret=wait_snapmirror_dr_status -SourceCluster $myPrimaryCluster -SourceVserver $SourceVerver -DestinationVserver $DestinationVserver -PrimaryVolumeName $SourceVolume -Status "quiesced" -MirrorState "snapmirrored"
+                                    if($ret -eq $false){
+                                        $Return=$False
+                                        Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                                    }
                                     Write-Log "[$workOn] Break relation [$SourceLocation] ---> [$DestinationLocation]"
                                     Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController -Confirm:$False"
                                     $out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
@@ -6646,33 +6748,50 @@ Try {
 					$Return = $True 
 				}
 			}elseif ( ( $relation.MirrorState -eq "snapmirrored" ) -and ( $relation.RelationshipStatus -in $("idle","insync") )  ) {
-                # add code here to eventualy modify XDPpolicy ...if new XDPpolicy provided
-                if( ( $Global:XDPPolicy -ne "" ) -and ( $Global:XDPPolicy -ne $relation.Policy ) ){
+                # need to change Snapmirror Policy
+                if( ( $Global:XDPPolicy -notin $("Sync","StrictSync") ) -and ( $relation.Policy -notin $("Sync","StrictSync") ) ){
                     Write-Log "[$workOn] Relation [${myPrimaryController}:${myPrimaryVserver}:${PrimaryVol}] ---> [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] with Policy [$($relation.Policy)] will be modified to Policy [$($Global:XDPPolicy)]"
                     if( ( $Global:XDPPolicy -ne "Sync" ) -and ( $Global:XDPPolicy -ne "StrictSync" ) ){
-                        # here we will modify snapmirror poolicy
+                        # add code here to convert any async policy to any other async policy
+                        Write-LogDebug "Switch an Async Policy to another Async Policy"
                         Write-LogDebug "Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $($Global:XDPPolicy)"
                         $ret=Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $Global:XDPPolicy -ErrorVariable ErrorVar
                         if($? -ne $True){
                             Write-LogWarn "Failed to change SnapMirror Policy for relationship to [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"
                         }
                     }else{
-                        # add code here to convert snapmirror async to sync : quiesce, break, delete, create, resync
+                        # add code here to convert snapmirror async to sync
+                        Write-LogDebug "Switch from any Policy to another"
+                        if($relation.Policy -notin $("Sync","StrictSync")){
+                            Write-LogDebug "From Async to Sync"
+                            $ConvertType="Async2Sync"
+                        }elseif($relation.Policy -in ("Sync","StrictSync") -and $Global:XDPPolicy -in ("Sync","StrictSync")){
+                            Write-LogDebug "From Sync to Sync"
+                            $ConvertType="Sync2Sync"
+                        }else{
+                            Write-LogDebug "From Sync to Async"
+                            $ConvertType="Sync2Async"
+                        }
                         Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                         -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                         $ret=Invoke-NcSnapmirrorQuiesce -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                         -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
                         if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
-                        Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
-                        -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
-                        $ret=Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
-                        -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
-                        if($? -ne $True){$Return=$False; Throw "ERROR : Failed to break destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                        $ret=wait_snapmirror_dr_status -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $SourceVolume -Status "quiesced" -MirrorState "snapmirrored"
+                        if($ret -eq $false){
+                            $Return=$False
+                            Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                        }
                         Write-LogDebug "Remove-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                         -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                         $ret=Remove-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                         -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
                         if($? -ne $True){$Return=$False; Throw "ERROR : Failed to delete destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                        Write-LogDebug "Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Controller $myPrimaryController -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                        -DestinationCluster $mySecondaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol"
+                        $ret=Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Controller $myPrimaryController -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                        -DestinationCluster $mySecondaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -ErrorVariable ErrorVar -Confirm:$False
+                        if($? -ne $True){$Return=$False; Throw "ERROR : Failed to release destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
                         Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName `
                         -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController"
                         $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName `
@@ -6730,8 +6849,14 @@ Try {
 				if ( $? -ne $True ) {
 					Write-LogError "ERROR: Unable to Quiesce relation [$SourceLocation] ---> [$DestinationLocation]" 
 					$Return = $True 
-				}
-				Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
+                }
+                Write-LogDebug "wait_snapmirror_dr_status -sourceCluster $myPrimaryCluster -destinationCluster $mySecondaryCluster -sourceVserver $myPrimaryVserver -destinationVserver $mySecondaryVserver -PrimaryVolumeName $SourceVolume -Status quiesced -MirrorState snapmirrored"
+                $ret=wait_snapmirror_dr_status -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $SourceVolume -Status "quiesced" -MirrorState "snapmirrored"
+                if($ret -eq $false){
+                    $Return=$False
+                    Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                }
+                Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
 				$out= Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
 				if ( $? -ne $True ) {
 					Write-LogError "ERROR: Unable to Break relation [$SourceLocation] ---> [$DestinationLocation]" 
@@ -9398,6 +9523,7 @@ Function create_update_ISCSI_dr(
 	[NetApp.Ontapi.Filer.C.NcController] $mySecondaryController,
 	[string] $myPrimaryVserver,
     [string] $mySecondaryVserver,
+    [switch]$ForClone,
     [string]$workOn=$mySecondaryVserver,
     [bool]$Backup,
     [bool]$Restore) {
@@ -9439,13 +9565,18 @@ Try {
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcIscsiService failed [$ErrorVar]" }
         if ( $SecondaryIscsiService -eq $null ) {
             Write-Log "[$workOn] Add ISCSI services in vserver [$mySecondaryVserver]"
+            Write-LogDebug "Add-NcIscsiService -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
             $out = Add-NcIscsiService -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Add-NcIscsiService failed [$ErrorVar]" }
-            $out = Disable-NcIscsi -VserverContext  $mySecondaryVserver -Controller  $mySecondaryController  -ErrorVariable ErrorVar
-            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcIscsi failed [$ErrorVar]" }
-            $out = Set-NcIscsiNodeName -Name $PrimaryIscsiService.NodeName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcIscsiNodeName failed [$ErrorVar]" }
-        } else {
+            if($ForClone -eq $False){
+                Write-LogDebug "Disable-NcIscsi -VserverContext  $mySecondaryVserver -Controller  $mySecondaryController "
+                $out = Disable-NcIscsi -VserverContext  $mySecondaryVserver -Controller  $mySecondaryController  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcIscsi failed [$ErrorVar]" }
+                Write-LogDebug "Set-NcIscsiNodeName -Name $PrimaryIscsiService.NodeName -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                $out = Set-NcIscsiNodeName -Name $PrimaryIscsiService.NodeName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcIscsiNodeName failed [$ErrorVar]" }
+            }
+        } elseif($ForClone -eq $False) {
             if ( ( compare_ISCSI_service -RefIscsiService $PrimaryIscsiService -IscsiService $SecondaryIscsiService ) -eq $True ) {
                 Write-Log "[$workOn] Set ISCSI Services Attributes on [$mySecondaryVserver]"
                 $out = Disable-NcIscsi -VserverContext  $mySecondaryVserver -Controller  $mySecondaryController  -ErrorVariable ErrorVar
@@ -9453,6 +9584,7 @@ Try {
                     Write-LogError "ERROR: Failed to disable ISCSI services in [$mySecondaryVserver]" 
                     $Return  = $False
                 }
+                Write-LogDebug "Set-NcIscsiNodeName -Name  -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                 $out = Set-NcIscsiNodeName -Name $PrimaryIscsiService.NodeName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Set-NcIscsiNodeName failed [$ErrorVar]" }
             }
@@ -9933,7 +10065,7 @@ Function show_vserver_dr (
                 if ( $Schedule ) { $tmp_str = $tmp_str + "[$SmSchedule]"  }
                 if ($RelationHealth -eq $True)
                 {
-                    $rel=[string]::Format("{0,5} Status relation {1,-55} {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
+                    $rel=[string]::Format("{0,-7} {1,-55} --> {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
                     $("["+$DestinationLocation+"]"),`
                     $("["+$Type+"]"),`
                     $("["+$RelationPolicy+"]"),`
@@ -9944,7 +10076,7 @@ Function show_vserver_dr (
                 }
                 else
                 {
-                    $rel=[string]::Format("{0,5} Status relation {1,-55} {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} [Not Healthy] {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
+                    $rel=[string]::Format("{0,-7} {1,-55} --> {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} [Not Healthy] {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
                     $("["+$DestinationLocation+"]"),`
                     $("["+$Type+"]"),`
                     $("["+$RelationPolicy+"]"),`
@@ -9993,7 +10125,7 @@ Function show_vserver_dr (
                 if ( $Schedule ) { $tmp_str = $tmp_str + "[$SmSchedule]"  }
                 if ($ReverseRelationHealth -eq $True)
                 {
-                    $rel=[string]::Format("{0,5} Status relation {1,-55} {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
+                    $rel=[string]::Format("{0,-7} {1,-55} --> {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
                     $("["+$DestinationLocation+"]"),`
                     $("["+$Type+"]"),`
                     $("["+$RelationPolicy+"]"),`
@@ -10004,7 +10136,7 @@ Function show_vserver_dr (
                 }
                 else
                 {
-                    $rel=[string]::Format("{0,5} Status relation {1,-55} {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} [Not Healthy] {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
+                    $rel=[string]::Format("{0,-7} {1,-55} --> {2,-58} {3,-3} {4,-20} {5,-10} {6,-15} [Not Healthy] {7,0}",$("["+$RelationShipType+"]"),$("["+$SourceLocation+"]"),`
                     $("["+$DestinationLocation+"]"),`
                     $("["+$Type+"]"),`
                     $("["+$RelationPolicy+"]"),`
@@ -10092,7 +10224,7 @@ Try {
     $PrimaryLanguage = $PrimaryVserver.Language
     $PrimaryAllowedProtocols=$PrimaryVserver.AllowedProtocols
     $RootVolumeAggregate=$PrimaryVserver.RootVolumeAggregate
-    $PrimaryComment=$($PrimaryVserver.Comment+"clone environment")
+    $PrimaryComment=$($PrimaryVserver.Comment+" clone svmtool")
 
     $Question = "[$workOn] Select an aggregate for the root volume"
     # this now works differently, we try to pick the best matching aggr and fall back to default
@@ -10148,7 +10280,7 @@ Try {
     if ( ( $ret=create_update_LDAP_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create LDAP config" ; $Return = $False }
     if ( ( $ret=create_update_NIS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NIS service" ; $Return = $False }
     if ( ( $ret=create_update_NFS_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create NFS service" ; $Return = $False }
-    if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
+    if ( ( $ret=create_update_ISCSI_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn -ForClone -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create iSCSI service" ; $Return = $False }
     if ( ( $ret=create_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore -TemporarySecondaryCifsIp $TemporarySecondaryCifsIp -SecondaryCifsLifMaster $SecondaryCifsLifMaster -SecondaryCifsLifCustomVlan $SecondaryCifsLifCustomVlan -ActiveDirectoryCustomOU $ActiveDirectoryCustomOU  -ForClone) -ne $True ) {	Write-LogError "ERROR: create_update_CIFS_server_dr" ; $Return = $False } 
     $ret=update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $? -ne $True ) {
@@ -10290,10 +10422,10 @@ Try {
                  
                 clean_and_exit 1 
             }
-             
+            $SecondaryComment=$($PrimaryComment+" secondary SVMTOOL")
             Write-Log "[$workOn] Create vserver dr: [$PrimaryRootVolume] [$PrimaryLanguage] [$mySecondaryController] [$RootAggr]"
-            Write-LogDebug "create_vserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
-            $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $PrimaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
+            Write-LogDebug "create_vserver_dr: New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $SecondaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr"
+            $NewVserver=New-NcVserver -Name $mySecondaryVserver -RootVolume $PrimaryRootVolume -RootVolumeSecurityStyle $PrimaryRootVolumeSecurityStyle -Comment $SecondaryComment -Language $PrimaryLanguage -NameServerSwitch file -Ipspace $PrimaryIPSpace -Controller $mySecondaryController -RootVolumeAggregate $RootAggr  -ErrorVariable ErrorVar
 
             if ( $? -ne $True ) {
                 Write-LogError "ERROR: Failed to create vserver $mySecondaryVserver on $mySecondaryController"  
@@ -10497,6 +10629,11 @@ Try {
             Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -Controller $mySecondaryController -Confirm:$False"
             $ret=Invoke-NcSnapmirrorQuiesce -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
             if ( $? -ne $True ) { Write-LogError "ERROR: Invoke-NcSnapmirrorQuiesce failed [$ErrorVar]" }
+            $ret=wait_snapmirror_dr_status -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $VolName -Status "quiesced" -MirrorState "snapmirrored"
+            if($ret -eq $false){
+                $Return=$False
+                Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+            }
             Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -Controller $mySecondaryController -Confirm:$False"
             $ret=Invoke-NcSnapmirrorBreak -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $VolName -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
             if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Invoke-NcSnapmirrorBreak failed [$ErrorVar]" }
@@ -10691,7 +10828,8 @@ Try {
 	# 	return $false
 	# }
 
-
+    # check if this source Vserver does have any other Peer relationship outside svmtool !!
+    # if yes : exist with warning or ask to delete them....credential on the other side???
 	if ( ( remove_vserver_peer -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: remove_vserver_peer failed" 
 		return $false
@@ -10719,8 +10857,18 @@ Try {
 			Write-LogError "ERROR: Failed to Remove Service CIFS" 
 			return $false
 		}
-	}
-
+    }
+    $DeleteSourceSVM=$True
+    $VserverPeerList = get_vserver_peer_list -myPrimaryController $myPrimaryController -myPrimaryVserver $myPrimaryVserver -peerState "*"
+    if ( $VserverPeerList ) {
+        Write-Log "$myPrimaryVserver has peering relationship"
+        $SecondaryCluster=(Get-NcCluster -Controller $mySecondaryController).clusterName
+        if( ( $SecondaryCluster -notin ($VserverPeerList.PeerCluster | sort-object -Unique) ) -or ( $mySecondaryController -notin ($VserverPeerList.PeerVserver | sort-object -Unique ) ) ){
+            Write-LogWarn "Failed to remove source Vserver [$myPrimaryVserver] because there is some SVM Peer relationship still present"
+            Write-LogWarn "You need to remove these Vserver peer relations manualy and then delete the source Vserver"
+            $DeleteSourceSVM=$False
+        }
+    }
 	$out = Get-NcVserver  -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
 	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
 	if ( $out.State -ne "stopped" ) {
@@ -10729,19 +10877,22 @@ Try {
 			Write-LogError "ERROR: Unable to stop  Vserver [$myPrimaryVserver]" 
 		}
 	}
-
-	$out = Get-NcVserver  -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
-	if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
-	if ( $out -ne $null ) {
-		Remove-NcVserver -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar  -confirm:$False
-		if ( $? -ne $True ) {
-			Write-LogError "ERROR: Unable to Remove  vserver [$myPrimaryVserver]" 
-			return $false
-		}
-	}
+    if($DeleteSourceSVM -eq $True){
+        $out = Get-NcVserver  -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
+        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
+        if ( $out -ne $null ) {
+            Remove-NcVserver -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar  -confirm:$False
+            if ( $? -ne $True ) {
+                Write-LogError "ERROR: Unable to Remove  vserver [$myPrimaryVserver]" 
+                return $false
+            }
+        }
+    }else{
+        Write-LogDebug "remove_vserver_source: end"
+        return $False
+    }
     Write-LogDebug "remove_vserver_source: end"
-	return $true 
-
+    return $True
 }
 catch{
     handle_error $_ $myPrimaryVserver
@@ -10953,51 +11104,77 @@ Try {
 		$DestinationLocation=$relation.DestinationLocation
         $RelationshipStatus=$relation.RelationshipStatus
         $PrimaryVol=$relation.SourceVolume
+        $CurrentPolicy=$relation.Policy
+        $UpdateRelationship=$True
 		if ( ( $MirrorState -eq 'snapmirrored') -and ($RelationshipStatus -in $("idle","insync") ) ) {
             if( ( $Global:XDPPolicy -ne "" ) -and ( $Global:XDPPolicy -ne $relation.Policy ) ){
+                # need to change Snapmirror Policy
                 Write-Log "[$workOn] Destination Relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] with Policy [$($relation.Policy)] will be modified to Policy [$($Global:XDPPolicy)]"
-                if( ( $Global:XDPPolicy -ne "Sync" ) -and ( $Global:XDPPolicy -ne "StrictSync" ) ){
-                    # here we will modify snapmirror poolicy
+                if( ( $Global:XDPPolicy -notin $("Sync","StrictSync") ) -and ( $relation.Policy -notin $("Sync","StrictSync") ) ){
+                    # add code here to convert any async policy to any other async policy
+                    Write-Log "Switch an Async Policy to another Async Policy"
                     Write-LogDebug "Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $($Global:XDPPolicy)"
                     $ret=Set-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -Policy $Global:XDPPolicy -ErrorVariable ErrorVar
                     if($? -ne $True){
                         Write-LogWarn "Failed to change SnapMirror Policy for relationship to [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"
                     }
+                    $UpdateRelationship=$True
+                    $CurrentPolicy=$Global:XDPPolicy
                 }else{
-                    # add code here to convert snapmirror async to sync : quiesce, break, delete, create, resync
+                    # add code here to convert snapmirror async to sync
+                    Write-Log "Switch from any Policy to another"
+                    if($relation.Policy -notin $("Sync","StrictSync")){
+                        Write-Log "From Async to Sync"
+                        $ConvertType="Async2Sync"
+                    }elseif($relation.Policy -in ("Sync","StrictSync") -and $Global:XDPPolicy -in ("Sync","StrictSync")){
+                        Write-Log "From Sync to Sync"
+                        $ConvertType="Sync2Sync"
+                    }else{
+                        Write-Log "From Sync to Async"
+                        $ConvertType="Sync2Async"
+                    }
                     Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                     $ret=Invoke-NcSnapmirrorQuiesce -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
                     if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
-                    Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
-                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
-                    $ret=Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
-                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
-                    if($? -ne $True){$Return=$False; Throw "ERROR : Failed to break destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                    $ret=wait_snapmirror_dr_status -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $SourceVolume -Status "quiesced" -MirrorState "snapmirrored"
+                    if($ret -eq $false){
+                        $Return=$False
+                        Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                    }
                     Write-LogDebug "Remove-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                     $ret=Remove-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
                     if($? -ne $True){$Return=$False; Throw "ERROR : Failed to delete destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
-                    Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName `
-                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController"
-                    $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVolName `
-                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVolName -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                    Write-LogDebug "Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Controller $myPrimaryController -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                    -DestinationCluster $mySecondaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol"
+                    $ret=Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Controller $myPrimaryController -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                    -DestinationCluster $mySecondaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -ErrorVariable ErrorVar -Confirm:$False
+                    if($? -ne $True){$Return=$False; Throw "ERROR : Failed to release destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                    Write-LogDebug "New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController"
+                    $ret=New-NcSnapmirror -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
+                    -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -type vault -policy $Global:XDPPolicy -Controller $mySecondaryController -ErrorVariable ErrorVar 
                     if($? -ne $True){$Return=$False; Throw "ERROR : Failed to create destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
                     Write-LogDebug "Invoke-NcSnapmirrorResync -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController"
                     $relation=Invoke-NcSnapmirrorResync -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume $PrimaryVol `
                     -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver -SourceVolume $PrimaryVol -Controller $mySecondaryController  -ErrorVariable ErrorVar
                     if($? -ne $True){$Return=$False; Throw "ERROR : Failed to resync destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                    $CurrentPolicy=$Global:XDPPolicy
+                    $UpdateRelationship=$False
                 }
             }
-			Write-Log "[$mySecondaryVserver] Update relation [$SourceLocation] ---> [$DestinationLocation]" 
-			Write-LogDebug "Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController"
-			$out=Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar 
-			if ( $? -ne $True ) {
-				Write-LogError "ERROR: Snapmirror update failed: [$SourceLocation] [$DestinationLocation]"
-			}
+            if( $UpdateRelationship -eq $True -and $CurrentPolicy -notin $("Sync","StrictSync") ){
+                Write-Log "[$mySecondaryVserver] Update relation [$SourceLocation] ---> [$DestinationLocation]" 
+                Write-LogDebug "Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController"
+                $out=Invoke-NcSnapmirrorUpdate -Destination $DestinationLocation -Source $SourceLocation -Controller $mySecondaryController  -ErrorVariable ErrorVar 
+                if ( $? -ne $True ) {
+                    Write-LogError "ERROR: Snapmirror update failed: [$SourceLocation] [$DestinationLocation]"
+                }
+            }
 		} else { 
 			Write-LogError "ERROR: The relation [$SourceLocation] [$DestinationLocation] status is [$RelationshipStatus] [$MirrorState] " 
 			$Return = $False
@@ -11060,11 +11237,21 @@ Try {
 		$SourceVolume=$relation.SourceVolume
 		$DestinationVolume=$relation.DestinationVolume
 		$SourceLocation=$relation.SourceLocation
-		$DestinationLocation=$relation.DestinationLocation
+        $DestinationLocation=$relation.DestinationLocation
+        $SourceVerver=$relation.SourceVserver
 		$RelationshipStatus=$relation.RelationshipStatus
 		if ( ( $MirrorState -eq 'snapmirrored' ) -and ( $RelationshipStatus -in  $("idle","insync") ) ) 
         {
-			Write-Log "[$mySecondaryVserver] Break relation [$SourceLocation] ---> [$DestinationLocation]" -f red
+            Write-Log "[$mySecondaryVserver] Break relation [$SourceLocation] ---> [$DestinationLocation]" -f red
+            Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $myController"
+            $ret=Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $myController -ErrorVariable ErrorVar -Confirm:$False
+            if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${myController}:${mySecondaryVserver}:${DestinationVolume}] reason [$ErrorVar]"}
+            $ret=wait_snapmirror_dr_status -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $DestinationVolume -Status "quiesced" -MirrorState "snapmirrored"
+            if($ret -eq $false){
+                $Return=$False
+                Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+            }
+			
 			Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"
 			$out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController  -ErrorVariable ErrorVar -Confirm:$False
 			if ( $? -ne $True ) 
@@ -11081,6 +11268,14 @@ Try {
 				$ANS=Read-HostOptions -question "[$mySecondaryVserver] Do you want to break this relation ?" -options "y/n" -default "y"
 				if ( $ANS -eq 'y' ) 
                 {
+                    Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $myController"
+                    $ret=Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $myController -ErrorVariable ErrorVar -Confirm:$False
+                    if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${myController}:${mySecondaryVserver}:${DestinationVolume}] reason [$ErrorVar]"}
+                    $ret=wait_snapmirror_dr_status -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $DestinationVolume -Status "quiesced" -MirrorState "snapmirrored"
+                    if($ret -eq $false){
+                        $Return=$False
+                        Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                    }
 					Write-LogDebug "Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController -Confirm:$False"
 					$out=Invoke-NcSnapmirrorBreak -Destination $DestinationLocation -Source $SourceLocation -Controller $myController  -ErrorVariable ErrorVar -Confirm:$False
 				}	
@@ -12077,7 +12272,7 @@ Function activate_vserver_dr (
             $Return = $False
         }
 	}else{
-        $ANS=Read-HostOptions -question "Do You really want to activate SVM [$currentPassiveVserver] from cluster [$currentPassiveController] ?" -options "y/n" -default "y"
+        $ANS=Read-HostOptions -question "Do You really want to activate SVM [$currentPassiveVserver] from cluster [$currentPassiveController] `r`n[$currentPassiveVserver] will take source's identity and services ?" -options "y/n" -default "y"
         if ( $ANS -ne 'y' ) {
             Write-LogDebug "activate_vserver_dr: end"
             Write-Log "[$currentPassiveVserver] Activation aborted"
@@ -12207,21 +12402,34 @@ Function resync_reverse_vserver_dr (
 		    $RelationshipStatus=$relation.RelationshipStatus
 			$RelationshipType=$relation.RelationshipType
             $RelationshipSchedule=$relationship.Schedule
+            $RelationPolicy=$relation.Policy
             if($Global:ForceRecreate)
             {
                 Write-LogDebug "Get-NcSnapmirror -DestinationLocation $SourceLocation -Controller $myPrimaryController"
-                $existingRelationShip=Get-NcSnapmirror -DestinationLocation $SourceLocation -Controller $myPrimaryController  -ErrorVariable ErrorVar
+                $ExistingReverseRelationShip=Get-NcSnapmirror -DestinationLocation $SourceLocation -Controller $myPrimaryController  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapmirror failed [$ErrorVar]" }
-                if($existingRelationShip -ne $null)
+                if($ExistingReverseRelationShip -ne $null)
                 {
-                    $existingRelationShipDestVolume=$existingRelationShip.DestinationVolume
-                    $existingRelationShipDestVserver=$existingRelationShip.DestinationVserver
-                    Write-LogDebug "Remove-NcSnapmirror -DestinationVserver $existingRelationShipDestVserver -DestinationVolume $existingRelationShipDestVolume -controller $myPrimaryController"
-                    $out=Remove-NcSnapmirror -DestinationVserver $existingRelationShipDestVserver -DestinationVolume $existingRelationShipDestVolume -controller $myPrimaryController  -ErrorVariable ErrorVar -Confirm:$False   
+                    $ExistingReverseRelationShipDestVolume=$ExistingReverseRelationShip.DestinationVolume
+                    $ExistingReverseRelationShipDestVserver=$ExistingReverseRelationShip.DestinationVserver
+                    Write-LogDebug "Remove-NcSnapmirror -DestinationVserver $ExistingReverseRelationShipDestVserver -DestinationVolume $ExistingReverseRelationShipDestVolume -controller $myPrimaryController"
+                    $out=Remove-NcSnapmirror -DestinationVserver $ExistingReverseRelationShipDestVserver -DestinationVolume $ExistingReverseRelationShipDestVolume -controller $myPrimaryController  -ErrorVariable ErrorVar -Confirm:$False   
                     if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcSnapmirror failed [$ErrorVar]" } 
                 }
             }
-
+            if( $RelationPolicy -in $("Sync","StrictSync") ){
+                # In Sync or StrictSync to perform a flip resync at this step 
+                # relationship already quiesced and broken
+                # we need first to:
+                # delete relationship from dest
+                # release info-only from source
+                Write-LogDebug "Remove-NcSnapmirror -Destination $DestinationLocation -Controller $mySecondaryController -Confirm:$False"
+                $ret=Remove-NcSnapmirror -Destination $DestinationLocation -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Remove-NcSnapmirror failed [$ErrorVar]" }
+                Write-LogDebug "Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Destination $DestinationLocation -Controller $myPrimaryController -Confirm:$False "
+                $ret=Invoke-NcSnapmirrorRelease -RelationshipInfoOnly -Destination $DestinationLocation -Controller $myPrimaryController -Confirm:$False -ErrorVariable ErrorVar
+                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Invoke-NcSnapmirrorRelease failed [$ErrorVar]" } 
+            }
 		    if ( ( $MirrorState -eq 'broken-off' ) -and ($RelationshipStatus -eq 'idle' ) ) 
             {
 			    Write-LogDebug "Get-NcSnapmirror -SourceLocation $DestinationLocation -DestinationLocation $SourceLocation -Controller $myPrimaryController"
@@ -12252,9 +12460,16 @@ Function resync_reverse_vserver_dr (
                 {
                     if($RelationshipType -eq "extended_data_protection")
                     {
+                        if($Global:XDPPolicy -ne ""){
+                            Write-LogDebug "Snapmirror Policy set to [$($Global:XDPPolicy)]"
+                            $SnapmirrorPolicy=$Global:XDPPolicy
+                        }else{
+                            Write-LogDebug "Snapmirror Policy set to default [MirrorAllSnapshots]"
+                            $SnapmirrorPolicy="MirrorAllSnapshots"    
+                        }
                         Write-Log "[$SourceVserver] Create Reverse VF SnapMirror [${DestinationCluster}:${DestinationVserver}/$DestinationVolume] ---> [${SourceCluster}:${SourceVserver}/$SourceVolume]"
-                        Write-LogDebug "New-NcSnapmirror -Type XDP -policy $Global:XDPPolicy -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController "
-                        $relation=New-NcSnapmirror -Type vault -policy $Global:XDPPolicy -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController  -ErrorVariable ErrorVar     
+                        Write-LogDebug "New-NcSnapmirror -Type XDP -policy $SnapmirrorPolicy -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController "
+                        $relation=New-NcSnapmirror -Type vault -policy $SnapmirrorPolicy -DestinationCluster $SourceCluster -DestinationVserver $SourceVserver -DestinationVolume $SourceVolume -SourceCluster $DestinationCluster -SourceVserver $DestinationVserver -SourceVolume $DestinationVolume -Controller $myPrimaryController  -ErrorVariable ErrorVar     
                         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: New-NcSnapmirror failed [$ErrorVar]" }
                         #Write-Log "Reverse resync [${DestinationCluster}://${DestinationVserver}/$DestinationVolume] -> [${SourceCluster}://${SourceVserver}/$SourceVolume]"
                         Write-LogDebug "Invoke-NcSnapmirrorResync -Source $DestinationLocation -Destination $SourceLocation  -Controller $myPrimaryController"
@@ -12577,8 +12792,17 @@ Function mount_volume (
         if($Parent -ne $RootVolume){
             $volType=(Get-NcVol -Controller $myController -Vserver $myVserver -Volume $myVolumeName).VolumeIdAttributes.Type
             if($volType -eq "dp" -and $Restore -eq $False){
-                Write-LogDebug "Need to break the associated SM relationship with [$myVolumeName] before beeing able to create a directory inside this volume"
-                $out=Invoke-NcSnapmirrorBreak -Controller $myController -Confirm:$false -DestinationVserver $myVserver -DestinationVolume $myVolumeName
+                Write-LogDebug "Need to break all associated SM relationship with [$myVolumeName] before beeing able to create a directory inside this volume"
+                Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationVserver $myVserver -DestinationVolume $myVolumeName -Controller $mySecondaryController"
+                $ret=Invoke-NcSnapmirrorQuiesce -DestinationVserver $myVserver -DestinationVolume $myVolumeName -Controller $mySecondaryController -ErrorVariable ErrorVar -Confirm:$False
+                if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${mySecondaryController}:${mySecondaryVserver}:${PrimaryVol}] reason [$ErrorVar]"}
+                $ret=wait_snapmirror_dr_status -DestinationVserver $myVserver -PrimaryVolumeName $myVolumeName -Status "quiesced" -MirrorState "snapmirrored"
+                if($ret -eq $false){
+                    $Return=$False
+                    Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                }
+                Write-LogDebug "Invoke-NcSnapmirrorBreak -Controller $myController -Confirm:$false -DestinationVserver $myVserver -DestinationVolume $myVolumeName" 
+                $out=Invoke-NcSnapmirrorBreak -Controller $myController -Confirm:$false -DestinationVserver $myVserver -DestinationVolume $myVolumeName -ErrorVariable ErrorVar
                 if($? -ne $True){throw "ERROR: Failed to break SM destination [$myVserver]:[$myVolumeName] on [$myController] reason [$ErrorVar]"}
             }
         }
@@ -12773,8 +12997,16 @@ Try {
             $MirrorState=$relation.MirrorState  
             Write-Log "[$mySecondaryVserver] Remove snapmirror relation for volume [$SourceLocation] ---> [$DestinationLocation]"
             if ( $MirrorState -eq 'snapmirrored' ) {
-                Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
-                $out= Invoke-NcSnapmirrorBreak -DestinationCluster $mySecondaryCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $myPrimaryCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
+                Write-LogDebug "Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $mySecondaryController"
+                $ret=Invoke-NcSnapmirrorQuiesce -DestinationVserver $mySecondaryVserver -DestinationVolume $DestinationVolume -Controller $DestinationCluster -ErrorVariable ErrorVar -Confirm:$False
+                if($? -ne $True){$Return=$False; Throw "ERROR : Failed to quiesce destination relationship [${DestinationCluster}:${mySecondaryVserver}:${DestinationVolume}] reason [$ErrorVar]"}
+                $ret=wait_snapmirror_dr_status -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver -DestinationVserver $mySecondaryVserver -PrimaryVolumeName $DestinationVolume -Status "quiesced" -MirrorState "snapmirrored"
+                if($ret -eq $false){
+                    $Return=$False
+                    Throw "ERROR : Failed to quiesce a snapmirror relationship. Increase timeout?"
+                }
+                Write-LogDebug "Invoke-NcSnapmirrorBreak -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController -Confirm:$False"
+                $out= Invoke-NcSnapmirrorBreak -DestinationCluster $DestinationCluster -DestinationVserver $mySecondaryVserver -DestinationVolume  $DestinationVolume -SourceCluster $SourceCluster -SourceVserver $myPrimaryVserver  -SourceVolume $SourceVolume  -Controller  $mySecondaryController  -ErrorVariable ErrorVar -Confirm:$False
                 if ( $? -ne $True ) {
                     Write-LogError "ERROR: Unable to Break relation [$SourceLocation] ---> [$DestinationLocation]" 
                     $Return = $True 

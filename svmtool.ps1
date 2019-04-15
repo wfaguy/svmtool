@@ -126,8 +126,11 @@
     Force a manual update of all data only for a particular DR relationship 
     -Instance <instance name> -Vserver <vserver source name> -Resync
 .PARAMETER ActivateDR
-    Allow to activate a DR SVM for test or after a real crash on the source
-	-Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate] [-ForceUpdateSnapPolicy]
+    Switch Production from Primary SVM to Secondary SVM
+    Test if Primary is still alive and perform necessary operations to switch IP and services
+    from Primary to Secondary and break all snapmirror relationship to make destination volumes accessible in Read & Write
+    If Primary not alive it will force activation and switch to Secondary SVM
+	-Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceUpdateSnapPolicy]
 .PARAMETER CloneDR
 	Clone a Vserver on destination Cluster
 	A new temporary Vserver will be created on destination Cluster (named <destination-vserver>_clone)
@@ -150,9 +153,6 @@
 .PARAMETER ForceClean
 	Optional argument used only during CleanReverse step
 	It allows to forcibly remove and release Reverse SnapMirror relationships
-.PARAMETER ForceActivate
-    Mandatory argument in case of disaster in Source site
-	Used only with ActivateDR when source site is unjoinable
 .PARAMETER ForceRestart
 	Optional argument used to force restart of a stopped Vserver
 	Used with ReActivate option
@@ -369,7 +369,8 @@
     svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> [-ConfigureDR|-UpdateDR] -XDPPolicy <policy name>
     
     You can change existing Policy of all snapmirror relationships by running ConfigureDR or UpdateDR with XDPpolicy argument
-    The chosen policy must already exist on destination Cluster
+    The chosen policy must already exist on destination Cluster.
+    If not, switch to default Policy : DPDefault or MirrorAllSnapshot, depending on ONTAP version on both source and destination
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
@@ -582,7 +583,11 @@ Param (
     [switch]$DRfromDR,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')] 
+    [Parameter(Mandatory = $false, ParameterSetName = 'ReActivate')] 
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [string]$XDPPolicy = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
@@ -642,8 +647,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'CleanReverse')]
     [switch]$ForceClean,
 
-    [Parameter(Mandatory = $false, ParameterSetName = 'ActivateDR')]
-    [switch]$ForceActivate,
+    [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
+    [switch]$ForceResync,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ReActivate')]
     [switch]$ForceRestart,
@@ -2047,11 +2052,6 @@ if ($Migrate) {
             clean_and_exit 1
 
         }
-
-
-        # if ( $MirrorSchedule ) {
-        # Write-LogDebug "Flag MirrorSchedule"
-        # }
         if ( ( $ret = wait_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) { 
             Write-LogError  "ERROR: wait_snapmirror_dr failed"  
         }
@@ -2173,13 +2173,15 @@ if ($Migrate) {
                     Write-LogError "ERROR: remove_vserver_peer failed" 
                     return $false
                 }
-
+                $mySourceVserverComment=(Get-NcVserver -Name $Vserver -Controller).Comment
                 Write-Log "[$VserverDR] Renamed to [$Vserver]"
                 Write-LogDebug "Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl"
                 $out = Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) {
                     throw "ERROR: Rename-NcVserver failed [$ErrorVar]"
-                } 
+                }
+                Write-LogDebug "Set-NcVserver -Name $Vserver -Controller $NcSecondaryCtrl -Comment $mySourceVserverComment"
+                Set-NcVserver -Name $Vserver -Controller $NcSecondaryCtrl -Comment $mySourceVserverComment
                 Write-Log "Vserver [$Vserver] will be deleted on cluster [$PrimaryClusterName]"
                 if ( ( $ret = remove_vserver_source -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -eq $False ) {
                     Write-LogError "ERROR: remove_vserver_dr: Unable to remove vserver [$VserverDR]" 
@@ -2305,12 +2307,12 @@ if ( $UpdateDR ) {
         clean_and_exit 1
     }
 
-    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
         $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
-            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
-            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
-            $Global:XDPPolicy = "MirrorAllSnapshots"
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
         }
     }
     if ( $MirrorSchedule -ne "" -and $MirrorSchedule -ne "none") {
@@ -2539,6 +2541,14 @@ if ( $ReActivate ) {
             Return=$False; Write-Error "Failed to start Vserver [$Vserver] reason [$ErrorVar]"
         }
     }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
     # stop secondary cifs server
     # remove secondary cifs server
     $NeedCIFS = $False
@@ -2600,6 +2610,7 @@ if ( $ReActivate ) {
         clean_and_exit 1
     }
     Write-Log "[$Vserver] Restore original SnapMirror relationship to [$VserverDR]"
+    $Global:ForceRecreate=$True
     if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) { 
         Write-LogError "ERROR: Resync failed" 
         clean_and_exit 1
@@ -2692,8 +2703,22 @@ if ( $Resync ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
     }
-    if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
-        Write-LogError "ERROR: Resync error"
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
+    $numDestVolRW=(get-ncvol -Controller $NcSecondaryCtrl -Query @{Vserver=$VserverDR;VolumeStateAttributes=@{IsVserverRoot=$false};VolumeIdAttributes=@{Type="rw"}}).count
+    if ( ( $numDestVolRW -eq 0 ) -or ( $ForceResync -eq $True -and $numDestVolRW -ge 1 ) -or ( $ForceResync -eq $True )){
+        if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
+            Write-LogError "ERROR: Resync error"
+            clean_and_exit 1
+        }
+    }else{
+        Write-LogWarn "Some volume on [$VserverDR] are Read-Write enable. You must add -ForceResync if you want to forcibly resync a destination volume"
         clean_and_exit 1
     }
     clean_and_exit 0 
@@ -2723,6 +2748,14 @@ if ( $ResyncReverse ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
     }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
     if ( ( $ret = resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
         Write-LogError "ERROR: Resync Reverse error"
         clean_and_exit 1
@@ -2748,6 +2781,14 @@ if ( $UpdateReverse ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
+    }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
     }
     # if ( ( $ret=analyse_junction_path -myController $NcPrimaryCtrl -myVserver $Vserver) -ne $True ) {
     # Write-LogError "ERROR: analyse_junction_path" 
