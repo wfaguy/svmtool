@@ -1037,6 +1037,10 @@ function Invoke-SvmDrResync {
         # Defaults to MirrorAllSnapshots
         [string]$XDPPolicy,
 
+        # Optional, sets the XDP Policy
+        # Defaults to MirrorAllSnapshots
+        [string]$XDPPolicy,
+
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
         [switch]$NonInteractive,
