@@ -913,26 +913,37 @@ function Remove-SvmDr {
 .Synopsis
     Activates Svm Dr
 .DESCRIPTION
-	Activates Svm Dr
+    Activates Svm Dr
+    Test if source vserver is still alive
+    If still alive will prompt if you want to swith production from source to destination vserver
+    If not alive will switch automaticaly production on DR with source identity
     It will break all snapmirror relations
-    It will bring the DR vserver online (and the lifs)
-    It will bring the source vserver offline (unless ForceActivate is used)
+    It will bring the DR vserver online (and the lifs) with source identity
+    It will bring the source vserver offline
 
 .EXAMPLE
 
-    Invoke-SvmDrActivate -Instance Default -Vserver cifs -NonInteractive
+    Invoke-SvmDrActivate -Instance COT3-AFF -Vserver OMSHIFT -NonInteractive
 
-    Do you want to disable the primary vserver [cifs] from [r2d2] ? [y/n] : -> y
-    Ready to disable all Network Services in SVM [cifs] from  cluster [r2d2] ? [y/n] : -> y
-    [cifs] No ISCSI services in vserver
-    [cifs] No NFS services in vserver
-    Do You really want to activate SVM [cifs-dr] from cluster [c3po] ? [y/n] : -> y
-    [cifs-dr] Break relation [cifs:vol1] [cifs-dr:vol1]
-    [cifs-dr] No ISCSI services in vserver
-    [cifs-dr] No NFS services in vserver
-    Set volumes options for vserver [cifs-dr] from SVMTOOL_DB [c:\jumpstart\svmtool]
-    Create Quota policy rules from SVMTOOL_DB [c:\jumpstart\svmtool]
-    WARNING: No quota activated on any Vserver's volume
+    [cot3] is alive
+    Do You really want to activate SVM [OMSHIFT_DR] from cluster [aff] ? [y/n] : y
+    [OMSHIFT_DR] Break relation [OMSHIFT:oc_140_wordpress_mysql_disk_ce4c3] ---> [OMSHIFT_DR:oc_140_wordpress_mysql_disk_ce4c3]
+    [OMSHIFT_DR] Break relation [OMSHIFT:trident_demowordpress_mysql_disk_a8976] ---> [OMSHIFT_DR:trident_demowordpress_mysql_disk_a8976]
+    [OMSHIFT_DR] Break relation [OMSHIFT:trident_demowordpress_wordpress_disk_a89e4] ---> [OMSHIFT_DR:trident_demowordpress_wordpress_disk_a89e4]
+    [OMSHIFT_DR] Break relation [OMSHIFT:trident_etcd_trident] ---> [OMSHIFT_DR:trident_etcd_trident]
+    [OMSHIFT] Remove LIF [data]
+    [OMSHIFT] Remove LIF [iscsi]
+    [OMSHIFT] stop Vserver
+    [OMSHIFT_DR] Modify LIF
+    [OMSHIFT_DR] Configure LIF [data] with [10.65.176.92] [255.255.255.0] [up]
+    [OMSHIFT_DR] Configure LIF [iscsi] with [10.65.176.93] [255.255.255.0] [up]
+    [OMSHIFT_DR] Start LIF [data]
+    [OMSHIFT_DR] Start LIF [iscsi]
+    [OMSHIFT_DR] Start iSCSI
+    [OMSHIFT_DR] Start NFS
+    [OMSHIFT_DR] No CIFS services in vserver
+    [OMSHIFT_DR] Set volumes options from SVMTOOL_DB [C:\Scripts\SVMTOOL]
+    [OMSHIFT_DR] Create Quota policy rules from SVMTOOL_DB [C:\Scripts\SVMTOOL]
 
 #>
 function Invoke-SvmDrActivate {
@@ -945,11 +956,6 @@ function Invoke-SvmDrActivate {
         # The source vserver
         [Parameter(Mandatory = $true)]
         [string]$Vserver,
-
-        # Enables Force Activation
-        # Normally, we try to bring the source down, but if this is real DR
-        # and the source is unreachable, a force is required
-        [switch]$ForceActivate,
 
         # Enables Snapshot Policy Update
         # The destination will, after DR activation, inherit the original snapshot policies
@@ -1015,6 +1021,10 @@ function Invoke-SvmDrResync {
         # Enables the force-recreation of snapmirror relations
         [switch]$ForceRecreate,
 
+        # Enables the force-resync of snapmirror relations
+        # Even if some destination volume are Read/Write enabled
+        [switch]$ForceResync,
+
         # Loglevel of the console output
         [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
         [string]$LogLevelConsole = "Info",
@@ -1022,6 +1032,10 @@ function Invoke-SvmDrResync {
         # Loglevel of the logfile output
         [ValidateSet("Debug", "Info", "Warn", "Error", "Fatal", "Off")]
         [string]$LogLevelLogFile = "Info",
+
+        # Optional, sets the XDP Policy
+        # Defaults to MirrorAllSnapshots
+        [string]$XDPPolicy,
 
         # Enables Non-Interactive Mode
         # Is default enabled in Wfa-Integration Mode
@@ -1093,6 +1107,10 @@ function Invoke-SvmDrResyncReverse {
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
+
+        # Snapmirror Policy to use
+        [Parameter(Mandatory = $false)]
+        [string]$XDPPolicy,
 
         # Enables HTTP mode (default HTTPS)
         [switch]$HTTP,
@@ -1276,6 +1294,10 @@ function Update-SvmDrReverse {
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
 
+        # Snapmirror Policy to use
+        [Parameter(Mandatory = $false)]
+        [string]$XDPPolicy,
+
         # Enables HTTP mode (default HTTPS)
         [switch]$HTTP,
         [Int32]$Timeout = 60
@@ -1363,6 +1385,10 @@ function Invoke-SvmDrRecoverFromDr {
 
         # Enables OnCommand Workflow Automation (WFA) Integration
         [switch]$WfaIntegration,
+
+        # Snapmirror Policy to use
+        [Parameter(Mandatory = $false)]
+        [string]$XDPPolicy,
 
         # Enables HTTP mode (default HTTPS)
         [switch]$HTTP,
