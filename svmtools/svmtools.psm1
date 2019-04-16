@@ -5,7 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release  : April 9th, 2019
+    Release  : April 16th, 2019
 
 #>
 
@@ -1713,22 +1713,26 @@ Function create_update_vscan_dr (
                 }
             }
             if($Backup -eq $False){
-                Write-logDebug "Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController"
-                $SecondaryVscan=Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanStatus failed [$ErrorVar]" }
-                if ($PrimaryVscan.Enabled -ne $SecondaryVscan.Enabled)
-                {
-                    if($PrimaryVscan.Enabled -eq $True)
+
+                if(check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore){
+
+                    Write-logDebug "Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController"
+                    $SecondaryVscan=Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                    if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVscanStatus failed [$ErrorVar]" }
+                    if ($PrimaryVscan.Enabled -ne $SecondaryVscan.Enabled)
                     {
-                        Write-logDebug "Enable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                        $out=Enable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Enable-NcVscan failed [$ErrorVar]" }
-                    }
-                    else
-                    {
-                        Write-logDebug "Disable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
-                        $out=Disable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
-                        if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcVscan failed [$ErrorVar]" }
+                        if($PrimaryVscan.Enabled -eq $True)
+                        {
+                            Write-logDebug "Enable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                            $out=Enable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Enable-NcVscan failed [$ErrorVar]" }
+                        }
+                        else
+                        {
+                            Write-logDebug "Disable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
+                            $out=Disable-NcVscan -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
+                            if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Disable-NcVscan failed [$ErrorVar]" }
+                        }
                     }
                 }
             }
