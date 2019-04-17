@@ -1714,7 +1714,8 @@ Function create_update_vscan_dr (
             }
             if($Backup -eq $False){
 
-                if(check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore){
+                #if(check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore){
+                if($Global:NEED_CIFS_SERVER -eq $True){
 
                     Write-logDebug "Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController"
                     $SecondaryVscan=Get-NcVscanStatus -Vserver $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
@@ -7256,9 +7257,13 @@ Try {
     Write-LogDebug "create_update_cifs_symlink_dr[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$workOn]";$RunBackup=$True}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$workOn]";$RunRestore=$True}
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+    <# if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
         Write-LogDebug "create_update_cifs_symlink_dr: end"
         return $True
+    } #>
+    if($Global:NEED_CIFS_SERVER -eq $False){
+        Write-LogDebug "create_update_cifs_symlink_dr: end"
+        return $True    
     }
     if($Restore -eq $False){
         $PrimaryCifsSymlinks=Get-NcCifsSymlink -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
@@ -7668,7 +7673,7 @@ Function check_update_CIFS_server_dr (
             if ( $PrimaryCifsServerInfos -eq $null ) {
                 Write-LogDebug "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
                 $cifsServerSource=$False
-                if($Backup -eq $True){return $False}
+                if($Backup -eq $True){$Global:NEED_CIFS_SERVER=$False;return $False}
             }else{$cifsServerSource=$True}
         }
         if($Backup -ne $True){
@@ -7680,11 +7685,11 @@ Function check_update_CIFS_server_dr (
                     Write-LogWarn "[$workOn] You need make sure the ConfigureDR runs successfully first."
                 }
                 $cifsServerDest=$False
-                if($Restore -eq $True){return $False}
+                if($Restore -eq $True){$Global:NEED_CIFS_SERVER=$False;return $False}
             }
             else{
                 $cifsServerDest=$True
-                if($Restore -eq $True){return $True}
+                if($Restore -eq $True){$Global:NEED_CIFS_SERVER=$True;return $True}
             }
 
         }else{
@@ -7692,12 +7697,15 @@ Function check_update_CIFS_server_dr (
         }
 
         if($cifsServerSource -eq $False){
+            $Global:NEED_CIFS_SERVER=$False
             return $False
         }
         if($cifsServerSource -ne $cifsServerDest)
         {
+            $Global:NEED_CIFS_SERVER=$False
             return $False
         }else{
+            $Global:NEED_CIFS_SERVER=$True
             return $True
         }
     }
@@ -7725,9 +7733,13 @@ Try {
     Write-LogDebug "update_CIFS_server_dr[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+    <# if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
         Write-LogDebug "update_CIFS_server_dr: end"
         return $true
+    } #>
+    if ($Global:NEED_CIFS_SERVER -eq $False){
+        Write-LogDebug "update_CIFS_server_dr: end"
+        return $true    
     }
     $ONTAPVersionDiff=$False
     if($Restore -eq $False){
@@ -8571,8 +8583,10 @@ Try {
         if ( $PrimaryCifsServerInfos -eq $null ) {
             Write-Log "[$workOn] No CIFS Server in Vserver [$myPrimaryVserver]:[$myPrimaryController]"
             Write-LogDebug "create_update_CIFS_server_dr: end"
+            $Global:NEED_CIFS_SERVER=$False
             return $True
         }
+        $Global:NEED_CIFS_SERVER=$True
         $SecondaryCifsServerInfos = Get-NcCifsServer -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsServer failed [$ErrorVar]" }
 
@@ -8831,9 +8845,13 @@ Try {
     #wait-debugger
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+    <# if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
         Write-LogDebug "create_update_CIFS_shares_dr: end"
         return $True
+    } #>
+    if($Global:NEED_CIFS_SERVER -eq $False){
+        Write-LogDebug "create_update_CIFS_shares_dr: end"
+        return $True    
     }
     if($Restore -eq $False){
         $PrimaryVersion=(Get-NcSystemVersionInfo -Controller $myPrimaryController).VersionTupleV
@@ -10108,7 +10126,8 @@ Try {
         $Return=$False			
     }
     if ( ( $ret=create_update_CIFS_shares_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: create_update_CIFS_share" ; $Return = $False }
-    if ( ( $ret=map_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to map all LUNs " ; $Return = $False }
+    if ( ( $ret=create_update_cifs_symlink_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all cifs symlinks" ; $Return = $False }
+	if ( ( $ret=map_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to map all LUNs " ; $Return = $False }
     if ( ( $ret=set_serial_lundr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-Log "ERROR: Failed to change LUN serial Numbers" ; $Return = $False} 
     if(($ret=update_qtree -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True) {Write-Log "ERROR Failed to update all Qtree"; $Return = $False}
     Write-LogDebug "create_clonevserver_dr [$myPrimaryVserver]: end"
@@ -11160,9 +11179,13 @@ try{
     Write-LogDebug "update_cifs_usergroup[$myPrimaryVserver]: start"
     if($Backup -eq $True){Write-LogDebug "run in Backup mode [$myPrimaryVserver]";$RunBackup=$True}
     if($Restore -eq $True){Write-LogDebug "run in Restore mode [$myPrimaryVserver]";$RunRestore=$True}
-    if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
+    <# if(-not (check_update_CIFS_server_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $mySecondaryVserver -Backup $RunBackup -Restore $RunRestore)){
         Write-LogDebug "update_cifs_usergroup: end"
         return $True
+    } #>
+    if($Global:NEED_CIFS_SERVER -eq $False){
+        Write-LogDebug "update_cifs_usergroup: end"
+        return $True   
     }
     Write-LogDebug "[$workOn] Set Lif up to authenticate user" 
     Write-LogDebug "[$workOn] Get-NcCifsLocalUser -VserverContext $mySecondaryVserver -controller $mySecondaryController"

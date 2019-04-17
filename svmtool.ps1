@@ -2030,9 +2030,13 @@ if ($Migrate) {
             clean_and_exit 1
         }
 
-        if ( ( $ret = update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -NoInteractive) -ne $True ) {
-            Write-LogError "ERROR: update_cifs_usergroup failed"   
-        }
+        # already managed inside next update_vserver_dr
+        #if ( ( $ret = update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -NoInteractive) -ne $True ) {
+        #    Write-LogError "ERROR: update_cifs_usergroup failed"   
+        #}
+
+        # This will set $Global:NEED_CIFS_SERVER
+        $ret=check_update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR
 
         if ( ($ret = update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex ) -ne $True ) {
             Write-LogError "ERROR: update_vserver_dr failed" 
@@ -2332,6 +2336,10 @@ if ( $UpdateDR ) {
         Write-LogError "ERROR: check_cluster_peer failed"
         clean_and_exit 1
     }
+
+    # This will set $Global:NEED_CIFS_SERVER
+    $ret=check_update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR
+
     if ( ($ret = update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -NoSnapmirrorUpdate $NoSnapmirrorUpdate -NoSnapmirrorWait $NoSnapmirrorWait) -ne $True ) {
         Write-LogError "ERROR: update_vserver_dr failed" 
         clean_and_exit 1
@@ -2340,10 +2348,6 @@ if ( $UpdateDR ) {
     if ( ( $ret = update_CIFS_server_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
         Write-Warning "Some CIFS options has not been set on [$VserverDR]"
     }
-    #if ( ( update_cifs_usergroup -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
-    #    Write-LogError "ERROR: update_cifs_usergroup failed"
-    #	clean_and_exit 1
-    #}
     if ( ( $ret = svmdr_db_switch_datafiles -myController $NcPrimaryCtrl -myVserver $Vserver ) -eq $false ) {
         Write-LogError "ERROR: Failed to switch SVMTOOL_DB datafiles" 
         clean_and_exit 1
@@ -2601,6 +2605,10 @@ if ( $ReActivate ) {
         Write-LogError "ERROR: Unable to Start all NetWork Protocols in Vserver [$Vserver] on [$NcPrimaryCtrl]"
         $Return = $False
     }
+    
+    # This will set $Global:NEED_CIFS_SERVER
+    $ret=check_update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver
+
     $Global:NonInteractive = $true
     if ( ( $ret = update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -FromReactivate) -ne $True ) { 
         Write-LogError "ERROR: update_vserver_dr" 
@@ -2742,6 +2750,9 @@ if ( $UpdateReverse ) {
         Write-LogError "ERROR: check_cluster_peer" 
         clean_and_exit 1
     }
+
+    # This will set $Global:NEED_CIFS_SERVER
+    $ret=check_update_CIFS_server_dr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver
 
     if ( ( $ret = update_vserver_dr -myDataAggr $DataAggr -myPrimaryController $NcSecondaryCtrl -mySecondaryController $NcPrimaryCtrl -myPrimaryVserver $VserverDR -mySecondaryVserver $Vserver -DDR ($DRfromDR.IsPresent) -aggrMatchRegEx $AggrMatchRegex -nodeMatchRegEx $NodeMatchRegex -NoSnapmirrorUpdate $NoSnapmirrorUpdate -NoSnapmirrorWait $NoSnapmirrorWait) -ne $True ) { 
         Write-LogError "ERROR: update_vserver_dr" 
