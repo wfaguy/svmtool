@@ -74,17 +74,41 @@
 .PARAMETER Backup
     Backup Cluster/SVM configuration into JSON files
     Without specifying any Vserver, will backup all SVM availables
-	-Backup <Cluster Name> [-Vserver <SVM name>] [-RecreateConf]
+
+    -Backup <Cluster Name> [-Vserver <SVM name>] [-RecreateConf]
+    
 	-RecreateConf : Force recreate Backup configuration directory for selected Cluster
 .PARAMETER Restore
 	Restore Cluster/SVM configuration from JSON files
-	Without specifying any Vserver, will list available SVM and propose to choose one to Restore
-	-Restore <Cluster Name> [-Vserver <SVM name>] [-SelectBackupDate] [-Destination]
+    Without specifying any Vserver, will list available SVM if backup folder and Restore all of them.
+
+    -Restore <Cluster Name> [-Vserver <SVM name>] [-SelectBackupDate] [-DestinationCluster] [-RW]
+    
 	-Vserver : Choose one SVM to restore. By Default restore all SVM available in Backup folder
 	-SelectBackupDate : Ask script to display all dates availables and prompt user to choose a date to restore. 
 						By default select last data available in backup folder
 	-Destination : Destination Cluster where to restore selected SVM.
-	               If not specified, script will ask for
+                   If not specified, script will ask for
+    -RW : When restoring volumes, chose to restore them as Read/Write volumes
+          By default will restore as DP volumes
+.PARAMETER RestoreObject
+    Restore a specific Object configuration from JSON files to one destination SVM
+    You must specify the SourceCluster & SourceSVM from which object will be restored
+    You must specify DestinationCluster & DestinationSVM to which object will be retored
+    
+    -RestoreObject <Source Cluster> -Vserver <source SVM name> [-DestinationCluster <Dest Cluster>] [-DestinationSVM <dest SVM name>] -Object <name> [-SelectBackupDate] [-RW]
+
+    -Vserver : Name of Source SVM where to select object to restore
+    [-DestinationCluster] : Name of Cluster where to restore object
+                            If not specified, restore to source Cluster
+    [-DestinationSVM] : Name of destination SVM where to restore object
+                        If not specified, restore to source SVM
+    -Object : List of available object for restore operation
+              Lif, Volumes, Exports, Shares, Quotas
+    [-SelectBackupDate] : Ask script to display all dates availables and prompt user to choose a date to restore. 
+                          By default select last data available in backup folder
+    [-RW] : When restoring volumes, chose to restore them as Read/Write volumes
+            By default will restore as DP volumes
 .PARAMETER Migrate
     Allow to migrate a source SVM to destination SVM
     ConfigureDR and UpdateDR should have already been successful
@@ -126,8 +150,11 @@
     Force a manual update of all data only for a particular DR relationship 
     -Instance <instance name> -Vserver <vserver source name> -Resync
 .PARAMETER ActivateDR
-    Allow to activate a DR SVM for test or after a real crash on the source
-	-Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceActivate] [-ForceUpdateSnapPolicy]
+    Switch Production from Primary SVM to Secondary SVM
+    Test if Primary is still alive and perform necessary operations to switch IP and services
+    from Primary to Secondary and break all snapmirror relationship to make destination volumes accessible in Read & Write
+    If Primary not alive it will force activation and switch to Secondary SVM
+	-Instance <instance name> -Vserver <vserver source name> -ActivateDR [-ForceUpdateSnapPolicy]
 .PARAMETER CloneDR
 	Clone a Vserver on destination Cluster
 	A new temporary Vserver will be created on destination Cluster (named <destination-vserver>_clone)
@@ -150,9 +177,6 @@
 .PARAMETER ForceClean
 	Optional argument used only during CleanReverse step
 	It allows to forcibly remove and release Reverse SnapMirror relationships
-.PARAMETER ForceActivate
-    Mandatory argument in case of disaster in Source site
-	Used only with ActivateDR when source site is unjoinable
 .PARAMETER ForceRestart
 	Optional argument used to force restart of a stopped Vserver
 	Used with ReActivate option
@@ -369,7 +393,8 @@
     svmtool.ps1 -Instance <instance name> -Vserver <vserver source name> [-ConfigureDR|-UpdateDR] -XDPPolicy <policy name>
     
     You can change existing Policy of all snapmirror relationships by running ConfigureDR or UpdateDR with XDPpolicy argument
-    The chosen policy must already exist on destination Cluster
+    The chosen policy must already exist on destination Cluster.
+    If not, switch to default Policy : DPDefault or MirrorAllSnapshot, depending on ONTAP version on both source and destination
 .NOTES
     Author  : Olivier Masson
     Author  : Mirko Van Colen
@@ -483,6 +508,9 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName = 'Restore')]
     [string]$Restore,
 
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
+    [string]$RestoreObject,
+
     [Parameter(Mandatory = $true, ParameterSetName = 'MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]  
@@ -529,6 +557,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $true, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $true, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $true, ParameterSetName = 'CreateQuotaDR')]
@@ -569,10 +598,12 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [string]$RootAggr = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$AlwaysChooseDataAggr,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
@@ -582,13 +613,18 @@ Param (
     [switch]$DRfromDR,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')] 
+    [Parameter(Mandatory = $false, ParameterSetName = 'ReActivate')] 
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'ResyncReverse')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [string]$XDPPolicy = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]  
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$DataAggr = "",
 
@@ -607,7 +643,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')] 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$AggrMatchRegex,    
 
@@ -615,7 +652,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]   
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')] 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$NodeMatchRegex,    
 
@@ -642,8 +680,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'CleanReverse')]
     [switch]$ForceClean,
 
-    [Parameter(Mandatory = $false, ParameterSetName = 'ActivateDR')]
-    [switch]$ForceActivate,
+    [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
+    [switch]$ForceResync,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ReActivate')]
     [switch]$ForceRestart,
@@ -680,9 +718,11 @@ Param (
     [string]$Destination = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$SelectBackupDate,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$RW,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Setup')]
@@ -700,6 +740,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CreateQuotaDR')]
@@ -735,6 +776,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ImportInstance')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'SplitCloneDR')]
@@ -764,6 +806,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ImportInstance')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'SplitCloneDR')]
@@ -795,6 +838,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Int32]$Timeout = 60,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Setup')]
@@ -809,6 +853,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CreateQuotaDR')]
@@ -826,6 +871,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [pscredential]$DefaultLocalUserCredentials = $null,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
@@ -854,7 +900,17 @@ Param (
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [string]$ActiveDirectoryCustomOU = $null        
+    [string]$ActiveDirectoryCustomOU = $null,
+            
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
+    [ValidateSet("Lif", "Volumes", "Exports", "Shares", "Quotas","Users")]
+    [string]$Object="",
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
+    [string]$DestinationCluster,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
+    [string]$DestinationSVM
 )
 
 #############################################################################################
@@ -906,7 +962,7 @@ $Global:DefaultPass = $DefaultPass
 $Global:Schedule = $Schedule
 
 if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
-    if ($Backup.Length -eq 0 -and $Restore.Length -eq 0) {
+    if ($Backup.Length -eq 0 -and $Restore.Length -eq 0 -and $RestoreObject.Length -eq 0) {
         $Global:CONFDIR = $Global:CONFBASEDIR + 'default\'
     }
     elseif ($Backup.Length -gt 0) {
@@ -914,6 +970,9 @@ if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
     }
     elseif ($Restore.Length -gt 0) {
         $Global:CONFDIR = $Global:CONFBASEDIR + $Restore + '\'
+    }
+    elseif ($RestoreObject.Length -gt 0) {
+        $Global:CONFDIR = $Global:CONFBASEDIR + $RestoreObject + '\'
     }
 }
 else {
@@ -938,7 +997,14 @@ if ($Restore -ne "") {
     }
 }
 
-if ($Vserver -ne "" -and ($Backup -eq "" -and $Restore -eq "")) {
+if ($RestoreObject -ne "") {
+    $Global:ROOTLOGDIR = ($Global:ROOTLOGDIR + $RestoreObject + '\')
+    if (-not (Test-Path $Global:ROOTLOGDIR)) {
+        New-Item -Path $Global:ROOTLOGDIR -ItemType "directory" -ErrorAction "silentlycontinue" | Out-Null
+    }
+}
+
+if ($Vserver -ne "" -and ($Backup -eq "" -and $Restore -eq "" -and $RestoreObject -eq "")) {
     $Global:LOGDIR = ($Global:ROOTLOGDIR + $Vserver + '\')
 }
 else {
@@ -1387,7 +1453,7 @@ if ( $Backup ) {
     $stopwatch.stop()
     Write-Log $("Finished - Script ran for {0}" -f $stopwatch.Elapsed.toString())
     clean_and_exit 0
-}
+} #End Backup
 
 if ( $Restore ) {
     $Run_Mode = "Restore"
@@ -1455,7 +1521,7 @@ if ( $Restore ) {
             $SVMList = @($Vserver)
         }
     }
-    #Loop to backup all SVM in List . Loop in RunspacePool
+    #Loop to Restore all SVM in List . Loop in RunspacePool
     $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
     $RunspacePool_Restore = [runspacefactory]::CreateRunspacePool(1, $Global:NumberOfLogicalProcessor, $iss, $Host)
     $RunspacePool_Restore.Open()
@@ -1611,7 +1677,7 @@ if ( $Restore ) {
                     }
                 }
                 else {
-                    Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
+                    Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update, as necessarry, Snapshot Policy and Efficiency"
                 }
                 flush_log4net -loggerinstance "console_$guid"
                 flush_log4net -loggerinstance "logonly_$guid"
@@ -1635,6 +1701,7 @@ if ( $Restore ) {
         [void]$RestoreJob.AddParameter("RootAggr", $Global:RootAggr)
         [void]$RestoreJob.AddParameter("DataAggr", $Global:DataAggr)
         [void]$RestoreJob.AddParameter("RESTORE_ORIGINAL", $Global:RESTORE_ORIGINAL)
+        [void]$RestoreJob.AddParameter("Object",$Global:Object)
         if ($RW -eq $True) {
             [void]$RestoreJob.AddParameter("VOLTYPE", "RW")
         }
@@ -1708,6 +1775,35 @@ if ( $Restore ) {
     $stopwatch.stop()
     Write-Log $("Finished - Script ran for {0}" -f $stopwatch.Elapsed.toString())
     clean_and_exit 0
+} #End Restore
+
+# RestoreObject Restore a particular specified object into an SVM
+if ( $RestoreObject ){
+    $Run_Mode = "RestoreObject"
+    Write-LogOnly "SVMTOOL Run RestoreObject"
+    $Global:RESTORE_SRC_CLUSTER = $RestoreObject
+    if( $DestinationCluster ){
+        $Global:RESTORE_DST_CLUSTER = $DestinationCluster
+    }else{
+        $Global:RESTORE_DST_CLUSTER = $RestoreObject    
+    }
+    $Global:SourceSVM=$Vserver
+    if( $DestinationSVM ){
+        $Global:DestinationSVM = $DestinationSVM
+    }else{
+        $Global:DestinationSVM = $Vserver
+    }
+    if ( ($Global:SourceSVM -eq $Global:DestinationSVM) -and ($Global:RESTORE_SRC_CLUSTER -eq $Global:RESTORE_DST_CLUSTER) ) {
+        $Global:RESTORE_ORIGINAL = $True
+        Write-Log "[$RestoreObject] Restore to Origin [$Vserver]"
+    }
+    else {
+        $Global:RESTORE_ORIGINAL = $False	
+    }  
+
+
+    Write-Log "Finished restore [$Global:RESTORE_SRC_CLUSTER]:[$Global:SourceSVM] to [$Global:RESTORE_DST_CLUSTER]:[$Global:DestinationSVM]"
+    clean_and_exit 0  
 }
 
 if ( ( Test-Path $CONFFILE ) -eq $False ) {
@@ -1855,7 +1951,7 @@ if ( $ShowDR ) {
     }
     Write-LogDebug "show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR"
     $ret = show_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR -Lag:$Lag -Schedule:$Schedule
-    clean_and_exit 0
+    clean_and_exit $ret
 }
 
 if ( $ConfigureDR ) {
@@ -1901,7 +1997,10 @@ if ( $ConfigureDR ) {
     if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }
-
+    # no schedule if Policy Sync or StrictSync is chosen
+    if ( ( $Global:XDPPolicy -ne "") -and ( $Global:XDPPolicy -in $("Sync","StrictSync") ) ) {
+        $Global:MirrorSchedule = "none"    
+    }
     if ( $? -ne $True ) {
         $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" 
     }
@@ -2044,11 +2143,6 @@ if ($Migrate) {
             clean_and_exit 1
 
         }
-
-
-        # if ( $MirrorSchedule ) {
-        # Write-LogDebug "Flag MirrorSchedule"
-        # }
         if ( ( $ret = wait_snapmirror_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) { 
             Write-LogError  "ERROR: wait_snapmirror_dr failed"  
         }
@@ -2170,13 +2264,15 @@ if ($Migrate) {
                     Write-LogError "ERROR: remove_vserver_peer failed" 
                     return $false
                 }
-
+                $mySourceVserverComment=(Get-NcVserver -Name $Vserver -Controller).Comment
                 Write-Log "[$VserverDR] Renamed to [$Vserver]"
                 Write-LogDebug "Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl"
                 $out = Rename-NcVserver -Name $VserverDR -NewName $Vserver -Controller $NcSecondaryCtrl  -ErrorVariable ErrorVar
                 if ( $? -ne $True ) {
                     throw "ERROR: Rename-NcVserver failed [$ErrorVar]"
-                } 
+                }
+                Write-LogDebug "Set-NcVserver -Name $Vserver -Controller $NcSecondaryCtrl -Comment $mySourceVserverComment"
+                Set-NcVserver -Name $Vserver -Controller $NcSecondaryCtrl -Comment $mySourceVserverComment
                 Write-Log "Vserver [$Vserver] will be deleted on cluster [$PrimaryClusterName]"
                 if ( ( $ret = remove_vserver_source -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -eq $False ) {
                     Write-LogError "ERROR: remove_vserver_dr: Unable to remove vserver [$VserverDR]" 
@@ -2302,12 +2398,12 @@ if ( $UpdateDR ) {
         clean_and_exit 1
     }
 
-    if ( $XDPPolicy -ne "MirrorAllSnapshots" ) {
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
         $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
         if ( $? -ne $True -or $ret.count -eq 0 ) {
-            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use MirrorAllSnapshots as default Policy"
-            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will use [MirrorAllSnapshots] as default Policy for all XDP relationships"
-            $Global:XDPPolicy = "MirrorAllSnapshots"
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
         }
     }
     if ( $MirrorSchedule -ne "" -and $MirrorSchedule -ne "none") {
@@ -2322,7 +2418,10 @@ if ( $UpdateDR ) {
     if ($MirrorSchedule -eq "") {
         $Global:MirrorSchedule = "hourly"
     }    
-
+    # no schedule if Policy Sync or StrictSync is chosen
+    if ( ( $Global:XDPPolicy -ne "") -and ( $Global:XDPPolicy -in $("Sync","StrictSync") ) ) {
+        $Global:MirrorSchedule = "none"    
+    }
     # if ( ( $ret=analyse_junction_path -myController $NcPrimaryCtrl -myVserver $Vserver ) -ne $True ) {
     # Write-LogError "ERROR: analyse_junction_path" 
     # clean_and_exit 1
@@ -2533,6 +2632,14 @@ if ( $ReActivate ) {
             Return=$False; Write-Error "Failed to start Vserver [$Vserver] reason [$ErrorVar]"
         }
     }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
     # stop secondary cifs server
     # remove secondary cifs server
     $NeedCIFS = $False
@@ -2594,6 +2701,7 @@ if ( $ReActivate ) {
         clean_and_exit 1
     }
     Write-Log "[$Vserver] Restore original SnapMirror relationship to [$VserverDR]"
+    $Global:ForceRecreate=$True
     if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) { 
         Write-LogError "ERROR: Resync failed" 
         clean_and_exit 1
@@ -2686,8 +2794,22 @@ if ( $Resync ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
     }
-    if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
-        Write-LogError "ERROR: Resync error"
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
+    $numDestVolRW=(get-ncvol -Controller $NcSecondaryCtrl -Query @{Vserver=$VserverDR;VolumeStateAttributes=@{IsVserverRoot=$false};VolumeIdAttributes=@{Type="rw"}}).count
+    if ( ( $numDestVolRW -eq 0 ) -or ( $ForceResync -eq $True -and $numDestVolRW -ge 1 ) -or ( $ForceResync -eq $True )){
+        if ( ( $ret = resync_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR ) -ne $True ) {
+            Write-LogError "ERROR: Resync error"
+            clean_and_exit 1
+        }
+    }else{
+        Write-LogWarn "Some volume on [$VserverDR] are Read-Write enable. You must add -ForceResync if you want to forcibly resync a destination volume"
         clean_and_exit 1
     }
     clean_and_exit 0 
@@ -2717,6 +2839,14 @@ if ( $ResyncReverse ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
     }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
+    }
     if ( ( $ret = resync_reverse_vserver_dr -myPrimaryController $NcPrimaryCtrl -mySecondaryController $NcSecondaryCtrl -myPrimaryVserver $Vserver -mySecondaryVserver $VserverDR) -ne $True ) {
         Write-LogError "ERROR: Resync Reverse error"
         clean_and_exit 1
@@ -2742,6 +2872,14 @@ if ( $UpdateReverse ) {
     if ( ( $NcSecondaryCtrl = connect_cluster $SECONDARY_CLUSTER -myCred $MyCred -myTimeout $Timeout ) -eq $False ) {
         Write-LogError "ERROR: Unable to Connect to NcController [$SECONDARY_CLUSTER]" 
         clean_and_exit 1
+    }
+    if ( $XDPPolicy -ne "" -and $XDPPolicy -ne "MirrorAllSnapshots" ) {
+        $ret = Get-NcSnapmirrorPolicy -Name $XDPPolicy -Controller $NcSecondaryCtrl -ErrorVariable ErrorVar
+        if ( $? -ne $True -or $ret.count -eq 0 ) {
+            Write-LogDebug "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            Write-Warning "XDPPolicy [$XDPPolicy] does not exist on [$SECONDARY_CLUSTER]. Will not change XDPPolicy"
+            $Global:XDPPolicy = ""
+        }
     }
     # if ( ( $ret=analyse_junction_path -myController $NcPrimaryCtrl -myVserver $Vserver) -ne $True ) {
     # Write-LogError "ERROR: analyse_junction_path" 
