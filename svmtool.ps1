@@ -409,6 +409,7 @@
                     Use "none" to omit the schedule
         - 0.2.2 :   Fix change of XDPPolicy during ConfigureDR or UpdateDR
         - 0.2.3 :   Add Cifs join options : override AD OU + override temp-cifs-join-lif VLAN
+        - 0.2.4 :   Fix check if CIFS server is running
 #>
 [CmdletBinding(HelpURI = "https://github.com/oliviermasson/svmtool", DefaultParameterSetName = "ListInstance")]
 Param (
@@ -864,8 +865,8 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE = "0.2.3"
-$Global:SCRIPT_RELEASE = "0.1.10"
+$Global:RELEASE = "0.2.4"
+$Global:SCRIPT_RELEASE = "0.1.11"
 $Global:BASEDIR = 'C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
 $Global:CONFBASEDIR = $BASEDIR + '\etc\'

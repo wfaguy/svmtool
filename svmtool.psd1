@@ -6,7 +6,7 @@
 # Generated on: 2018-10-09
 #
 # Updated by : Mirko Van Colen
-# Updated on : 2019-04-04
+# Updated on : 2019-04-17
 #
 # Version Control :
 #   1.0.0 : Initial version
@@ -14,13 +14,14 @@
 #   1.0.2 : Add XDPPolicy, MirrorSchedule, NoSnapmirrorUpdate, NoSnapmirrorWait
 #   1.0.3 : Fix update of XDPPolicy during ConfigureDR or UpdateDR
 #   1.0.4 : Add custom AD OU & tmp cifs lif vlan to join in AD
+#   1.0.5 : Fix check if CIFS server is running
 @{
 
     # Script module or binary module file associated with this manifest.
     RootModule        = '.\svmtool.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.4'
+    ModuleVersion     = '1.0.5'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()

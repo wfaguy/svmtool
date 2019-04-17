@@ -6,7 +6,7 @@
 # Generated on: 2018-06-07
 #
 # Update by : Mirko Van Colen
-# Updated on : 2019-04-09
+# Updated on : 2019-04-17
 #
 # Version Control :
 #   1.0.4 : Initial version
@@ -43,6 +43,7 @@
 #           Use "none" to omit the schedule
 #   1.2.1 : Fix Change of XDPPolicy during ConfigureDR (New-SvmDR) or UpdateDR (Update-SvmDr)
 #   1.2.2 : Added custom vlan & ou to join in AD
+#   1.2.3 : Fix check if CIFS server is running
 #           
 @{
 
@@ -50,7 +51,7 @@
     RootModule        = '.\svmtools.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.2.2'
+    ModuleVersion     = '1.2.3'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
