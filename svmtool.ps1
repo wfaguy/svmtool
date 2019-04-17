@@ -74,17 +74,41 @@
 .PARAMETER Backup
     Backup Cluster/SVM configuration into JSON files
     Without specifying any Vserver, will backup all SVM availables
-	-Backup <Cluster Name> [-Vserver <SVM name>] [-RecreateConf]
+
+    -Backup <Cluster Name> [-Vserver <SVM name>] [-RecreateConf]
+    
 	-RecreateConf : Force recreate Backup configuration directory for selected Cluster
 .PARAMETER Restore
 	Restore Cluster/SVM configuration from JSON files
-	Without specifying any Vserver, will list available SVM and propose to choose one to Restore
-	-Restore <Cluster Name> [-Vserver <SVM name>] [-SelectBackupDate] [-Destination]
+    Without specifying any Vserver, will list available SVM if backup folder and Restore all of them.
+
+    -Restore <Cluster Name> [-Vserver <SVM name>] [-SelectBackupDate] [-DestinationCluster] [-RW]
+    
 	-Vserver : Choose one SVM to restore. By Default restore all SVM available in Backup folder
 	-SelectBackupDate : Ask script to display all dates availables and prompt user to choose a date to restore. 
 						By default select last data available in backup folder
 	-Destination : Destination Cluster where to restore selected SVM.
-	               If not specified, script will ask for
+                   If not specified, script will ask for
+    -RW : When restoring volumes, chose to restore them as Read/Write volumes
+          By default will restore as DP volumes
+.PARAMETER RestoreObject
+    Restore a specific Object configuration from JSON files to one destination SVM
+    You must specify the SourceCluster & SourceSVM from which object will be restored
+    You must specify DestinationCluster & DestinationSVM to which object will be retored
+    
+    -RestoreObject <Source Cluster> -Vserver <source SVM name> [-DestinationCluster <Dest Cluster>] [-DestinationSVM <dest SVM name>] -Object <name> [-SelectBackupDate] [-RW]
+
+    -Vserver : Name of Source SVM where to select object to restore
+    [-DestinationCluster] : Name of Cluster where to restore object
+                            If not specified, restore to source Cluster
+    [-DestinationSVM] : Name of destination SVM where to restore object
+                        If not specified, restore to source SVM
+    -Object : List of available object for restore operation
+              Lif, Volumes, Exports, Shares, Quotas
+    [-SelectBackupDate] : Ask script to display all dates availables and prompt user to choose a date to restore. 
+                          By default select last data available in backup folder
+    [-RW] : When restoring volumes, chose to restore them as Read/Write volumes
+            By default will restore as DP volumes
 .PARAMETER Migrate
     Allow to migrate a source SVM to destination SVM
     ConfigureDR and UpdateDR should have already been successful
@@ -484,6 +508,9 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName = 'Restore')]
     [string]$Restore,
 
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
+    [string]$RestoreObject,
+
     [Parameter(Mandatory = $true, ParameterSetName = 'MirrorSchedule')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]  
@@ -530,6 +557,7 @@ Param (
     [Parameter(Mandatory = $true, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $true, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $true, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $true, ParameterSetName = 'CreateQuotaDR')]
@@ -570,10 +598,12 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [string]$RootAggr = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$AlwaysChooseDataAggr,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
@@ -593,7 +623,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]  
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$DataAggr = "",
 
@@ -612,7 +643,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]  
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')] 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$AggrMatchRegex,    
 
@@ -620,7 +652,8 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]    
+    [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]   
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')] 
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [string]$NodeMatchRegex,    
 
@@ -685,9 +718,11 @@ Param (
     [string]$Destination = "",
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$SelectBackupDate,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [switch]$RW,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Setup')]
@@ -705,6 +740,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CreateQuotaDR')]
@@ -740,6 +776,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ImportInstance')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'SplitCloneDR')]
@@ -769,6 +806,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'ImportInstance')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'SplitCloneDR')]
@@ -800,6 +838,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'InternalTest')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Int32]$Timeout = 60,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'Setup')]
@@ -814,6 +853,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Resync')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Backup')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [Parameter(Mandatory = $false, ParameterSetName = 'DeleteSource')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CreateQuotaDR')]
@@ -831,6 +871,7 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'Migrate')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'Restore')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
     [pscredential]$DefaultLocalUserCredentials = $null,
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
@@ -859,7 +900,17 @@ Param (
 
     [Parameter(Mandatory = $false, ParameterSetName = 'ConfigureDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
-    [string]$ActiveDirectoryCustomOU = $null        
+    [string]$ActiveDirectoryCustomOU = $null,
+            
+    [Parameter(Mandatory = $true, ParameterSetName = 'RestoreObject')]
+    [ValidateSet("Lif", "Volumes", "Exports", "Shares", "Quotas","Users")]
+    [string]$Object="",
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
+    [string]$DestinationCluster,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'RestoreObject')]
+    [string]$DestinationSVM
 )
 
 #############################################################################################
@@ -911,7 +962,7 @@ $Global:DefaultPass = $DefaultPass
 $Global:Schedule = $Schedule
 
 if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
-    if ($Backup.Length -eq 0 -and $Restore.Length -eq 0) {
+    if ($Backup.Length -eq 0 -and $Restore.Length -eq 0 -and $RestoreObject.Length -eq 0) {
         $Global:CONFDIR = $Global:CONFBASEDIR + 'default\'
     }
     elseif ($Backup.Length -gt 0) {
@@ -919,6 +970,9 @@ if ( ( $Instance -eq $null ) -or ( $Instance -eq "" ) ) {
     }
     elseif ($Restore.Length -gt 0) {
         $Global:CONFDIR = $Global:CONFBASEDIR + $Restore + '\'
+    }
+    elseif ($RestoreObject.Length -gt 0) {
+        $Global:CONFDIR = $Global:CONFBASEDIR + $RestoreObject + '\'
     }
 }
 else {
@@ -943,7 +997,14 @@ if ($Restore -ne "") {
     }
 }
 
-if ($Vserver -ne "" -and ($Backup -eq "" -and $Restore -eq "")) {
+if ($RestoreObject -ne "") {
+    $Global:ROOTLOGDIR = ($Global:ROOTLOGDIR + $RestoreObject + '\')
+    if (-not (Test-Path $Global:ROOTLOGDIR)) {
+        New-Item -Path $Global:ROOTLOGDIR -ItemType "directory" -ErrorAction "silentlycontinue" | Out-Null
+    }
+}
+
+if ($Vserver -ne "" -and ($Backup -eq "" -and $Restore -eq "" -and $RestoreObject -eq "")) {
     $Global:LOGDIR = ($Global:ROOTLOGDIR + $Vserver + '\')
 }
 else {
@@ -1392,7 +1453,7 @@ if ( $Backup ) {
     $stopwatch.stop()
     Write-Log $("Finished - Script ran for {0}" -f $stopwatch.Elapsed.toString())
     clean_and_exit 0
-}
+} #End Backup
 
 if ( $Restore ) {
     $Run_Mode = "Restore"
@@ -1460,7 +1521,7 @@ if ( $Restore ) {
             $SVMList = @($Vserver)
         }
     }
-    #Loop to backup all SVM in List . Loop in RunspacePool
+    #Loop to Restore all SVM in List . Loop in RunspacePool
     $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
     $RunspacePool_Restore = [runspacefactory]::CreateRunspacePool(1, $Global:NumberOfLogicalProcessor, $iss, $Host)
     $RunspacePool_Restore.Open()
@@ -1616,7 +1677,7 @@ if ( $Restore ) {
                     }
                 }
                 else {
-                    Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update as necessarry Snapshot Policy and Efficiency"
+                    Write-Log "Once Data restored via SnapMirror on DP destinations volumes, update, as necessarry, Snapshot Policy and Efficiency"
                 }
                 flush_log4net -loggerinstance "console_$guid"
                 flush_log4net -loggerinstance "logonly_$guid"
@@ -1640,6 +1701,7 @@ if ( $Restore ) {
         [void]$RestoreJob.AddParameter("RootAggr", $Global:RootAggr)
         [void]$RestoreJob.AddParameter("DataAggr", $Global:DataAggr)
         [void]$RestoreJob.AddParameter("RESTORE_ORIGINAL", $Global:RESTORE_ORIGINAL)
+        [void]$RestoreJob.AddParameter("Object",$Global:Object)
         if ($RW -eq $True) {
             [void]$RestoreJob.AddParameter("VOLTYPE", "RW")
         }
@@ -1713,6 +1775,35 @@ if ( $Restore ) {
     $stopwatch.stop()
     Write-Log $("Finished - Script ran for {0}" -f $stopwatch.Elapsed.toString())
     clean_and_exit 0
+} #End Restore
+
+# RestoreObject Restore a particular specified object into an SVM
+if ( $RestoreObject ){
+    $Run_Mode = "RestoreObject"
+    Write-LogOnly "SVMTOOL Run RestoreObject"
+    $Global:RESTORE_SRC_CLUSTER = $RestoreObject
+    if( $DestinationCluster ){
+        $Global:RESTORE_DST_CLUSTER = $DestinationCluster
+    }else{
+        $Global:RESTORE_DST_CLUSTER = $RestoreObject    
+    }
+    $Global:SourceSVM=$Vserver
+    if( $DestinationSVM ){
+        $Global:DestinationSVM = $DestinationSVM
+    }else{
+        $Global:DestinationSVM = $Vserver
+    }
+    if ( ($Global:SourceSVM -eq $Global:DestinationSVM) -and ($Global:RESTORE_SRC_CLUSTER -eq $Global:RESTORE_DST_CLUSTER) ) {
+        $Global:RESTORE_ORIGINAL = $True
+        Write-Log "[$RestoreObject] Restore to Origin [$Vserver]"
+    }
+    else {
+        $Global:RESTORE_ORIGINAL = $False	
+    }  
+
+
+    Write-Log "Finished restore [$Global:RESTORE_SRC_CLUSTER]:[$Global:SourceSVM] to [$Global:RESTORE_DST_CLUSTER]:[$Global:DestinationSVM]"
+    clean_and_exit 0  
 }
 
 if ( ( Test-Path $CONFFILE ) -eq $False ) {
