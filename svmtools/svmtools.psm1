@@ -5,8 +5,7 @@
     This module contains several functions to manage SVMDR, Backup and Restore Configuration...
 .NOTES
     Authors  : Olivier Masson, Jerome Blanchet, Mirko Van Colen
-    Release  : April 17th, 2019
-
+    Release  : May 7th, 2019
 #>
 
 #############################################################################################
@@ -64,6 +63,14 @@ function set_log_level{
     $l.Repository.Configured=$true
 
 }
+
+#############################################################################################
+function xmlEncode($text){
+	$text = $text -replace "&","&amp;"
+	$text = $text -replace ">","&gt;"
+	$text = $text -replace "<","&lt;"
+	return $text
+}						  
 
 #############################################################################################
 function add_appender($loggerinstance,$appender){
@@ -174,6 +181,7 @@ Function clean_and_exit ([int]$return_code) {
 
 	Write-LogOnly "svmtool TERMINATE by clean_and_exit`n"
     exit_log4net
+
     exit $return_code 
 }
 
@@ -397,7 +405,9 @@ function Write-Log ([string]$mess, $color,[switch]$colorvalues=$true,[switch]$fi
                     WriteHost "$mess" -ForegroundColor $color
                 }
             }
+
             Write-LogOnly -mess $mess
+
         }
     }
 }
@@ -4670,7 +4680,8 @@ Catch {
     [string] $state,
     [bool] $Backup,
     [bool] $Restore,
-    [switch] $AfterMigrate) {
+    [switch] $AfterMigrate,
+	[switch] $IgnoreNoLifAd) {						   
 
     $Return=$True
     Write-LogDebug "Set all lif [$state] on [$workOn]"
@@ -4712,7 +4723,7 @@ Catch {
 			Write-LogDebug "Set LIF [$lif_name] into state [$state]"
 			$ret=Set-NcNetInterface -Name $lif_name -Vserver $mySecondaryVserver -Controller $mySecondaryController -AdministrativeStatus $state -ErrorVariable ErrorVar
 			if($? -ne $true){
-				Write-LogDebug "ERROR: failed to set lif [$lif_name] into state [$sate] reason [$ErrorVar]"
+				Write-LogDebug "ERROR: failed to set lif [$lif_name] into state [$state] reason [$ErrorVar]"
 			}
 			$set=$true
 		}elseif($state -eq "up"){
@@ -4728,8 +4739,12 @@ Catch {
     }else{
         if($set -eq $false){
             if($Restore -eq $False){
-                Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
-                return $False
+				if(-not $IgnoreNoLifAd){
+					Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
+					return $False
+				}else{
+					return $True
+				}
             }else{
                 return $True
             }
@@ -5017,6 +5032,7 @@ Try {
             } 
         }
         Write-Log "[$workOn] Create Flexclone [$DestVolName] from SVM [$DestinationVserverDR]"
+								  
         Write-LogDebug "Get-NcSnapshot -Controller $mySecondaryController -Query @{Vserver=$DestinationVserverDR;Volume=$DestVolName;Dependency=`"`!snapmirror`"}"
         $SnapshotList=Get-NcSnapshot -Controller $mySecondaryController -Query @{Vserver=$DestinationVserverDR;Volume=$DestVolName} -ErrorVariable ErrorVar
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcSnapshot failed [$ErrorVar]" }
@@ -9251,7 +9267,7 @@ Try {
                         if($? -ne $true){$Return=$False;Write-Error "ERROR: Failed to remove reason [$ErrorVar]"}
                     }
                 }else{
-                    # modif share on dest only if share is in c$,admin$ or ipc$
+                    # modify share on dest only if share is in c$,admin$ or ipc$
                     # or create if else
                     $PrimaryShareName=$sharediff.ShareName
                     Write-LogDebug "Working on share [$PrimaryShareName]"
@@ -9291,7 +9307,8 @@ Try {
                         if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Add-NcCifsShare failed [$ErrorVar]" }
                         #$SecondaryShare=Get-NcCifsShare -Name $PrimaryShareName -VserverContext $mySecondaryVserver -Controller $mySecondaryController  -ErrorVariable ErrorVar 
                         #if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcCifsShare failed [$ErrorVar]" }
-                        $SecondaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErroVar
+                        $SecondaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
+						if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to Get-NcCifsShareAcel on $PrimaryShareName [$ErrorVar]"}
                         foreach($acl in $SecondaryAclList){
                             $aclUser=$acl.UserOrGroup
                             $acltype=$acl.UserGroupType
@@ -9299,7 +9316,7 @@ Try {
                             -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                             $out=Remove-NcCifsShareAcl -Share $PrimaryShareName -UserOrGroup $aclUser -UserGroupType $acltype `
                             -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErroVar -confirm:$False
-                            if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Remove-NcCifsShare failed [$ErrorVar]" }
+                            if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Remove-NcCifsShareAcl failed [$ErrorVar]" }
                         }
                         $PrimaryAclList=$PrimaryAllAclList | Where-Object {$_.Share -eq "$PrimaryShareName"}
                         #$PrimaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErroVar
@@ -9317,15 +9334,16 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUnixid</user-or-group>
 </cifs-share-access-control-create>                            
 "@
+								$request = ("$request" -f (xmlEncode -text $aclShare))					  
                                 if($WinSIDCompatible -eq $True){
                                     Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                     $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
+                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set access-control for share [$aclShare] display [$out]"}
                                 }else{
                                     Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $myController"
                                     $out=Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
@@ -9336,16 +9354,17 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUserOrGroup</user-or-group>
 <winsid>$aclWinsid</winsid>
 </cifs-share-access-control-create>                            
 "@
+								$request = ("$request" -f (xmlEncode -text $aclShare))
                                 if($WinSIDCompatible -eq $True){
                                     Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                     $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
+                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set access-control for share [$aclShare] display [$out]"}
                                 }else{
                                     $SecondaryServer=(Get-NcCifsServer -VserverContext $mySecondaryVserver -controller $mySecondaryController).CifsServer
                                     $domain=$aclUserOrGroup.split("\")[0]
@@ -9365,15 +9384,16 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUserOrGroup</user-or-group>
 </cifs-share-access-control-create>                            
 "@
+								$request = ("$request" -f (xmlEncode -text $aclShare))
                                 if($WinSIDCompatible -eq $True){
                                     Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                     $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
+                                    if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set access-control for share [$aclShare] display [$out]"}
                                 }else{
                                     Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUserOrGroup -Permission $aclPermission -UserGroupType $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $myController"
                                     $out=Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUserOrGroup -Permission $aclPermission -UserGroupType $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
@@ -9382,7 +9402,7 @@ $request=@"
                             }
                         } 
                     }else{
-                        # modif existing share c$ or admin$ or ipc$
+                        # modify existing share c$ or admin$ or ipc$
                         # for that kind of non-data share share-properties and symlinkProperties are not modifiable
                         # so exclude them from the Set-NcCifsShare
                         Write-Log "[$workOn] Modify share [$PrimaryShareName]"
@@ -9400,7 +9420,7 @@ $request=@"
                         -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
                         if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Set-NcCifsShare failed [$ErrorVar] display [$out]" }
                         if($secshare.Acl -ne $PrimaryAclList){
-                            $SecondaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErroVar
+                            $SecondaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
                             foreach($acl in $SecondaryAclList){
                                 $aclUser=$acl.UserOrGroup
                                 $acltype=$acl.UserGroupType
@@ -9412,7 +9432,7 @@ $request=@"
                             }
                             Write-Log "[$workOn] Modify Acces-Control for share [$PrimaryShareName]"
                             $PrimaryAclList=$PrimaryAllAclList | Where-Object {$_.Share -eq "$PrimaryShareName"}
-                            #$PrimaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErroVar
+                            #$PrimaryAclList=Get-NcCifsShareAcl -Share $PrimaryShareName -VserverContext $myPrimaryVserver -Controller $myPrimaryController -ErrorVariable ErrorVar
                             foreach($acl in $PrimaryAclList){
                                 $aclPermission=$acl.Permission    
                                 $aclShare=$acl.Share
@@ -9427,15 +9447,16 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUnixid</user-or-group>
 </cifs-share-access-control-create>                            
 "@
+									$request = ("$request" -f (xmlEncode -text $aclShare))
                                     if($WinSIDCompatible -eq $True){
                                         Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                         $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
-                                        if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
+                                        if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set access-control for share [$aclShare] display [$out]"}
                                     }else{
                                         Write-LogDebug "Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False"
                                         $out=Add-NcCifsShareAcl -Share $aclShare  -UserOrGroup $aclUnixid -Permission $aclPermission -UserGroupType  $aclUserGroupType -VserverContext $mySecondaryVserver -Controller $mySecondaryController -Confirm:$False -ErrorVariable ErrorVar
@@ -9446,12 +9467,13 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUserOrGroup</user-or-group>
 <winsid>$aclWinsid</winsid>
 </cifs-share-access-control-create>                            
 "@
+									$request = ("$request" -f (xmlEncode -text $aclShare))		   
                                     #if($aclWinsid -notmatch "S-1-1-0|S-1-5-32"){
                                         if($WinSIDCompatible -eq $True){
                                             Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
@@ -9459,6 +9481,7 @@ $request=@"
                                             if($? -ne $True){$Return=$False;Write-Error "ERROR: Failed to set acces-control for share [$aclShare] display [$out]"}
                                         }else{
                                             $SecondaryServer=(Get-NcCifsServer -VserverContext $mySecondaryVserver -controller $mySecondaryController).CifsServer
+											if ( $? -ne $True ) { $Return = $False ; Write-Error "ERROR: Get-NcCifsServer failed [$ErrorVar]" }																  
                                             $domain=$aclUserOrGroup.split("\")[0]
                                             $user=$aclUserOrGroup.split("\")[1]
                                             $domain=$domain -replace $PrimaryServer,$SecondaryServer
@@ -9479,11 +9502,12 @@ $request=@"
 <cifs-share-access-control-create>
 <permission>$aclPermission</permission>
 <return-record>true</return-record>
-<share>$aclShare</share>
+<share>{0}</share>
 <user-group-type>$aclUserGroupType</user-group-type>
 <user-or-group>$aclUserOrGroup</user-or-group>
 </cifs-share-access-control-create>                            
 "@
+									$request = ("$request" -f (xmlEncode -text $aclShare))
                                     if($WinSIDCompatible -eq $True){
                                         Write-LogDebug "Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController"
                                         $out=Invoke-NcSystemApi -Request $request -VserverContext $mySecondaryVserver -Controller $mySecondaryController -ErrorVariable ErrorVar
@@ -10287,8 +10311,10 @@ Try {
         Write-LogWarn "Some CIFS options has not been set on [$workOn]"    
     }
     if ( ( $ret=create_update_igroupdr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create all igroups" ; $Return = $False }
-    if ( ( $ret=create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Vscan config" ; $Return = $False }
-    if ( ( $ret=create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Fpolicy config" ; $Return = $False }
+	if(-not $Global:skipVscanFpolicy){						 
+		if ( ( $ret=create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Vscan config" ; $Return = $False }
+		if ( ( $ret=create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver -workOn $workOn  -fromConfigureDR -Backup $runBackup -Restore $runRestore) -ne $True ) { Write-LogError "ERROR: Failed to create Fpolicy config" ; $Return = $False }
+	} 
 	$ret=create_clone_volume_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver  -workOn $workOn  -Backup $runBackup -Restore $runRestore
     if ( $ret.count -gt 0 ) {
         if ($ret[0] -ne $True ) { Write-LogError "ERROR: Failed to create all volumes" ; $Return = $False }
@@ -10877,6 +10903,16 @@ Try {
 			Write-LogError "ERROR: Unable to stop  Vserver [$myPrimaryVserver]" 
 		}
 	}
+
+																										 
+																						   
+						
+																													 
+					   
+																		 
+				
+   
+  
     if($DeleteSourceSVM -eq $True){
         $out = Get-NcVserver  -Name $myPrimaryVserver -Controller $myPrimaryController  -ErrorVariable ErrorVar 
         if ( $? -ne $True ) { $Return = $False ; throw "ERROR: Get-NcVserver failed [$ErrorVar]" }
@@ -10893,6 +10929,7 @@ Try {
     }
     Write-LogDebug "remove_vserver_source: end"
     return $True
+
 }
 catch{
     handle_error $_ $myPrimaryVserver
@@ -11767,6 +11804,13 @@ Function update_vserver_dr (
 	$Return = $True
 	Write-LogDebug "update_vserver_dr: start"
 	if ( ( check_update_vserver -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { Write-LogError "ERROR: Failed check update vserver" ; return $False }
+ 
+	Write-LogDebug "update_vserver_dr: Update policy"
+	if ( ( create_update_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver )  -ne $True ) {
+		Write-LogError "ERROR: create_update_policy_dr failed" 
+		$Return = $False
+	}												  
+																																																					
 	if ( $myDataAggr -or $aggrMatchRegEx ) {
 		Write-LogDebug "update_vserver_dr: Create required new volumes $mySecondaryController Vserver $Vserver"
 
@@ -11796,11 +11840,7 @@ Function update_vserver_dr (
 		Write-LogError "ERROR: create_update_igroupdr failed" 
 		$Return = $False
 	}
-	Write-LogDebug "update_vserver_dr: Update policy"
-	if ( ( create_update_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver )  -ne $True ) {
-		Write-LogError "ERROR: create_update_policy_dr failed" 
-		$Return = $False
-	}
+
     Write-LogDebug "update_vserver_dr: Update efficiency policy"
 	if ( ( create_update_efficiency_policy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver )  -ne $True ) {
 		Write-LogError "ERROR: create_update_efficiency_policy_dr failed" 
@@ -11850,16 +11890,18 @@ Function update_vserver_dr (
         Write-LogError "ERROR: Failed to create User Mapping"
         $Return = $True
     }
-    Write-LogDebug "update_vserver_dr: Update Vscan dr"
-    if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-        Write-LogError "ERROR: create_update_vscan_dr failed" 
-        $Return = $False 
-    }
-    Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
-    if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
-        Write-LogError "ERROR: create_update_fpolicy_dr failed" 
-        $Return = $False 
-    }
+	if(-not $Global:skipVscanFpolicy){						  
+		Write-LogDebug "update_vserver_dr: Update Vscan dr"
+		if ( ( create_update_vscan_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+			Write-LogError "ERROR: create_update_vscan_dr failed" 
+			$Return = $False 
+		}
+		Write-LogDebug "update_vserver_dr: Update Fpolicy dr"
+		if ( ( create_update_fpolicy_dr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) { 
+			Write-LogError "ERROR: create_update_fpolicy_dr failed" 
+			$Return = $False 
+		}
+	}
 	Write-LogDebug "update_vserver_dr: Check Destination Volumes"
 	if ( ( check_update_voldr -myPrimaryController $myPrimaryController -mySecondaryController $mySecondaryController -myPrimaryVserver $myPrimaryVserver -mySecondaryVserver $mySecondaryVserver ) -ne $True ) {
 		Write-LogError "ERROR: check_update_voldr failed" 

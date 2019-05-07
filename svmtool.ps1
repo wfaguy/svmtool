@@ -435,6 +435,7 @@
         - 0.2.2 :   Fix change of XDPPolicy during ConfigureDR or UpdateDR
         - 0.2.3 :   Add Cifs join options : override AD OU + override temp-cifs-join-lif VLAN
         - 0.2.4 :   Fix check if CIFS server is running
+        - 0.2.5 :   Add option to skip anti virus check completely, bugfixes (acl encoding, export policy, ...)
 #>
 [CmdletBinding(HelpURI = "https://github.com/oliviermasson/svmtool", DefaultParameterSetName = "ListInstance")]
 Param (
@@ -676,6 +677,11 @@ Param (
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
     [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
     [switch]$ForceDeleteQuota,
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'CloneDR')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateDR')]
+    [Parameter(Mandatory = $false, ParameterSetName = 'UpdateReverse')]
+    [switch]$SkipVscanFpolicy,    
 
     [Parameter(Mandatory = $false, ParameterSetName = 'CleanReverse')]
     [switch]$ForceClean,
@@ -921,7 +927,7 @@ $Global:MIN_MINOR = 5
 $Global:MIN_BUILD = 0
 $Global:MIN_REVISION = 0
 #############################################################################################
-$Global:RELEASE = "0.2.4"
+$Global:RELEASE = "0.2.5"
 $Global:SCRIPT_RELEASE = "0.1.11"
 $Global:BASEDIR = 'C:\Scripts\SVMTOOL'
 $Global:SVMTOOL_DB_DEFAULT = $Global:BASEDIR
@@ -946,6 +952,7 @@ if ($NonInteractive) {
 $Global:LogLevelConsole = $LogLevelConsole
 $Global:AlwaysChooseDataAggr = $AlwaysChooseDataAggr
 $Global:WfaIntegration = $WfaIntegration
+$Global:SkipVscanFpolicy = $SkipVscanFpolicy
 $Global:DefaultLocalUserCredentials = $DefaultLocalUserCredentials
 $Global:ActiveDirectoryCredentials = $ActiveDirectoryCredentials
 $Global:DefaultLDAPCredentials = $DefaultLDAPCredentials
