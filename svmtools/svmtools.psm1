@@ -405,9 +405,7 @@ function Write-Log ([string]$mess, $color,[switch]$colorvalues=$true,[switch]$fi
                     WriteHost "$mess" -ForegroundColor $color
                 }
             }
-
             Write-LogOnly -mess $mess
-
         }
     }
 }
@@ -4680,7 +4678,7 @@ Catch {
     [string] $state,
     [bool] $Backup,
     [bool] $Restore,
-    [switch] $AfterMigrate) {						   
+    [switch] $AfterMigrate) {
 
     $Return=$True
     Write-LogDebug "Set all lif [$state] on [$workOn]"
@@ -4738,7 +4736,8 @@ Catch {
     }else{
         if($set -eq $false){
             if($Restore -eq $False){
-				Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
+                Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
+                return $False
             }else{
                 return $True
             }
