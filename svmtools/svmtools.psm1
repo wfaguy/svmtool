@@ -4680,8 +4680,7 @@ Catch {
     [string] $state,
     [bool] $Backup,
     [bool] $Restore,
-    [switch] $AfterMigrate,
-	[switch] $IgnoreNoLifAd) {						   
+    [switch] $AfterMigrate) {						   
 
     $Return=$True
     Write-LogDebug "Set all lif [$state] on [$workOn]"
@@ -4739,12 +4738,7 @@ Catch {
     }else{
         if($set -eq $false){
             if($Restore -eq $False){
-				if(-not $IgnoreNoLifAd){
-					Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
-					return $False
-				}else{
-					return $True
-				}
+				Write-Log "[$workOn] ERROR: You need at least one lif on the destination that can communicate with Active Directory. Use ConfigureDR to create one"
             }else{
                 return $True
             }
